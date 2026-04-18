@@ -1,0 +1,1 @@
+ALTER TABLE campanha_envios ADD COLUMN IF NOT EXISTS tentativas integer DEFAULT 0;

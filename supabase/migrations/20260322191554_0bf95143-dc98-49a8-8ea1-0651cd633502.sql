@@ -1,0 +1,1 @@
+ALTER TABLE public.config_global ADD COLUMN gemini_api_key text;

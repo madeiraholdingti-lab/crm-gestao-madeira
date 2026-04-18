@@ -1,0 +1,1 @@
+UPDATE campanha_envios SET status = 'enviar', tentativas = 0, erro = NULL WHERE id = 'efb92ea9-0b64-4abf-bc26-6835cf0fde1d';
