@@ -22,7 +22,8 @@ serve(async (req) => {
     const { data: config, error: configError } = await supabase
       .from('config_global')
       .select('evolution_base_url, evolution_api_key')
-      .single();
+      .limit(1)
+      .maybeSingle();
     
     if (configError || !config) {
       console.error("Error fetching config:", configError);
