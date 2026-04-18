@@ -14,7 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      instancias_whatsapp: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          criado_por: string | null
+          id: string
+          instancia_id: string
+          nome_instancia: string
+          token_zapi: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          criado_por?: string | null
+          id?: string
+          instancia_id: string
+          nome_instancia: string
+          token_zapi: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          criado_por?: string | null
+          id?: string
+          instancia_id?: string
+          nome_instancia?: string
+          token_zapi?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          cor_perfil: string
+          created_at: string
+          funcao: Database["public"]["Enums"]["app_role"]
+          id: string
+          nome: string
+          telefone_contato: string | null
+          updated_at: string
+        }
+        Insert: {
+          cor_perfil?: string
+          created_at?: string
+          funcao?: Database["public"]["Enums"]["app_role"]
+          id: string
+          nome: string
+          telefone_contato?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cor_perfil?: string
+          created_at?: string
+          funcao?: Database["public"]["Enums"]["app_role"]
+          id?: string
+          nome?: string
+          telefone_contato?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +85,11 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      app_role:
+        | "admin_geral"
+        | "medico"
+        | "secretaria_medica"
+        | "administrativo"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +216,13 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: [
+        "admin_geral",
+        "medico",
+        "secretaria_medica",
+        "administrativo",
+      ],
+    },
   },
 } as const
