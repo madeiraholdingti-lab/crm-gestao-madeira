@@ -5,13 +5,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Brain, RefreshCw, ArrowRight } from "lucide-react";
+import { Brain, RefreshCw, ArrowRight, AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
 interface LinkAcao {
   label: string;
   href: string;
+}
+
+interface Highlight {
+  severity: 'red' | 'yellow' | 'green';
+  label: string;
+  metric: number;
+  unit: string;
+  href?: string;
 }
 
 const CACHE_MINUTES = 30;
@@ -21,8 +29,10 @@ export const BriefingIA = () => {
   const { profile } = useCurrentUser();
   const [conteudo, setConteudo] = useState<string | null>(null);
   const [linksAcao, setLinksAcao] = useState<LinkAcao[]>([]);
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [narrativaAberta, setNarrativaAberta] = useState(false);
   const [lastGenerated, setLastGenerated] = useState<Date | null>(null);
   const navigate = useNavigate();
 
@@ -87,6 +97,7 @@ export const BriefingIA = () => {
       if (result) {
         setConteudo(result.conteudo);
         setLinksAcao(result.links_acao || []);
+        setHighlights(result.highlights || []);
         setLastGenerated(new Date());
       }
       setLoading(false);
@@ -111,6 +122,7 @@ export const BriefingIA = () => {
     if (result) {
       setConteudo(result.conteudo);
       setLinksAcao(result.links_acao || []);
+      setHighlights(result.highlights || []);
       setLastGenerated(new Date());
       toast.success("Briefing atualizado");
     }
@@ -158,10 +170,63 @@ export const BriefingIA = () => {
         </div>
       </CardHeader>
       <CardContent className="p-4">
-        {conteudo ? (
+        {conteudo || highlights.length > 0 ? (
           <div className="space-y-3">
-            <p className="text-sm leading-relaxed whitespace-pre-line">{conteudo}</p>
+            {/* HIGHLIGHTS — bullets com ícones de severidade + métricas destacadas.
+                Substitui a leitura de parágrafo denso. Maikon bate o olho e entende. */}
+            {highlights.length > 0 && (
+              <ul className="space-y-2">
+                {highlights.map((h, i) => {
+                  const iconConfig = h.severity === 'red'
+                    ? { Icon: AlertCircle, color: 'text-destructive', bg: 'bg-destructive/10' }
+                    : h.severity === 'yellow'
+                    ? { Icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/30' }
+                    : { Icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50 dark:bg-green-950/30' };
+                  const { Icon, color, bg } = iconConfig;
 
+                  return (
+                    <li
+                      key={i}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-md ${bg} ${h.href ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                      onClick={h.href ? () => navigate(h.href!) : undefined}
+                    >
+                      <Icon className={`h-4 w-4 flex-shrink-0 ${color}`} />
+                      <span className="flex-1 text-sm">
+                        {h.metric > 0 && (
+                          <span className={`font-bold ${color} mr-1`}>{h.metric}</span>
+                        )}
+                        {h.metric > 0 && h.unit ? `${h.unit} ${h.label}` : h.label}
+                      </span>
+                      {h.href && (
+                        <ArrowRight className={`h-3.5 w-3.5 flex-shrink-0 ${color}`} />
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {/* NARRATIVA DA IA — colapsada por padrão. Mantém contexto narrativo
+                pra quem quiser detalhe, mas não compete pelo espaço dos highlights. */}
+            {conteudo && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setNarrativaAberta(!narrativaAberta)}
+                  className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {narrativaAberta ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  {narrativaAberta ? 'Ocultar análise da IA' : 'Ver análise completa'}
+                </button>
+                {narrativaAberta && (
+                  <p className="text-sm leading-relaxed whitespace-pre-line mt-2 text-muted-foreground">
+                    {conteudo}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* LINKS DE AÇÃO ADICIONAIS (fora dos highlights) */}
             {linksAcao.length > 0 && (
               <div className="flex flex-wrap gap-2 pt-1">
                 {linksAcao.map((link, i) => (
@@ -180,7 +245,7 @@ export const BriefingIA = () => {
 
             {lastGenerated && (
               <p className="text-[10px] text-muted-foreground">
-                Gerado às {lastGenerated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                Atualizado às {lastGenerated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
               </p>
             )}
           </div>

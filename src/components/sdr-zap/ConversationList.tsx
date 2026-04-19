@@ -1,7 +1,7 @@
 import { useRef, useMemo, useCallback, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ConversationCard } from "./ConversationCard";
-import { ConversationFilters } from "./ConversationFilters";
+import { ConversationFilters, type AssignFilter, type StatusFilter } from "./ConversationFilters";
 import { DraggableCard } from "@/components/DraggableCard";
 import { DroppableColumn } from "@/components/DroppableColumn";
 import type { Conversa } from "@/hooks/useConversas";
@@ -24,13 +24,6 @@ interface ConversationListProps {
   draggable?: boolean;
 }
 
-type AssignFilter = "all" | "mine" | "unassigned";
-const ASSIGN_PILLS: { key: AssignFilter; label: string }[] = [
-  { key: "all", label: "Todas" },
-  { key: "mine", label: "Minhas" },
-  { key: "unassigned", label: "Sem dono" },
-];
-
 function filtrarPorBusca(lista: Conversa[], busca: string): Conversa[] {
   if (!busca.trim()) return lista;
   const q = busca.toLowerCase();
@@ -49,7 +42,7 @@ export function ConversationList({
 }: ConversationListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [busca, setBusca] = useState("");
-  const [filter, setFilter] = useState<"todas" | "nao_lidas" | "aguardando">("todas");
+  const [filter, setFilter] = useState<StatusFilter>("todas");
   const [assignFilter, setAssignFilter] = useState<AssignFilter>("all");
 
   const sorted = useMemo(() => {
@@ -92,7 +85,10 @@ export function ConversationList({
   });
 
   const handleSearchChange = useCallback((v: string) => setBusca(v), []);
-  const handleFilterChange = useCallback((f: "todas" | "nao_lidas" | "aguardando") => setFilter(f), []);
+  const handleFilterChange = useCallback((f: StatusFilter) => setFilter(f), []);
+  const handleAssignFilterChange = useCallback((f: AssignFilter) => setAssignFilter(f), []);
+
+  const hasAssignFeature = !!(currentUserId || equipe?.length);
 
   return (
     <div className="flex flex-col h-full">
@@ -102,30 +98,11 @@ export function ConversationList({
         activeFilter={filter}
         onFilterChange={handleFilterChange}
         counts={counts}
+        showAssignFilter={hasAssignFeature}
+        assignFilter={assignFilter}
+        onAssignFilterChange={handleAssignFilterChange}
+        canUseMine={!!currentUserId}
       />
-      {/* Pills de atribuição — só aparecem se tem info de equipe */}
-      {(currentUserId || equipe?.length) && (
-        <div className="flex gap-1 px-2 mt-1">
-          {ASSIGN_PILLS.map(pill => {
-            const isActive = assignFilter === pill.key;
-            const disabled = pill.key === "mine" && !currentUserId;
-            return (
-              <button
-                key={pill.key}
-                onClick={() => !disabled && setAssignFilter(pill.key)}
-                disabled={disabled}
-                className={`text-[10px] px-2 py-0.5 rounded-full transition-colors border
-                  ${isActive
-                    ? 'bg-accent text-accent-foreground border-accent'
-                    : 'bg-transparent border-border text-muted-foreground hover:bg-muted'}
-                  ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-              >
-                {pill.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
       <div ref={scrollRef} className="flex-1 overflow-y-auto mt-1.5 px-1.5">
         {filtered.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-8">

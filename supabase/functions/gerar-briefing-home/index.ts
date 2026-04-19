@@ -181,7 +181,77 @@ Comece com uma saudação com base no horário (Bom dia/Boa tarde/Boa noite).`
       linksAcao.push({ label: "Ver agenda", href: "/home" });
     }
 
-    // Salvar no banco
+    // ===== HIGHLIGHTS ESTRUTURADOS =====
+    // Bullets com números destacados e ícones de severidade pra Maikon
+    // bater o olho e entender em 2 segundos. Renderizados ACIMA do texto da IA.
+    // Severity: 'red' = ação urgente, 'yellow' = atenção, 'green' = em dia.
+    const highlights: Array<{ severity: 'red' | 'yellow' | 'green'; label: string; metric: number; unit: string; href?: string }> = [];
+
+    // Conversas pendentes urgentes (>2h sem resposta)
+    if (totalSemResposta2h > 0) {
+      highlights.push({
+        severity: totalSemResposta2h >= 5 ? 'red' : 'yellow',
+        label: 'conversas sem resposta há +2h',
+        metric: totalSemResposta2h,
+        unit: totalSemResposta2h === 1 ? 'conversa' : 'conversas',
+        href: '/sdr-zap',
+      });
+    } else if (totalAbertas === 0) {
+      highlights.push({
+        severity: 'green',
+        label: 'Nenhuma conversa aberta com as secretárias',
+        metric: 0,
+        unit: '',
+      });
+    } else {
+      highlights.push({
+        severity: 'green',
+        label: 'conversas em atendimento, nada crítico',
+        metric: totalAbertas,
+        unit: totalAbertas === 1 ? 'conversa' : 'conversas',
+      });
+    }
+
+    // Tarefas atrasadas
+    const nTarefas = (tarefasAtrasadas || []).length;
+    if (nTarefas > 0) {
+      highlights.push({
+        severity: nTarefas >= 10 ? 'red' : 'yellow',
+        label: 'tarefas atrasadas',
+        metric: nTarefas,
+        unit: nTarefas === 1 ? 'tarefa' : 'tarefas',
+        href: '/task-flow',
+      });
+    } else {
+      highlights.push({
+        severity: 'green',
+        label: 'Nenhuma tarefa atrasada',
+        metric: 0,
+        unit: '',
+      });
+    }
+
+    // Agenda de amanhã
+    const nEventos = (eventosAmanha || []).length;
+    if (nEventos > 0) {
+      highlights.push({
+        severity: 'yellow',
+        label: nEventos === 1 ? 'compromisso amanhã' : 'compromissos amanhã',
+        metric: nEventos,
+        unit: '',
+        href: '/home',
+      });
+    } else {
+      highlights.push({
+        severity: 'green',
+        label: 'Agenda de amanhã livre',
+        metric: 0,
+        unit: '',
+      });
+    }
+
+    // Salvar no banco (highlights vai em links_acao por retrocompat — podemos
+    // migrar pra coluna própria depois se quisermos)
     await supabase.from("briefings_home").insert({
       user_id,
       conteudo,
@@ -189,7 +259,7 @@ Comece com uma saudação com base no horário (Bom dia/Boa tarde/Boa noite).`
     });
 
     return new Response(
-      JSON.stringify({ conteudo, links_acao: linksAcao }),
+      JSON.stringify({ conteudo, links_acao: linksAcao, highlights }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
