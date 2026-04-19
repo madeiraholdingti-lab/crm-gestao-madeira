@@ -176,6 +176,11 @@ export default function SDRZap() {
   const [calendarModalOpen, setCalendarModalOpen] = useState(false);
   const [calendarConversaId, setCalendarConversaId] = useState<string | null>(null);
 
+  // Follow-up
+  const [followUpConversaId, setFollowUpConversaId] = useState<string | null>(null);
+  const [followUpData, setFollowUpData] = useState("");
+  const [followUpNota, setFollowUpNota] = useState("");
+
   // Função para minimizar/expandir coluna 1
   const toggleCol1 = () => {
     setCol1Minimizada(!col1Minimizada);
@@ -1713,10 +1718,8 @@ export default function SDRZap() {
     }
   };
 
-  // Follow-up
-  const [followUpConversaId, setFollowUpConversaId] = useState<string | null>(null);
-  const [followUpData, setFollowUpData] = useState("");
-  const [followUpNota, setFollowUpNota] = useState("");
+  // Follow-up handlers (state já declarado no topo)
+
 
   const handleDefinirFollowUp = async () => {
     if (!followUpConversaId || !followUpData) {
@@ -2005,6 +2008,20 @@ export default function SDRZap() {
     }
   };
 
+  // Flag derivada: conversa aberta foi respondida por mais de uma instância?
+  // Usada para decidir se mostra o header "quem respondeu" acima de cada bolha.
+  // DEVE ficar ANTES de qualquer early return para preservar a ordem dos hooks.
+  const conversaTemMultiplasInstancias = useMemo(() => {
+    const instanciasEnviadoras = new Set<string>();
+    for (const m of mensagens) {
+      if (m.from_me && (m as any).instancia_whatsapp_id) {
+        instanciasEnviadoras.add((m as any).instancia_whatsapp_id);
+        if (instanciasEnviadoras.size > 1) return true;
+      }
+    }
+    return false;
+  }, [mensagens]);
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -2017,20 +2034,6 @@ export default function SDRZap() {
   const activeConversa = activeId
     ? [...conversasCol1, ...conversasCol2].find(c => c.id === activeId)
     : null;
-
-  // Flag derivada: conversa aberta foi respondida por mais de uma instância?
-  // Usada para decidir se mostra o header "quem respondeu" acima de cada bolha.
-  // Em conversa 1-pra-1 com uma única instância respondendo, o header é ruído.
-  const conversaTemMultiplasInstancias = useMemo(() => {
-    const instanciasEnviadoras = new Set<string>();
-    for (const m of mensagens) {
-      if (m.from_me && (m as any).instancia_whatsapp_id) {
-        instanciasEnviadoras.add((m as any).instancia_whatsapp_id);
-        if (instanciasEnviadoras.size > 1) return true;
-      }
-    }
-    return false;
-  }, [mensagens]);
 
   return (
     <DndContext
