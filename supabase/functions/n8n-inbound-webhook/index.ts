@@ -1194,11 +1194,17 @@ serve(async (req) => {
       // CORREÇÃO 4: Reutilizar variável conversa já carregada (evita SELECT duplicado)
       if (mensagem && mensagem.remetente === 'recebida' && conversa) {
         const currentUnread = conversa.unread_count || 0;
+        const CLOSURE_PATTERNS = /^(ok|okay|obrigad[oa]|obg|vlw|valeu|blz|beleza|perfeito|combinado|certo|entendi|show|top|massa|boa|bom dia|boa tarde|boa noite|tá|ta|sim|não|nao|haha|kk|rs|kkk|👍|👌|🙏|😊|😁|❤|🤝|👏)$/i;
+        const msgText = mensagem.conteudo || '';
+        const isClosure = CLOSURE_PATTERNS.test(msgText.trim());
         await supabase
           .from('conversas')
-          .update({ unread_count: currentUnread + 1 })
+          .update({
+            unread_count: currentUnread + 1,
+            last_message_from_me: isClosure ? null : false,
+          })
           .eq('id', conversa.id);
-        console.log('🔔 unread_count atualizado:', currentUnread, '→', currentUnread + 1);
+        console.log('🔔 unread_count atualizado:', currentUnread, '→', currentUnread + 1, '| last_message_from_me:', isClosure ? null : false);
       }
     } else {
       console.log('⏭️ Pulando salvamento na tabela mensagens (sem conversa CRM)');

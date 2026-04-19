@@ -4,9 +4,10 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, Clock, AlertTriangle, MessageSquare } from "lucide-react";
+import { Users, Clock, AlertTriangle, MessageSquare, CheckCircle2 } from "lucide-react";
 import { differenceInMinutes, differenceInHours } from "date-fns";
 import { useNavigate } from "react-router-dom";
+import { getConversaUrgencyColor, getTempoSemResposta } from "@/utils/urgencyHelpers";
 
 interface Conversa {
   id: string;
@@ -16,6 +17,7 @@ interface Conversa {
   numero_contato: string;
   nome_contato: string | null;
   status: string;
+  last_message_from_me: boolean | null;
 }
 
 interface Profile {
@@ -29,27 +31,19 @@ interface SecretariaCard {
   nome: string;
   cor: string;
   conversasAbertas: Conversa[];
+  pendentes: Conversa[];
   respondidasHoje: number;
 }
 
 const KEYWORDS_URGENTE = ["receita", "dor", "urgente", "emergência", "emergencia", "cirurgia", "sangue", "febre"];
 
 function getUrgencia(conversa: Conversa): "normal" | "atencao" | "urgente" {
-  const agora = new Date();
-  const ultimaInteracao = conversa.ultima_interacao ? new Date(conversa.ultima_interacao) : null;
-
-  // Keywords urgentes na última mensagem
   if (conversa.ultima_mensagem) {
     const msgLower = conversa.ultima_mensagem.toLowerCase();
-    if (KEYWORDS_URGENTE.some(kw => msgLower.includes(kw))) {
-      return "urgente";
-    }
+    if (KEYWORDS_URGENTE.some(kw => msgLower.includes(kw))) return "urgente";
   }
-
-  if (!ultimaInteracao) return "normal";
-
-  const horasSemResposta = differenceInHours(agora, ultimaInteracao);
-
+  if (!conversa.ultima_interacao) return "normal";
+  const horasSemResposta = differenceInHours(new Date(), new Date(conversa.ultima_interacao));
   if (horasSemResposta >= 4) return "urgente";
   if (horasSemResposta >= 2) return "atencao";
   return "normal";
@@ -57,16 +51,11 @@ function getUrgencia(conversa: Conversa): "normal" | "atencao" | "urgente" {
 
 function formatTempoSemResposta(ultimaInteracao: string | null): string {
   if (!ultimaInteracao) return "sem data";
-
-  const agora = new Date();
-  const ultima = new Date(ultimaInteracao);
-  const minutos = differenceInMinutes(agora, ultima);
-
+  const minutos = differenceInMinutes(new Date(), new Date(ultimaInteracao));
   if (minutos < 60) return `${minutos}min`;
   const horas = Math.floor(minutos / 60);
   if (horas < 24) return `${horas}h`;
-  const dias = Math.floor(horas / 24);
-  return `${dias}d`;
+  return `${Math.floor(horas / 24)}d`;
 }
 
 export const MonitorSecretarias = () => {
@@ -78,16 +67,14 @@ export const MonitorSecretarias = () => {
 
   const fetchData = async () => {
     try {
-      // Buscar conversas abertas
       const { data: conversasData } = await supabase
         .from("conversas")
-        .select("id, responsavel_atual, ultima_interacao, ultima_mensagem, numero_contato, nome_contato, status")
+        .select("id, responsavel_atual, ultima_interacao, ultima_mensagem, numero_contato, nome_contato, status, last_message_from_me")
         .in("status", ["novo", "Aguardando Contato", "Em Atendimento"])
         .not("responsavel_atual", "is", null)
         .order("ultima_interacao", { ascending: true })
         .limit(200);
 
-      // Buscar perfis ativos (para mapear nome/cor)
       const { data: profilesData } = await supabase
         .from("profiles")
         .select("id, nome, cor_perfil")
@@ -102,42 +89,22 @@ export const MonitorSecretarias = () => {
     }
   };
 
-  // Fetch inicial
+  useEffect(() => { fetchData(); }, []);
+
   useEffect(() => {
-    fetchData();
+    const channel = supabase
+      .channel("monitor-secretarias")
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversas" }, () => fetchData())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // Realtime: atualizar quando conversas mudam
-  useEffect(() => {
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-
-    const setupChannel = async () => {
-      channel = supabase
-        .channel("monitor-secretarias")
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "conversas" },
-          () => fetchData()
-        )
-        .subscribe();
-    };
-
-    setupChannel();
-
-    return () => {
-      if (channel) supabase.removeChannel(channel);
-    };
-  }, []);
-
-  // Agrupar conversas por responsável
   const cards: SecretariaCard[] = useMemo(() => {
     if (!profiles.length) return [];
-
     const profileMap = new Map(profiles.map(p => [p.id, p]));
-    const agora = new Date();
-    const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+    const inicioHoje = new Date();
+    inicioHoje.setHours(0, 0, 0, 0);
 
-    // Agrupar
     const grupos = new Map<string, Conversa[]>();
     for (const conv of conversas) {
       if (!conv.responsavel_atual) continue;
@@ -146,21 +113,17 @@ export const MonitorSecretarias = () => {
       grupos.set(conv.responsavel_atual, lista);
     }
 
-    // Filtrar por role: secretária vê só as próprias
     const isSecretaria = currentUser?.role === "secretaria_medica";
     const isDisparador = currentUser?.role === "disparador";
     if (isDisparador) return [];
 
     const result: SecretariaCard[] = [];
-
     for (const [userId, convs] of grupos) {
       if (isSecretaria && userId !== currentUser?.id) continue;
-
       const profile = profileMap.get(userId);
       if (!profile) continue;
 
-      // Contar respondidas hoje (conversas com ultima_interacao hoje que não estão abertas)
-      // Simplificação: contar conversas desse responsável com interação hoje
+      const pendentes = convs.filter(c => c.last_message_from_me === false);
       const respondidasHoje = conversas.filter(c =>
         c.responsavel_atual === userId &&
         c.ultima_interacao &&
@@ -172,17 +135,26 @@ export const MonitorSecretarias = () => {
         nome: profile.nome,
         cor: profile.cor_perfil || "#3B82F6",
         conversasAbertas: convs,
+        pendentes,
         respondidasHoje,
       });
     }
 
-    // Ordenar por quem tem mais conversas urgentes
     return result.sort((a, b) => {
-      const urgentesA = a.conversasAbertas.filter(c => getUrgencia(c) === "urgente").length;
-      const urgentesB = b.conversasAbertas.filter(c => getUrgencia(c) === "urgente").length;
-      return urgentesB - urgentesA;
+      const urgA = a.pendentes.filter(c => getUrgencia(c) === "urgente").length;
+      const urgB = b.pendentes.filter(c => getUrgencia(c) === "urgente").length;
+      return urgB - urgA;
     });
   }, [conversas, profiles, currentUser]);
+
+  const top5Urgentes = useMemo(() => {
+    return conversas
+      .filter(c => c.last_message_from_me === false && c.responsavel_atual)
+      .sort((a, b) => new Date(a.ultima_interacao || 0).getTime() - new Date(b.ultima_interacao || 0).getTime())
+      .slice(0, 5);
+  }, [conversas]);
+
+  const totalPendentes = conversas.filter(c => c.last_message_from_me === false).length;
 
   if (loading) {
     return (
@@ -194,6 +166,7 @@ export const MonitorSecretarias = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-4 space-y-3">
+          <Skeleton className="h-16" />
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
         </CardContent>
@@ -204,90 +177,197 @@ export const MonitorSecretarias = () => {
   return (
     <Card className="h-full overflow-hidden">
       <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b py-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Users className="h-4 w-4" />
-          Monitor de Atendimento
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Users className="h-4 w-4" />
+            Monitor de Atendimento
+          </CardTitle>
+          {totalPendentes > 0 && (
+            <Badge variant="destructive" className="text-xs">
+              {totalPendentes} pendente{totalPendentes !== 1 ? "s" : ""}
+            </Badge>
+          )}
+        </div>
       </CardHeader>
-      <CardContent className="p-4 space-y-3 overflow-y-auto max-h-[calc(100vh-20rem)]">
-        {cards.length === 0 ? (
+      <CardContent className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-20rem)]">
+
+        {/* Cards resumo por secretária */}
+        {cards.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {cards.map(card => {
+              const urgentes = card.pendentes.filter(c => getUrgencia(c) === "urgente");
+              const maxUrgency = urgentes.length > 0 ? '#EF4444' : card.pendentes.length > 0 ? '#F59E0B' : '#22C55E';
+              return (
+                <div
+                  key={card.userId}
+                  className="rounded-lg border p-3 text-center transition-all hover:shadow-md cursor-pointer"
+                  style={{ borderTopColor: maxUrgency, borderTopWidth: '3px' }}
+                  onClick={() => navigate('/sdr-zap')}
+                >
+                  <p className="text-xs font-medium truncate">{card.nome}</p>
+                  <p className="text-2xl font-bold" style={{ color: maxUrgency }}>
+                    {card.pendentes.length}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {card.pendentes.length === 0 ? 'em dia' : `pendente${card.pendentes.length !== 1 ? 's' : ''}`}
+                    {urgentes.length > 0 && (
+                      <span className="text-destructive"> ({urgentes.length} urgente{urgentes.length !== 1 ? 's' : ''})</span>
+                    )}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    <MessageSquare className="h-2.5 w-2.5 inline mr-0.5" />
+                    {card.respondidasHoje} hoje
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Top 5 conversas sem resposta */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+            <span className="text-xs font-medium">Aguardando resposta</span>
+            {top5Urgentes.length > 0 && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                {totalPendentes}
+              </Badge>
+            )}
+          </div>
+
+          {top5Urgentes.length === 0 ? (
+            <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 dark:bg-green-950/30 rounded-lg p-3">
+              <CheckCircle2 className="h-4 w-4" />
+              Todas as conversas respondidas
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {top5Urgentes.map(conv => {
+                const urgencia = getUrgencia(conv);
+                const tempo = formatTempoSemResposta(conv.ultima_interacao);
+                const urgColor = getConversaUrgencyColor(conv.last_message_from_me, conv.ultima_interacao);
+                const responsavelNome = profiles.find(p => p.id === conv.responsavel_atual)?.nome || '';
+
+                return (
+                  <div
+                    key={conv.id}
+                    className="flex items-center justify-between text-xs cursor-pointer hover:bg-muted/50 rounded-md px-2 py-1.5 transition-colors border"
+                    style={{ borderLeftColor: urgColor, borderLeftWidth: '3px' }}
+                    onClick={() => navigate(`/sdr-zap`)}
+                  >
+                    <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                      <span className="truncate font-medium">
+                        {conv.nome_contato || conv.numero_contato}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-muted-foreground text-[10px]">{responsavelNome}</span>
+                      <span className="font-medium flex items-center gap-0.5" style={{ color: urgColor }}>
+                        <Clock className="h-3 w-3" />
+                        {tempo}
+                      </span>
+                      {urgencia === "urgente" && (
+                        <Badge variant="destructive" className="text-[9px] px-1 py-0">!</Badge>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {totalPendentes > 5 && (
+                <button
+                  className="text-[10px] text-primary hover:underline w-full text-center py-1"
+                  onClick={() => navigate('/sdr-zap')}
+                >
+                  Ver todas ({totalPendentes})
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Cards detalhados por secretária */}
+        {cards.map((card) => (
+          <div
+            key={card.userId}
+            className="rounded-lg border p-3 space-y-2"
+            style={{ borderLeftColor: card.cor, borderLeftWidth: "4px" }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: card.cor }} />
+                <span className="font-medium text-sm">{card.nome}</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <MessageSquare className="h-3 w-3" />
+                {card.respondidasHoje} hoje
+              </div>
+            </div>
+
+            {card.pendentes.length === 0 ? (
+              <p className="text-xs text-green-600">
+                <CheckCircle2 className="h-3 w-3 inline mr-1" />
+                Tudo em dia
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {card.pendentes.slice(0, 5).map((conv) => {
+                  const urgencia = getUrgencia(conv);
+                  const tempo = formatTempoSemResposta(conv.ultima_interacao);
+                  const urgColor = getConversaUrgencyColor(conv.last_message_from_me, conv.ultima_interacao);
+
+                  return (
+                    <div
+                      key={conv.id}
+                      className="flex items-center justify-between text-xs cursor-pointer hover:bg-muted/50 rounded px-1.5 py-1 transition-colors"
+                      onClick={() => navigate(`/sdr-zap`)}
+                    >
+                      <span className="truncate max-w-[60%]">
+                        {conv.nome_contato || conv.numero_contato}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="flex items-center gap-0.5" style={{ color: urgColor }}>
+                          <Clock className="h-3 w-3" />
+                          {tempo}
+                        </span>
+                        {urgencia === "urgente" && (
+                          <Badge variant="destructive" className="text-[10px] px-1 py-0">
+                            <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
+                            urgente
+                          </Badge>
+                        )}
+                        {urgencia === "atencao" && (
+                          <Badge variant="outline" className="text-[10px] px-1 py-0 text-yellow-600 border-yellow-400">
+                            atenção
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {card.pendentes.length > 5 && (
+                  <p className="text-[10px] text-muted-foreground text-center">
+                    +{card.pendentes.length - 5} mais
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="text-[10px] text-muted-foreground pt-1 border-t">
+              {card.conversasAbertas.length} aberta{card.conversasAbertas.length !== 1 ? "s" : ""}
+              {card.pendentes.length > 0 && (
+                <span className="text-destructive ml-2">
+                  {card.pendentes.length} sem resposta
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {cards.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-4">
             Nenhuma conversa aberta no momento
           </p>
-        ) : (
-          cards.map((card) => (
-            <div
-              key={card.userId}
-              className="rounded-lg border p-3 space-y-2"
-              style={{ borderLeftColor: card.cor, borderLeftWidth: "4px" }}
-            >
-              {/* Header do card */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-2.5 h-2.5 rounded-full"
-                    style={{ backgroundColor: card.cor }}
-                  />
-                  <span className="font-medium text-sm">{card.nome}</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <MessageSquare className="h-3 w-3" />
-                  {card.respondidasHoje} hoje
-                </div>
-              </div>
-
-              {/* Conversas abertas */}
-              {card.conversasAbertas.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Tudo em dia</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {card.conversasAbertas.map((conv) => {
-                    const urgencia = getUrgencia(conv);
-                    const tempo = formatTempoSemResposta(conv.ultima_interacao);
-
-                    return (
-                      <div
-                        key={conv.id}
-                        className="flex items-center justify-between text-xs cursor-pointer hover:bg-muted/50 rounded px-1.5 py-1 transition-colors"
-                        onClick={() => navigate(`/conversa/${conv.id}`)}
-                      >
-                        <span className="truncate max-w-[60%]">
-                          {conv.nome_contato || conv.numero_contato}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-muted-foreground flex items-center gap-0.5">
-                            <Clock className="h-3 w-3" />
-                            {tempo}
-                          </span>
-                          {urgencia === "urgente" && (
-                            <Badge variant="destructive" className="text-[10px] px-1 py-0">
-                              <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
-                              urgente
-                            </Badge>
-                          )}
-                          {urgencia === "atencao" && (
-                            <Badge variant="outline" className="text-[10px] px-1 py-0 text-yellow-600 border-yellow-400">
-                              atenção
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Resumo */}
-              <div className="text-[10px] text-muted-foreground pt-1 border-t">
-                {card.conversasAbertas.length} aberta{card.conversasAbertas.length !== 1 ? "s" : ""}
-                {card.conversasAbertas.filter(c => getUrgencia(c) !== "normal").length > 0 && (
-                  <span className="text-destructive ml-2">
-                    {card.conversasAbertas.filter(c => getUrgencia(c) !== "normal").length} precisa{card.conversasAbertas.filter(c => getUrgencia(c) !== "normal").length !== 1 ? "m" : ""} de atenção
-                  </span>
-                )}
-              </div>
-            </div>
-          ))
         )}
       </CardContent>
     </Card>

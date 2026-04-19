@@ -28,6 +28,7 @@ import { ReplyContext } from "@/components/ChatInput";
 import { useCalendarAction, CalendarVerifyPayload, CalendarConfirmPayload } from "@/hooks/useCalendarAction";
 import { CalendarConfirmModal } from "@/components/CalendarConfirmModal";
 import { useOverlayApps } from "@/contexts/OverlayAppsContext";
+import { getConversaUrgencyColor, getTempoSemResposta } from "@/utils/urgencyHelpers";
 
 interface Contact {
   id: string;
@@ -797,6 +798,7 @@ export default function SDRZap() {
           unread_count,
           foto_contato,
           fixada,
+          last_message_from_me,
           contacts!conversas_contact_id_fkey (
             id,
             jid,
@@ -885,7 +887,7 @@ export default function SDRZap() {
           tags: conv.tags || [],
           unread_count: conv.unread_count || 0,
           last_message_status: lastMsg?.status,
-          last_message_from_me: lastMsg?.from_me,
+          last_message_from_me: conv.last_message_from_me ?? lastMsg?.from_me ?? undefined,
           fixada: conv.fixada || false
         };
 
@@ -2524,6 +2526,8 @@ export default function SDRZap() {
                     style={{
                       backgroundColor: isSelecionada ? corInstancia : `${corInstancia}15`,
                       borderColor: corInstancia,
+                      borderLeftColor: getConversaUrgencyColor(conversa.last_message_from_me, conversa.ultima_interacao),
+                      borderLeftWidth: '4px',
                       color: isSelecionada ? '#ffffff' : '#000000'
                     }}
                   >
@@ -2662,6 +2666,14 @@ export default function SDRZap() {
                                 }}
                               >
                                 {format(new Date(conversa.ultima_interacao), "dd/MM/yy HH:mm", { locale: ptBR })}
+                              </p>
+                            )}
+                            {conversa.last_message_from_me === false && conversa.ultima_interacao && (
+                              <p
+                                className="text-[10px] font-medium truncate"
+                                style={{ color: getConversaUrgencyColor(conversa.last_message_from_me, conversa.ultima_interacao) }}
+                              >
+                                {getTempoSemResposta(conversa.ultima_interacao)} sem resposta
                               </p>
                             )}
                             <div className="flex items-center gap-1 flex-shrink-0">
@@ -2830,6 +2842,8 @@ export default function SDRZap() {
                     style={{
                       backgroundColor: isSelecionada ? corInstancia : `${corInstancia}15`,
                       borderColor: corInstancia,
+                      borderLeftColor: getConversaUrgencyColor(conversa.last_message_from_me, conversa.ultima_interacao),
+                      borderLeftWidth: '4px',
                       color: isSelecionada ? '#ffffff' : '#000000'
                     }}
                   >
@@ -2968,6 +2982,14 @@ export default function SDRZap() {
                                 }}
                               >
                                 {format(new Date(conversa.ultima_interacao), "dd/MM/yy HH:mm", { locale: ptBR })}
+                              </p>
+                            )}
+                            {conversa.last_message_from_me === false && conversa.ultima_interacao && (
+                              <p
+                                className="text-[10px] font-medium truncate"
+                                style={{ color: getConversaUrgencyColor(conversa.last_message_from_me, conversa.ultima_interacao) }}
+                              >
+                                {getTempoSemResposta(conversa.ultima_interacao)} sem resposta
                               </p>
                             )}
                             <div className="flex items-center gap-1 flex-shrink-0">

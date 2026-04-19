@@ -145,6 +145,8 @@ serve(async (req) => {
       let conversaId;
       let currentUnreadCount = 0;
       let currentTags: string[] = [];
+      const CLOSURE_PATTERNS = /^(ok|okay|obrigad[oa]|obg|vlw|valeu|blz|beleza|perfeito|combinado|certo|entendi|show|top|massa|boa|bom dia|boa tarde|boa noite|tá|ta|sim|não|nao|haha|kk|rs|kkk|👍|👌|🙏|😊|😁|❤|🤝|👏)$/i;
+      const isClosure = !isFromMe && conteudoMensagem && CLOSURE_PATTERNS.test(conteudoMensagem.trim());
 
       if (!conversaData) {
         // Criar nova conversa
@@ -164,7 +166,8 @@ serve(async (req) => {
             status: 'novo',
             ultima_mensagem: conteudoMensagem,
             ultima_interacao: new Date().toISOString(),
-            unread_count: isFromMe ? 0 : 1, // Mensagens enviadas não contam como não lidas
+            unread_count: isFromMe ? 0 : 1,
+            last_message_from_me: isFromMe ? true : (isClosure ? null : false),
             tags: tagsIniciais,
           })
           .select('id')
@@ -196,6 +199,7 @@ serve(async (req) => {
             ultima_mensagem: conteudoMensagem,
             ultima_interacao: new Date().toISOString(),
             unread_count: isFromMe ? currentUnreadCount : currentUnreadCount + 1,
+            last_message_from_me: isFromMe ? true : (isClosure ? null : false),
             tags: updatedTags,
           })
           .eq('id', conversaId);

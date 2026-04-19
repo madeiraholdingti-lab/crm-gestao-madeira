@@ -1,0 +1,261 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+.w{padding:16px 0;font-family:var(--font-sans);color:var(--color-text-primary)}
+.tabs{display:flex;gap:4px;margin-bottom:18px;flex-wrap:wrap}
+.tab{padding:6px 14px;border-radius:var(--border-radius-md);font-size:13px;cursor:pointer;border:1px solid var(--color-border-tertiary);background:var(--color-background-secondary);color:var(--color-text-secondary);transition:all .15s}
+.tab.active{background:var(--color-background-primary);color:var(--color-text-primary);border-color:var(--color-border-primary);font-weight:500}
+.panel{display:none}.panel.active{display:block}
+.sec{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--color-text-secondary);margin:16px 0 8px}
+.card{background:var(--color-background-secondary);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px;margin-bottom:8px}
+.card-title{font-size:13px;font-weight:500;margin-bottom:5px}
+.card-body{font-size:12px;color:var(--color-text-secondary);line-height:1.6}
+.quote{font-size:11px;color:var(--color-text-tertiary);font-style:italic;margin-top:6px;padding:5px 10px;border-left:2px solid var(--color-border-secondary)}
+.badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:500;margin-left:5px;vertical-align:middle}
+.b-red{background:#FCEBEB;color:#791F1F}.b-amber{background:#FAEEDA;color:#633806}
+.b-blue{background:#E6F1FB;color:#0C447C}.b-green{background:#EAF3DE;color:#27500A}
+.b-purple{background:#EEEDFE;color:#3C3489}.b-gray{background:#F1EFE8;color:#444441}
+@media(prefers-color-scheme:dark){
+.b-red{background:#501313;color:#F7C1C1}.b-amber{background:#412402;color:#FAC775}
+.b-blue{background:#042C53;color:#85B7EB}.b-green{background:#173404;color:#C0DD97}
+.b-purple{background:#26215C;color:#AFA9EC}.b-gray{background:#2C2C2A;color:#D3D1C7}}
+.need{display:flex;gap:12px;padding:12px 14px;border-radius:var(--border-radius-lg);border:1px solid var(--color-border-tertiary);background:var(--color-background-secondary);margin-bottom:8px}
+.need-num{font-size:18px;flex-shrink:0}
+.need-body{flex:1}
+.need-title{font-size:13px;font-weight:500;margin-bottom:3px}
+.need-desc{font-size:12px;color:var(--color-text-secondary);line-height:1.6}
+.need-quote{font-size:11px;color:var(--color-text-tertiary);font-style:italic;margin-top:5px;padding:4px 8px;border-left:2px solid var(--color-border-secondary)}
+.divider{height:1px;background:var(--color-border-tertiary);margin:16px 0}
+.person-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.person{padding:14px;border-radius:var(--border-radius-lg);border:1px solid var(--color-border-tertiary);background:var(--color-background-secondary)}
+.person-name{font-size:13px;font-weight:500;margin-bottom:8px}
+.person-item{font-size:12px;color:var(--color-text-secondary);line-height:1.7;padding-left:10px}
+.person-item::before{content:'• ';color:var(--color-text-tertiary)}
+.context-box{padding:12px 14px;border-radius:var(--border-radius-lg);border:1px solid var(--color-border-secondary);background:var(--color-background-secondary);margin-bottom:10px}
+.context-label{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-secondary);margin-bottom:6px}
+.context-text{font-size:12px;color:var(--color-text-primary);line-height:1.7}
+</style>
+
+<div class="w">
+<div class="tabs">
+  <div class="tab active" onclick="show('dores')">Dores raiz</div>
+  <div class="tab" onclick="show('func')">Funcionalidades</div>
+  <div class="tab" onclick="show('pessoas')">Pessoas</div>
+  <div class="tab" onclick="show('contexto')">Contexto geral</div>
+</div>
+
+<!-- DORES RAIZ -->
+<div class="panel active" id="tab-dores">
+  <div class="sec">O que o Maikon sente no dia a dia — as dores que motivam tudo</div>
+
+  <div class="need">
+    <div class="need-num">😮‍💨</div>
+    <div class="need-body">
+      <div class="need-title">Não sabe o que aconteceu enquanto operou <span class="badge b-red">dor principal</span></div>
+      <div class="need-desc">Ele passa horas em cirurgia. Quando sai, não tem visão do que a Iza e a Mariana responderam, do que ficou pendente, de quem tentou falar com ele. Descobre os problemas só quando o paciente reclama ou quando chega no fim de semana para "arrumar as coisas".</div>
+      <div class="need-quote">"Cara, o dia que eu opero ali, eu saio da cirurgia, parece que a minha vida é assim..."</div>
+    </div>
+  </div>
+
+  <div class="need">
+    <div class="need-num">😟</div>
+    <div class="need-body">
+      <div class="need-title">Medo de que as secretárias não respondam <span class="badge b-red">dor principal</span></div>
+      <div class="need-desc">Não tem como saber se a Iza ou a Mariana responderam alguém. Paciente reclama que pediu receita e não recebeu. Ele não tem visibilidade em tempo real do atendimento.</div>
+      <div class="need-quote">"Qual é o meu maior medo com secretária? Cara, é que elas não respondam."</div>
+    </div>
+  </div>
+
+  <div class="need">
+    <div class="need-num">📱</div>
+    <div class="need-body">
+      <div class="need-title">Tudo espalhado em WhatsApps separados <span class="badge b-amber">alta</span></div>
+      <div class="need-desc">Tem número pessoal (~15k contatos), número da empresa, número do consultório (novo, com IA), número dos disparos, número da Iza, número da Mariana. Cada um é uma ilha. Para ter visão do todo precisa abrir vários aplicativos.</div>
+      <div class="need-quote">"Que caísse tudo no CRM ali e a gente conseguisse até responder as pessoas."</div>
+    </div>
+  </div>
+
+  <div class="need">
+    <div class="need-num">👥</div>
+    <div class="need-body">
+      <div class="need-title">15 mil contatos sem nenhum filtro <span class="badge b-amber">alta</span></div>
+      <div class="need-desc">No número pessoal tem médicos, diretores de hospital, gestores, anestesistas, pacientes — tudo misturado, sem classificação. Para mandar mensagem só para cirurgiões cardíacos (evento de novembro/2026), hoje é impossível sem trabalho manual enorme.</div>
+      <div class="need-quote">"Poderia pegar no meu celular quem é diretor de hospital e mandar mensagem."</div>
+    </div>
+  </div>
+
+  <div class="need">
+    <div class="need-num">🔁</div>
+    <div class="need-body">
+      <div class="need-title">Trabalho manual todo final de semana <span class="badge b-amber">alta</span></div>
+      <div class="need-desc">Sábado e domingo vira o dia de "colocar as coisas em ordem". Tarefas, lembretes, organizar conversas. Cansativo e não escalável com a agenda de cirurgias.</div>
+      <div class="need-quote">"Final de semana, sábado, domingo, parece que é o dia que eu boto as coisas em ordem. Mas porra, é cansativo."</div>
+    </div>
+  </div>
+
+  <div class="need">
+    <div class="need-num">🤖</div>
+    <div class="need-body">
+      <div class="need-title">Agente pós-op isolado do CRM <span class="badge b-blue">média</span></div>
+      <div class="need-desc">Tem um robô (n8n) monitorando pacientes pós-operatórios via WhatsApp. Quando algo é urgente, manda mensagem no celular pessoal dele — que se perde. Os dados dos pacientes ficam em planilha do Google, separados do CRM.</div>
+    </div>
+  </div>
+</div>
+
+<!-- FUNCIONALIDADES -->
+<div class="panel" id="tab-func">
+  <div class="sec">O que ele pediu explicitamente</div>
+
+  <div class="card">
+    <div class="card-title">👁️ Visibilidade do atendimento em tempo real</div>
+    <div class="card-body">Abrir o CRM e em 10 segundos saber: quem respondeu hoje, quem está com conversa aberta há horas, se tem algo urgente. Um resumo em linguagem normal gerado por IA + cards com status de cada secretária. Alertas quando alguém fica mais de 2-4h sem responder.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🔔 Lembrete por conversa (follow-up)</div>
+    <div class="card-body">Dentro de qualquer conversa, poder marcar: "me lembra disso em 3 dias". Receber notificação no CRM e no WhatsApp na hora certa. Feature mais pedida — resolve o medo de perder o timing de retornar alguém importante.</div>
+    <div class="quote">"Tem lembrete para daqui uma semana eu responder ele."</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🏷️ Classificar contatos por perfil profissional</div>
+    <div class="card-body">Cada contato ter um perfil: médico, cirurgião cardíaco, anestesista, diretor de hospital, gestor, paciente, enfermeiro, patrocinador, fornecedor. IA sugere automaticamente. Ele confirma ou corrige. Objetivo imediato: filtrar todos os cirurgiões cardíacos para o evento de novembro/2026.</div>
+    <div class="quote">"Vou entendendo o que o cara é, qual é o perfil da pessoa, e vou classificando."</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🎯 Disparos segmentados por perfil</div>
+    <div class="card-body">Na hora de criar uma campanha, poder escolher: "enviar só para cirurgiões cardíacos" ou "só para diretores de hospital". Hoje o filtro existe na tela mas não funciona — é um bug.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📲 Hub unificado de todos os WhatsApps</div>
+    <div class="card-body">Consultório, empresa, Iza, Mariana — tudo num painel só. Com filtro por número quando quiser separar. Badge em cada conversa indicando de qual número veio. Roteamento automático: médicos/diretores → Iza, pacientes → Mariana.</div>
+    <div class="quote">"Preciso que a Iza responda diretores de hospital e a Mariana os pacientes."</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📅 Agenda dentro do CRM</div>
+    <div class="card-body">Ver a agenda do consultório sem precisar abrir o Google Calendar separado. A Iza poder adicionar e editar compromissos. Receber no WhatsApp: agenda da manhã (7h) + resumo do final do dia (18h).</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">✅ Tarefas sem burocracia</div>
+    <div class="card-body">Criar tarefa direto de uma conversa com 1 clique. Atribuir para Iza ou Mariana. Elas recebem notificação no WhatsApp. Ele quer poder escrever "Iza precisa enviar receita pra João até sexta" e o sistema entender e criar automaticamente.</div>
+    <div class="quote">"Eu queria botar ali nos lembretes... fui lá e assumi a tarefa, né?"</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🏥 Integrar o robô de pós-op com o CRM</div>
+    <div class="card-body">Quando o agente pós-op identificar algo urgente, criar conversa no SDR Zap em vez de só mandar WA no celular pessoal. Pacientes pós-op virarem contatos classificados. Dúvidas da planilha Google virarem tarefas para a Iza.</div>
+  </div>
+
+  <div class="divider"></div>
+  <div class="sec">O que a Iza pediu (feedback direto)</div>
+
+  <div class="card">
+    <div class="card-title">Pedidos da Iza</div>
+    <div class="card-body">
+      • Agenda centralizada dentro do CRM (sem depender do Google Calendar)<br>
+      • Indicadores de produtividade por secretária — quantas tarefas criou/concluiu por período<br>
+      • Horário visível nas tarefas de lembrete (hoje só aparece a data)<br>
+      • Revisão visual do SDR Zap — 3 colunas apertadas, difícil de enxergar as conversas
+    </div>
+  </div>
+</div>
+
+<!-- PESSOAS -->
+<div class="panel" id="tab-pessoas">
+  <div class="sec">Quem usa o sistema e o que cada um precisa</div>
+  <div class="person-grid">
+    <div class="person">
+      <div class="person-name">👨‍⚕️ Dr. Maikon Madeira</div>
+      <div class="person-item">Cirurgião cardíaco — fica horas indisponível</div>
+      <div class="person-item">Quer visibilidade sem precisar abrir 5 apps</div>
+      <div class="person-item">~15k contatos no número pessoal</div>
+      <div class="person-item">Responde dúvidas pós-op pelo celular pessoal (quer mudar isso)</div>
+      <div class="person-item">Faz trabalho manual nos fins de semana</div>
+      <div class="person-item">Pensa em política médica e eventos da área</div>
+    </div>
+    <div class="person">
+      <div class="person-name">👩‍💼 Iza (Isadora)</div>
+      <div class="person-item">Secretária clínica — mais antiga, mais contexto</div>
+      <div class="person-item">Recebe escalonamentos do agente pós-op</div>
+      <div class="person-item">Atende contatos profissionais (médicos, diretores)</div>
+      <div class="person-item">Pediu agenda no CRM e indicadores</div>
+      <div class="person-item">Reclamou do layout do SDR Zap</div>
+    </div>
+    <div class="person">
+      <div class="person-name">👩‍💼 Mariana</div>
+      <div class="person-item">Secretária recém contratada</div>
+      <div class="person-item">Atende pacientes e pós-op</div>
+      <div class="person-item">Ainda em processo de onboarding no sistema</div>
+    </div>
+    <div class="person">
+      <div class="person-name">🤖 Agente n8n (pós-op)</div>
+      <div class="person-item">Roda em VPS separado (Hostinger)</div>
+      <div class="person-item">Usa Z-API + OpenAI + Google Sheets</div>
+      <div class="person-item">Monitora pacientes após cirurgia</div>
+      <div class="person-item">Hoje é uma ilha — não fala com o CRM</div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+  <div class="sec">Números de WhatsApp em jogo</div>
+  <div class="card">
+    <div class="card-body">
+      <b>Número pessoal do Dr. Maikon</b> — ~15k contatos, rede médica, nunca vai para ninguém<br>
+      <b>Número da empresa</b> — contato B2B e profissional<br>
+      <b>Número do consultório</b> — novo, vai ter IA respondendo pacientes<br>
+      <b>Número dos disparos</b> — campanhas em massa<br>
+      <b>Número da Iza</b> — atendimento clínico<br>
+      <b>Número da Mariana</b> — atendimento de pacientes<br>
+      <b>Número pós-op (Z-API)</b> — robô n8n monitorando cirurgias
+    </div>
+  </div>
+</div>
+
+<!-- CONTEXTO -->
+<div class="panel" id="tab-contexto">
+  <div class="sec">O que já funciona hoje</div>
+  <div class="context-box">
+    <div class="context-label">Sistema atual</div>
+    <div class="context-text">
+      SDR Zap (conversas WA), Task Flow (tarefas), Disparos em Massa, Contatos, Agenda Google Calendar, Relatórios, Gestão de usuários. Stack: React + Supabase + Evolution API multi-instância + n8n.
+    </div>
+  </div>
+
+  <div class="sec">O que está custando caro de forma anormal</div>
+  <div class="context-box">
+    <div class="context-label">Problema de custo identificado</div>
+    <div class="context-text">
+      O Supabase estava consumindo ~$10/dia com 3 usuários. Causas identificadas e parcialmente corrigidas: cron de disparos rodando a cada 1 minuto (corrigido para 15min), webhooks do Evolution API disparando eventos desnecessários em todas as instâncias (corrigido), edge function n8n-inbound-webhook fazendo 8-19 operações no banco por mensagem (parcialmente corrigido). Monitoramento em andamento.
+    </div>
+  </div>
+
+  <div class="sec">Decisão pendente importante</div>
+  <div class="context-box">
+    <div class="context-label">Everton vs Raul</div>
+    <div class="context-text">
+      O Everton (dev original) ainda mexe no projeto. O Maikon precisa decidir: continuar com ele para as melhorias, ou trabalhar com o Raul. Dois devs mexendo no mesmo projeto ao mesmo tempo gera conflitos. Foi sugerido que o Everton receba um escopo fechado com prazo para entregar — a planilha de sprints foi criada para isso.
+    </div>
+  </div>
+
+  <div class="sec">Caso de uso estratégico mais urgente</div>
+  <div class="context-box">
+    <div class="context-label">Evento de novembro/2026</div>
+    <div class="context-text">
+      Dr. Maikon vai organizar um evento de cirurgia cardíaca em novembro. Quer disparar convite para todos os cirurgiões cardíacos e patrocinadores da sua rede. Para isso funcionar, precisa que os 15k contatos do número pessoal estejam importados e classificados por perfil no CRM — o que ainda não aconteceu.
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+function show(name){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>

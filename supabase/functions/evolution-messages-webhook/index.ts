@@ -898,12 +898,15 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       const isFromContact = !Boolean(data.key.fromMe);
+      const CLOSURE_PATTERNS = /^(ok|okay|obrigad[oa]|obg|vlw|valeu|blz|beleza|perfeito|combinado|certo|entendi|show|top|massa|boa|bom dia|boa tarde|boa noite|tá|ta|sim|não|nao|haha|kk|rs|kkk|👍|👌|🙏|😊|😁|❤|🤝|👏)$/i;
+      const isClosure = isFromContact && messageText && CLOSURE_PATTERNS.test(messageText.trim());
       const updateData: any = {
         numero_whatsapp_id: numeroWhatsappId,
         current_instance_id: instanciaWhatsappId,
         ultima_mensagem: messageText,
         ultima_interacao: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        last_message_from_me: isFromContact ? (isClosure ? null : false) : true,
       };
 
       // Incrementar unread_count se mensagem é do contato
@@ -939,7 +942,8 @@ Deno.serve(async (req) => {
             ultima_mensagem: messageText,
             ultima_interacao: new Date().toISOString(),
             status: 'novo',
-            unread_count: isFromContact ? 1 : 0
+            unread_count: isFromContact ? 1 : 0,
+            last_message_from_me: isFromContact ? (isClosure ? null : false) : true,
           })
           .select()
           .single();

@@ -379,6 +379,7 @@ export type Database = {
           foto_contato: string | null
           id: string
           instancia_id: string | null
+          last_message_from_me: boolean | null
           nome_contato: string | null
           numero_contato: string
           numero_whatsapp_id: string | null
@@ -403,6 +404,7 @@ export type Database = {
           foto_contato?: string | null
           id?: string
           instancia_id?: string | null
+          last_message_from_me?: boolean | null
           nome_contato?: string | null
           numero_contato: string
           numero_whatsapp_id?: string | null
@@ -427,6 +429,7 @@ export type Database = {
           foto_contato?: string | null
           id?: string
           instancia_id?: string | null
+          last_message_from_me?: boolean | null
           nome_contato?: string | null
           numero_contato?: string
           numero_whatsapp_id?: string | null
