@@ -69,13 +69,20 @@ serve(async (req) => {
       porResponsavel.set(nome, grupo);
     }
 
-    // 3. Tarefas atrasadas
-    const { data: tarefasAtrasadas } = await supabase
+    // 3. Tarefas atrasadas — excluir as que estão em colunas de "Finalizada"/"Concluída"
+    //    Bug anterior: contava tasks finalizadas com prazo no passado como "atrasadas"
+    //    (ex: 190 total, só 1 realmente pendente). JOIN + filtro por nome da coluna.
+    const { data: tarefasAtrasadasRaw } = await supabase
       .from("task_flow_tasks")
-      .select("id, titulo, prazo")
+      .select("id, titulo, prazo, column_id, task_flow_columns!task_flow_tasks_column_id_fkey(nome)")
       .is("deleted_at", null)
       .lt("prazo", agora.toISOString())
       .not("prazo", "is", null);
+
+    const tarefasAtrasadas = (tarefasAtrasadasRaw || []).filter((t: any) => {
+      const nomeCol = (t.task_flow_columns?.nome || '').toLowerCase();
+      return !nomeCol.includes('finaliz') && !nomeCol.includes('conclu');
+    });
 
     // 4. Eventos da agenda de amanhã
     const amanha = new Date(agora);
