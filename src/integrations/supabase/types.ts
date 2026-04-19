@@ -479,6 +479,13 @@ export type Database = {
             referencedRelation: "instancias_whatsapp"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "conversas_responsavel_atual_fkey"
+            columns: ["responsavel_atual"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
         ]
       }
       envios_disparo: {
@@ -1869,6 +1876,7 @@ export type Database = {
         Row: {
           audio_url: string | null
           column_id: string
+          conversa_id: string | null
           created_at: string
           criado_por_id: string | null
           data_retorno: string | null
@@ -1887,6 +1895,7 @@ export type Database = {
         Insert: {
           audio_url?: string | null
           column_id: string
+          conversa_id?: string | null
           created_at?: string
           criado_por_id?: string | null
           data_retorno?: string | null
@@ -1905,6 +1914,7 @@ export type Database = {
         Update: {
           audio_url?: string | null
           column_id?: string
+          conversa_id?: string | null
           created_at?: string
           criado_por_id?: string | null
           data_retorno?: string | null
@@ -1926,6 +1936,13 @@ export type Database = {
             columns: ["column_id"]
             isOneToOne: false
             referencedRelation: "task_flow_columns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_flow_tasks_conversa_id_fkey"
+            columns: ["conversa_id"]
+            isOneToOne: false
+            referencedRelation: "conversas"
             referencedColumns: ["id"]
           },
           {
