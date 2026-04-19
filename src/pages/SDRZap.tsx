@@ -159,6 +159,7 @@ export default function SDRZap() {
   const [sincronizandoFotos, setSincronizandoFotos] = useState(false);
   const [sincronizandoNomes, setSincronizandoNomes] = useState(false);
   const [sincronizandoHistorico, setSincronizandoHistorico] = useState(false);
+  const [loadingMensagens, setLoadingMensagens] = useState(false);
   const [carregandoMaisHistorico, setCarregandoMaisHistorico] = useState(false);
   const [historicoPage, setHistoricoPage] = useState(1);
   const [historicoTotalPages, setHistoricoTotalPages] = useState<number | null>(null);
@@ -272,6 +273,12 @@ export default function SDRZap() {
         return;
       }
 
+      // Limpa mensagens antigas e ativa o spinner imediatamente para não
+      // deixar a conversa anterior visível enquanto a nova carrega.
+      setMensagens([]);
+      setMessageReactions({});
+      setLoadingMensagens(true);
+
       const conversaId = conversaSelecionada.id;
       const contactId = conversaSelecionada.contact.id;
       // Usar sempre o ID REAL da instância do WhatsApp (uuid), mesmo para instâncias deletadas
@@ -329,11 +336,13 @@ export default function SDRZap() {
       if (error) {
         console.error('[SDRZap] Erro ao buscar mensagens:', error);
         toast.error("Erro ao carregar mensagens");
+        setLoadingMensagens(false);
         return;
       }
 
       console.log('[SDRZap] Mensagens carregadas (DB):', data?.length || 0);
       setMensagens(data || []);
+      setLoadingMensagens(false);
 
       // 2. SINCRONIZAÇÃO EM BACKGROUND com Evolution API (não bloqueia a UI)
       //    Se retornar mensagens novas, faz re-fetch silencioso para atualizar.
@@ -2010,7 +2019,9 @@ export default function SDRZap() {
 
   // Flag derivada: conversa aberta foi respondida por mais de uma instância?
   // Usada para decidir se mostra o header "quem respondeu" acima de cada bolha.
-  // DEVE ficar ANTES de qualquer early return para preservar a ordem dos hooks.
+  // Em conversa 1-pra-1 com uma única instância respondendo, o header é ruído.
+  // DEVE ficar ANTES do `if (loading) return` para preservar a ordem dos hooks
+  // (senão React dispara "Rendered more hooks than during the previous render").
   const conversaTemMultiplasInstancias = useMemo(() => {
     const instanciasEnviadoras = new Set<string>();
     for (const m of mensagens) {
@@ -2510,8 +2521,15 @@ export default function SDRZap() {
 
         {/* Mensagens - ÁREA COM SCROLL (fundo estilo WhatsApp) */}
         <div className="flex-1 overflow-y-auto p-4 bg-[#EFEAE2] dark:bg-[#0B141A]">
+          {/* Loading centralizado enquanto troca de conversa (antes das mensagens renderizarem) */}
+          {conversaSelecionada && loadingMensagens && mensagens.length === 0 && (
+            <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <span className="text-sm">Carregando mensagens...</span>
+            </div>
+          )}
           <div className="space-y-4">
-            {conversaSelecionada ? (
+            {conversaSelecionada && !(loadingMensagens && mensagens.length === 0) ? (
               <>
                 {/* Botão para carregar mais histórico */}
                 <div className="flex justify-center mb-4">
