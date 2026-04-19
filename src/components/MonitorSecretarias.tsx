@@ -71,7 +71,6 @@ export const MonitorSecretarias = () => {
         .from("conversas")
         .select("id, responsavel_atual, ultima_interacao, ultima_mensagem, numero_contato, nome_contato, status, last_message_from_me")
         .in("status", ["novo", "Aguardando Contato", "Em Atendimento"])
-        .not("responsavel_atual", "is", null)
         .order("ultima_interacao", { ascending: true })
         .limit(200);
 
@@ -149,7 +148,7 @@ export const MonitorSecretarias = () => {
 
   const top5Urgentes = useMemo(() => {
     return conversas
-      .filter(c => c.last_message_from_me === false && c.responsavel_atual)
+      .filter(c => c.last_message_from_me === false)
       .sort((a, b) => new Date(a.ultima_interacao || 0).getTime() - new Date(b.ultima_interacao || 0).getTime())
       .slice(0, 5);
   }, [conversas]);
@@ -262,7 +261,7 @@ export const MonitorSecretarias = () => {
                       </span>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-muted-foreground text-[10px]">{responsavelNome}</span>
+                      <span className="text-muted-foreground text-[10px]">{responsavelNome || 'Sem atribuição'}</span>
                       <span className="font-medium flex items-center gap-0.5" style={{ color: urgColor }}>
                         <Clock className="h-3 w-3" />
                         {tempo}
