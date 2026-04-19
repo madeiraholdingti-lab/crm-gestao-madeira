@@ -608,11 +608,14 @@ export type Database = {
           data_hora_fim: string
           data_hora_inicio: string
           descricao: string | null
+          google_account_id: string | null
           google_event_id: string | null
           id: string
           medico_id: string
+          origem: string
           paciente_id: string | null
           status: string
+          timezone: string
           tipo_evento: string
           titulo: string
           updated_at: string
@@ -622,11 +625,14 @@ export type Database = {
           data_hora_fim: string
           data_hora_inicio: string
           descricao?: string | null
+          google_account_id?: string | null
           google_event_id?: string | null
           id?: string
           medico_id: string
+          origem?: string
           paciente_id?: string | null
           status?: string
+          timezone?: string
           tipo_evento?: string
           titulo: string
           updated_at?: string
@@ -636,16 +642,80 @@ export type Database = {
           data_hora_fim?: string
           data_hora_inicio?: string
           descricao?: string | null
+          google_account_id?: string | null
           google_event_id?: string | null
           id?: string
           medico_id?: string
+          origem?: string
           paciente_id?: string | null
           status?: string
+          timezone?: string
           tipo_evento?: string
           titulo?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "eventos_agenda_google_account_fkey"
+            columns: ["google_account_id"]
+            isOneToOne: false
+            referencedRelation: "google_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      google_accounts: {
+        Row: {
+          access_token_encrypted: string | null
+          ativo: boolean
+          created_at: string
+          email: string
+          expires_at: string | null
+          id: string
+          last_sync_at: string | null
+          last_sync_error: string | null
+          refresh_token_encrypted: string
+          scopes: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token_encrypted?: string | null
+          ativo?: boolean
+          created_at?: string
+          email: string
+          expires_at?: string | null
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          refresh_token_encrypted: string
+          scopes?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token_encrypted?: string | null
+          ativo?: boolean
+          created_at?: string
+          email?: string
+          expires_at?: string | null
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          refresh_token_encrypted?: string
+          scopes?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_accounts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       historico_numero_instancia: {
         Row: {
@@ -2022,6 +2092,17 @@ export type Database = {
         Returns: string
       }
       cleanup_deleted_tasks: { Args: never; Returns: undefined }
+      get_active_google_accounts_decrypted: {
+        Args: { key: string }
+        Returns: {
+          access_token: string
+          email: string
+          expires_at: string
+          id: string
+          refresh_token: string
+          user_id: string
+        }[]
+      }
       get_current_user_profile: {
         Args: never
         Returns: {
@@ -2082,6 +2163,27 @@ export type Database = {
           p_motivo?: string
           p_nova_instancia_id: string
           p_numero: string
+        }
+        Returns: string
+      }
+      update_google_account_tokens: {
+        Args: {
+          p_access_token: string
+          p_account_id: string
+          p_encryption_key: string
+          p_expires_at: string
+        }
+        Returns: undefined
+      }
+      upsert_google_account: {
+        Args: {
+          p_access_token: string
+          p_email: string
+          p_encryption_key: string
+          p_expires_at: string
+          p_refresh_token: string
+          p_scopes: string
+          p_user_id: string
         }
         Returns: string
       }

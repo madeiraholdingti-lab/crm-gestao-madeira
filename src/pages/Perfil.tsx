@@ -7,9 +7,11 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { User, Mail, Phone, Shield, Save, Settings } from "lucide-react";
+import { User, Mail, Phone, Shield, Save, Settings, Calendar, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useGoogleAccounts } from "@/hooks/useGoogleAccounts";
+import { GoogleAccountsList } from "@/components/GoogleAccountsList";
 
 interface InstanciaWhatsApp {
   id: string;
@@ -40,6 +42,7 @@ const CORES_DISPONIVEIS = [
 
 export default function Perfil() {
   const { profile, loading: profileLoading } = useCurrentUser();
+  const { connect: connectGoogle } = useGoogleAccounts();
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
   const [corPerfil, setCorPerfil] = useState("");
@@ -47,6 +50,25 @@ export default function Perfil() {
   const [instancias, setInstancias] = useState<InstanciaWhatsApp[]>([]);
   const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
+  const [conectandoGoogle, setConectandoGoogle] = useState(false);
+
+  // Processa retorno do OAuth Google (redirect do callback com ?google_status=...)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("google_status");
+    if (!status) return;
+
+    if (status === "connected") {
+      const email = params.get("email") || "";
+      toast.success(`Conta ${email} conectada com sucesso`);
+    } else if (status === "error") {
+      const reason = params.get("reason") || "desconhecido";
+      toast.error(`Falha ao conectar Google: ${reason}`);
+    }
+
+    // Remove query params sem recarregar
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
 
   useEffect(() => {
     if (profile) {
@@ -321,6 +343,43 @@ export default function Perfil() {
                 {saving ? "Salvando..." : "Salvar Alterações"}
               </Button>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Card Google Calendar — ocupa largura toda abaixo do grid superior */}
+        <Card className="md:col-span-3">
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-primary" />
+                  Contas Google Calendar
+                </CardTitle>
+                <CardDescription>
+                  Sincroniza automaticamente os eventos das suas agendas Google no CRM.
+                  Você pode conectar múltiplas contas.
+                </CardDescription>
+              </div>
+              <Button
+                onClick={async () => {
+                  setConectandoGoogle(true);
+                  try {
+                    await connectGoogle();
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Erro ao iniciar OAuth");
+                    setConectandoGoogle(false);
+                  }
+                }}
+                disabled={conectandoGoogle}
+                size="sm"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                {conectandoGoogle ? "Abrindo..." : "Conectar nova conta"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <GoogleAccountsList />
           </CardContent>
         </Card>
       </div>
