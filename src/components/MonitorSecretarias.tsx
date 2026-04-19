@@ -18,12 +18,32 @@ interface Conversa {
   nome_contato: string | null;
   status: string;
   last_message_from_me: boolean | null;
+  tags: string[] | null;
+  status_qualificacao: string | null;
+  contact?: {
+    name: string | null;
+    perfil_profissional: string | null;
+  } | null;
 }
 
 interface Profile {
   id: string;
   nome: string;
   cor_perfil: string;
+}
+
+/** Dias máximos que uma pendência permanece no Monitor antes de virar "lixo histórico". */
+const CUTOFF_HISTORICO_DIAS = 30;
+
+/** Toggle visual: "hoje" = só pendentes do dia corrente, "historico" = dos últimos 30 dias. */
+type ViewMode = "hoje" | "historico";
+
+/** Trunca texto pra preview curto, preservando palavra inteira. */
+function truncatePreview(texto: string | null | undefined, max = 60): string {
+  if (!texto) return '';
+  const limpo = texto.replace(/\s+/g, ' ').trim();
+  if (limpo.length <= max) return limpo;
+  return limpo.slice(0, max).trimEnd() + '…';
 }
 
 interface SecretariaCard {
@@ -63,15 +83,46 @@ export const MonitorSecretarias = () => {
   const [conversas, setConversas] = useState<Conversa[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<ViewMode>("hoje");
   const navigate = useNavigate();
+
+  /**
+   * Filtra conversas pendentes de resposta conforme a view ativa.
+   * - "hoje": só pendentes com última interação dentro do dia corrente.
+   * - "historico": pendentes dos últimos CUTOFF_HISTORICO_DIAS dias
+   *   (mais antigas nem vêm do banco — cutoff no fetch).
+   * Em ambos os casos: só conversas onde last_message_from_me === false
+   * (cliente aguardando resposta nossa).
+   */
+  const pendentesFiltradas = useMemo(() => {
+    const inicioHoje = new Date();
+    inicioHoje.setHours(0, 0, 0, 0);
+
+    return conversas.filter(c => {
+      if (c.last_message_from_me !== false) return false;
+      if (!c.ultima_interacao) return false;
+      if (view === "hoje" && new Date(c.ultima_interacao) < inicioHoje) return false;
+      return true;
+    });
+  }, [conversas, view]);
 
   const fetchData = async () => {
     try {
+      // Cutoff: ignorar conversas há mais de CUTOFF_HISTORICO_DIAS (considera lixo).
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - CUTOFF_HISTORICO_DIAS);
+
       const { data: conversasData } = await supabase
         .from("conversas")
-        .select("id, responsavel_atual, ultima_interacao, ultima_mensagem, numero_contato, nome_contato, status, last_message_from_me")
+        .select(`
+          id, responsavel_atual, ultima_interacao, ultima_mensagem,
+          numero_contato, nome_contato, status, last_message_from_me,
+          tags, status_qualificacao,
+          contact:contacts!conversas_contact_id_fkey(name, perfil_profissional)
+        `)
         .in("status", ["novo", "Aguardando Contato", "Em Atendimento"])
-        .order("ultima_interacao", { ascending: true })
+        .gte("ultima_interacao", cutoff.toISOString())
+        .order("ultima_interacao", { ascending: false })
         .limit(200);
 
       const { data: profilesData } = await supabase
@@ -79,7 +130,7 @@ export const MonitorSecretarias = () => {
         .select("id, nome, cor_perfil")
         .eq("ativo", true);
 
-      setConversas(conversasData || []);
+      setConversas((conversasData || []) as unknown as Conversa[]);
       setProfiles(profilesData || []);
     } catch (err) {
       console.error("[MonitorSecretarias] Erro ao buscar dados:", err);
@@ -104,12 +155,21 @@ export const MonitorSecretarias = () => {
     const inicioHoje = new Date();
     inicioHoje.setHours(0, 0, 0, 0);
 
+    // Agrupar TODAS as conversas do range por responsável (pra contagem total "abertas").
+    // Pendentes já foram filtradas pela view no `pendentesFiltradas`.
     const grupos = new Map<string, Conversa[]>();
     for (const conv of conversas) {
       if (!conv.responsavel_atual) continue;
       const lista = grupos.get(conv.responsavel_atual) || [];
       lista.push(conv);
       grupos.set(conv.responsavel_atual, lista);
+    }
+    const pendentesPorUser = new Map<string, Conversa[]>();
+    for (const conv of pendentesFiltradas) {
+      if (!conv.responsavel_atual) continue;
+      const lista = pendentesPorUser.get(conv.responsavel_atual) || [];
+      lista.push(conv);
+      pendentesPorUser.set(conv.responsavel_atual, lista);
     }
 
     const isSecretaria = currentUser?.role === "secretaria_medica";
@@ -122,7 +182,7 @@ export const MonitorSecretarias = () => {
       const profile = profileMap.get(userId);
       if (!profile) continue;
 
-      const pendentes = convs.filter(c => c.last_message_from_me === false);
+      const pendentes = pendentesPorUser.get(userId) || [];
       const respondidasHoje = conversas.filter(c =>
         c.responsavel_atual === userId &&
         c.ultima_interacao &&
@@ -144,16 +204,17 @@ export const MonitorSecretarias = () => {
       const urgB = b.pendentes.filter(c => getUrgencia(c) === "urgente").length;
       return urgB - urgA;
     });
-  }, [conversas, profiles, currentUser]);
+  }, [conversas, pendentesFiltradas, profiles, currentUser]);
 
-  const top5Urgentes = useMemo(() => {
-    return conversas
-      .filter(c => c.last_message_from_me === false)
+  // Top pendentes ordenadas pela mais antiga sem resposta (urgência temporal).
+  // Usa pendentesFiltradas que já respeita o toggle Hoje/Histórico + cutoff.
+  const topPendentes = useMemo(() => {
+    return [...pendentesFiltradas]
       .sort((a, b) => new Date(a.ultima_interacao || 0).getTime() - new Date(b.ultima_interacao || 0).getTime())
-      .slice(0, 5);
-  }, [conversas]);
+      .slice(0, view === "hoje" ? 8 : 5);
+  }, [pendentesFiltradas, view]);
 
-  const totalPendentes = conversas.filter(c => c.last_message_from_me === false).length;
+  const totalPendentes = pendentesFiltradas.length;
 
   if (loading) {
     return (
@@ -176,16 +237,44 @@ export const MonitorSecretarias = () => {
   return (
     <Card className="h-full overflow-hidden">
       <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b py-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <CardTitle className="flex items-center gap-2 text-base">
             <Users className="h-4 w-4" />
             Monitor de Atendimento
           </CardTitle>
-          {totalPendentes > 0 && (
-            <Badge variant="destructive" className="text-xs">
-              {totalPendentes} pendente{totalPendentes !== 1 ? "s" : ""}
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Toggle Hoje / Histórico */}
+            <div className="inline-flex rounded-md border overflow-hidden text-[11px]">
+              <button
+                type="button"
+                onClick={() => setView("hoje")}
+                className={`px-2.5 py-1 transition-colors ${
+                  view === "hoje"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-transparent text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                Hoje
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("historico")}
+                className={`px-2.5 py-1 transition-colors border-l ${
+                  view === "historico"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-transparent text-muted-foreground hover:bg-muted"
+                }`}
+                title={`Últimos ${CUTOFF_HISTORICO_DIAS} dias`}
+              >
+                Histórico
+              </button>
+            </div>
+            {totalPendentes > 0 && (
+              <Badge variant="destructive" className="text-xs">
+                {totalPendentes} pendente{totalPendentes !== 1 ? "s" : ""}
+              </Badge>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-20rem)]">
@@ -223,57 +312,100 @@ export const MonitorSecretarias = () => {
           </div>
         )}
 
-        {/* Top 5 conversas sem resposta */}
+        {/* Top conversas sem resposta — enriquecidas */}
         <div>
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-            <span className="text-xs font-medium">Aguardando resposta</span>
-            {top5Urgentes.length > 0 && (
+            <span className="text-xs font-medium">
+              {view === "hoje" ? "Aguardando resposta hoje" : `Pendentes (últimos ${CUTOFF_HISTORICO_DIAS} dias)`}
+            </span>
+            {topPendentes.length > 0 && (
               <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                 {totalPendentes}
               </Badge>
             )}
           </div>
 
-          {top5Urgentes.length === 0 ? (
+          {topPendentes.length === 0 ? (
             <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 dark:bg-green-950/30 rounded-lg p-3">
               <CheckCircle2 className="h-4 w-4" />
-              Todas as conversas respondidas
+              {view === "hoje" ? "Nenhuma pendência hoje — todos responderam ✓" : "Nada pendente no período"}
             </div>
           ) : (
-            <div className="space-y-1">
-              {top5Urgentes.map(conv => {
+            <div className="space-y-1.5">
+              {topPendentes.map(conv => {
                 const urgencia = getUrgencia(conv);
                 const tempo = formatTempoSemResposta(conv.ultima_interacao);
                 const urgColor = getConversaUrgencyColor(conv.last_message_from_me, conv.ultima_interacao);
-                const responsavelNome = profiles.find(p => p.id === conv.responsavel_atual)?.nome || '';
+                const resp = profiles.find(p => p.id === conv.responsavel_atual);
+                const responsavelNome = resp?.nome || 'Sem atribuição';
+                const responsavelCor = resp?.cor_perfil || '#9CA3AF';
+                const nomeContato = conv.contact?.name || conv.nome_contato || conv.numero_contato;
+                const perfil = conv.contact?.perfil_profissional;
+                const preview = truncatePreview(conv.ultima_mensagem, 70);
+                // Tags / qualificação como "tema" visível (quando populado por IA futura)
+                const tema = conv.status_qualificacao
+                  || (conv.tags && conv.tags.length > 0 ? conv.tags[0] : null);
 
                 return (
                   <div
                     key={conv.id}
-                    className="flex items-center justify-between text-xs cursor-pointer hover:bg-muted/50 rounded-md px-2 py-1.5 transition-colors border"
+                    className="text-xs cursor-pointer hover:bg-muted/50 rounded-md px-2 py-2 transition-colors border"
                     style={{ borderLeftColor: urgColor, borderLeftWidth: '3px' }}
                     onClick={() => navigate(`/sdr-zap`)}
                   >
-                    <div className="flex items-center gap-2 truncate flex-1 min-w-0">
-                      <span className="truncate font-medium">
-                        {conv.nome_contato || conv.numero_contato}
-                      </span>
+                    {/* Linha 1: nome + metadata direita (tempo, responsável, urgência) */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <span className="truncate font-medium">{nomeContato}</span>
+                        {perfil && (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] px-1 py-0 h-4 border-violet-400 text-violet-700 bg-violet-50 flex-shrink-0"
+                          >
+                            {perfil}
+                          </Badge>
+                        )}
+                        {tema && (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] px-1 py-0 h-4 flex-shrink-0"
+                          >
+                            {tema}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span
+                          className="text-[10px] flex items-center gap-1"
+                          style={{ color: responsavelCor }}
+                          title={`Responsável: ${responsavelNome}`}
+                        >
+                          <span
+                            className="inline-block w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: responsavelCor }}
+                          />
+                          {responsavelNome}
+                        </span>
+                        <span className="font-medium flex items-center gap-0.5" style={{ color: urgColor }}>
+                          <Clock className="h-3 w-3" />
+                          {tempo}
+                        </span>
+                        {urgencia === "urgente" && (
+                          <Badge variant="destructive" className="text-[9px] px-1 py-0">!</Badge>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-muted-foreground text-[10px]">{responsavelNome || 'Sem atribuição'}</span>
-                      <span className="font-medium flex items-center gap-0.5" style={{ color: urgColor }}>
-                        <Clock className="h-3 w-3" />
-                        {tempo}
-                      </span>
-                      {urgencia === "urgente" && (
-                        <Badge variant="destructive" className="text-[9px] px-1 py-0">!</Badge>
-                      )}
-                    </div>
+                    {/* Linha 2: preview da última mensagem (contexto pra Maikon decidir rápido) */}
+                    {preview && (
+                      <p className="text-[11px] text-muted-foreground truncate mt-1 pl-0.5">
+                        {preview}
+                      </p>
+                    )}
                   </div>
                 );
               })}
-              {totalPendentes > 5 && (
+              {totalPendentes > topPendentes.length && (
                 <button
                   className="text-[10px] text-primary hover:underline w-full text-center py-1"
                   onClick={() => navigate('/sdr-zap')}
