@@ -1954,11 +1954,13 @@ export type Database = {
           deleted_by: string | null
           descricao: string | null
           id: string
+          notificado_em: string | null
           ordem: number
           origem: string | null
           prazo: string | null
           responsavel_id: string | null
           resumo: string | null
+          tipo: string
           titulo: string
           updated_at: string
         }
@@ -1973,11 +1975,13 @@ export type Database = {
           deleted_by?: string | null
           descricao?: string | null
           id?: string
+          notificado_em?: string | null
           ordem?: number
           origem?: string | null
           prazo?: string | null
           responsavel_id?: string | null
           resumo?: string | null
+          tipo?: string
           titulo: string
           updated_at?: string
         }
@@ -1992,11 +1996,13 @@ export type Database = {
           deleted_by?: string | null
           descricao?: string | null
           id?: string
+          notificado_em?: string | null
           ordem?: number
           origem?: string | null
           prazo?: string | null
           responsavel_id?: string | null
           resumo?: string | null
+          tipo?: string
           titulo?: string
           updated_at?: string
         }

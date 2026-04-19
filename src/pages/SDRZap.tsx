@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -1789,40 +1789,115 @@ export default function SDRZap() {
   // Follow-up handlers (state já declarado no topo)
 
 
+  /**
+   * Define follow-up como uma TASK tipo='lembrete' no TaskFlow.
+   * Modelo unificado: follow-up no SDR Zap, lembrete criado pela secretária,
+   * ou IA via WhatsApp — todos criam a mesma estrutura. Um pg_cron (a cada
+   * 5min) varre as tasks tipo='lembrete' que estão perto do prazo e envia
+   * WA pro responsável via Evolution API.
+   *
+   * Aqui, o lembrete é criado pro próprio user logado (auto-lembrete).
+   * Pra delegar a outra pessoa, use o botão "Criar tarefa" (modal completo).
+   */
   const handleDefinirFollowUp = async () => {
     if (!followUpConversaId || !followUpData) {
-      toast.error("Selecione uma data para o follow-up");
+      toast.error("Selecione uma data para o lembrete");
+      return;
+    }
+    if (!userProfile?.id) {
+      toast.error("Usuário não identificado");
       return;
     }
     try {
-      const { error } = await (supabase.from('conversas') as any)
-        .update({
-          follow_up_em: new Date(followUpData).toISOString(),
-          follow_up_nota: followUpNota || null,
-        })
-        .eq('id', followUpConversaId);
+      // Resolver task_flow_profile do user atual (task.responsavel_id aponta pra lá)
+      const { data: tfp } = await supabase
+        .from('task_flow_profiles')
+        .select('id')
+        .eq('user_id', userProfile.id)
+        .eq('ativo', true)
+        .maybeSingle();
+
+      // Buscar a coluna "Caixa de Entrada" pra colocar o lembrete
+      const { data: columns } = await supabase
+        .from('task_flow_columns')
+        .select('id, nome, ordem')
+        .order('ordem');
+      const caixa = columns?.find(c => c.nome.toLowerCase().includes('caixa')) || columns?.[0];
+      if (!caixa) throw new Error('Nenhuma coluna disponível no TaskFlow');
+
+      // Próxima ordem na coluna
+      const { data: maxOrdem } = await supabase
+        .from('task_flow_tasks')
+        .select('ordem')
+        .eq('column_id', caixa.id)
+        .order('ordem', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const novaOrdem = (maxOrdem?.ordem || 0) + 1;
+
+      // Buscar nome do contato pra título
+      const conversa = findConversaById(followUpConversaId);
+      const nomeContato = conversa?.contact?.name || conversa?.nome_contato || conversa?.numero_contato || 'contato';
+      const tituloLembrete = `Retornar: ${nomeContato}`;
+
+      const { error } = await supabase
+        .from('task_flow_tasks')
+        .insert({
+          titulo: tituloLembrete,
+          descricao: followUpNota || null,
+          column_id: caixa.id,
+          responsavel_id: tfp?.id || null,
+          conversa_id: followUpConversaId,
+          prazo: new Date(followUpData).toISOString(),
+          criado_por_id: userProfile.id,
+          origem: 'sdr-zap',
+          tipo: 'lembrete',
+          ordem: novaOrdem,
+        } as any);
+
       if (error) throw error;
-      toast.success("Follow-up definido");
+
+      toast.success("Lembrete criado — você receberá no WhatsApp perto do prazo");
       setFollowUpConversaId(null);
       setFollowUpData("");
       setFollowUpNota("");
-      invalidateConversas();
     } catch (error) {
-      console.error("Erro ao definir follow-up:", error);
-      toast.error("Erro ao definir follow-up");
+      console.error("Erro ao criar lembrete:", error);
+      toast.error(error instanceof Error ? error.message : "Erro ao criar lembrete");
     }
   };
 
+  /**
+   * Remove follow-up = soft-delete do lembrete mais próximo da conversa.
+   * Mantém backcompat pra conversas antigas que ainda tenham follow_up_em
+   * preenchido (zera também).
+   */
   const handleRemoverFollowUp = async (conversaId: string) => {
     try {
-      const { error } = await (supabase.from('conversas') as any)
+      // Deletar (soft) lembretes pendentes dessa conversa
+      const { error: taskError } = await supabase
+        .from('task_flow_tasks')
+        .update({
+          deleted_at: new Date().toISOString(),
+          deleted_by: userProfile?.id || null,
+        } as any)
+        .eq('conversa_id', conversaId)
+        .eq('tipo', 'lembrete')
+        .is('deleted_at', null)
+        .is('notificado_em', null);
+
+      if (taskError) throw taskError;
+
+      // Backcompat: zerar follow_up_em antigo da conversa
+      await (supabase.from('conversas') as any)
         .update({ follow_up_em: null, follow_up_nota: null })
         .eq('id', conversaId);
-      if (error) throw error;
-      toast.success("Follow-up removido");
+
+      toast.success("Lembrete removido");
       invalidateConversas();
     } catch (error) {
-      toast.error("Erro ao remover follow-up");
+      console.error("Erro ao remover lembrete:", error);
+      toast.error("Erro ao remover lembrete");
     }
   };
 
@@ -3866,14 +3941,17 @@ export default function SDRZap() {
         onConfirm={handleCalendarConfirm}
         onEventoChange={calendarAction.updateEvento}
       />
-      {/* Dialog de Follow-up */}
+      {/* Dialog de Follow-up — cria uma task tipo='lembrete' pro próprio user */}
       <Dialog open={!!followUpConversaId} onOpenChange={(open) => { if (!open) { setFollowUpConversaId(null); setFollowUpData(""); setFollowUpNota(""); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Clock className="h-4 w-4" />
-              Definir Follow-up
+              Criar lembrete pra você
             </DialogTitle>
+            <DialogDescription>
+              Você receberá uma mensagem no seu WhatsApp perto do prazo.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -3885,7 +3963,7 @@ export default function SDRZap() {
               />
             </div>
             <div>
-              <Label>Nota (opcional)</Label>
+              <Label>O que lembrar (opcional)</Label>
               <Input
                 value={followUpNota}
                 onChange={(e) => setFollowUpNota(e.target.value)}
@@ -3893,7 +3971,7 @@ export default function SDRZap() {
               />
             </div>
             <Button onClick={handleDefinirFollowUp} className="w-full">
-              Salvar Follow-up
+              Criar lembrete
             </Button>
           </div>
         </DialogContent>
