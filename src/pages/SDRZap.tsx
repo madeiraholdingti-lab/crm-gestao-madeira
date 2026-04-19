@@ -298,60 +298,23 @@ export default function SDRZap() {
         instanciaDestinataria: instanciaDestinataria?.nome_instancia 
       });
 
-      // SINCRONIZAÇÃO AUTOMÁTICA: Buscar histórico da Evolution API
-      if (instanciaId && !isConversaInterna) {
-        try {
-          setSincronizandoHistorico(true);
-          console.log('[SDRZap] Sincronizando histórico automaticamente...');
-          
-          const { data: syncResult, error: syncError } = await supabase.functions.invoke(
-            "sincronizar-historico-mensagens",
-            {
-              body: {
-                contact_id: contactId,
-                instancia_id: instanciaId,
-                limit: 50,
-                page: 1,
-              }
-            }
-          );
-          
-          if (syncError) {
-            console.error('[SDRZap] Erro ao sincronizar histórico:', syncError);
-          } else {
-            setHistoricoPage(syncResult?.currentPage ?? 1);
-            setHistoricoTotalPages(syncResult?.pages ?? null);
+      // Helper: monta a query de mensagens (compartilhada entre load inicial e re-fetch pós-sync)
+      const buildMessagesQuery = () => {
+        let q = supabase
+          .from("messages")
+          .select("id, text, from_me, wa_timestamp, created_at, status, message_type, instancia_whatsapp_id, media_url, media_mime_type, wa_message_id, sender_jid, raw_payload, is_edited")
+          .eq("contact_id", contactId) as any;
 
-            if (syncResult?.novas_inseridas > 0) {
-              console.log(`[SDRZap] Sincronização: ${syncResult.novas_inseridas} novas mensagens`);
-            }
-          }
-        } catch (syncErr) {
-          console.error('[SDRZap] Erro na sincronização:', syncErr);
-        } finally {
-          setSincronizandoHistorico(false);
+        if (isConversaInterna && instanciaId && instanciaDestinataria) {
+          q = q.or(`instancia_whatsapp_id.eq.${instanciaId},instancia_whatsapp_id.eq.${instanciaDestinataria.id}`);
+        } else if (instanciaId) {
+          q = q.eq("instancia_whatsapp_id", instanciaId);
         }
-      }
+        return q.order("created_at", { ascending: true });
+      };
 
-      // 1. SEMPRE buscar TODO o histórico de mensagens
-      let query = supabase
-        .from("messages")
-        .select("id, text, from_me, wa_timestamp, created_at, status, message_type, instancia_whatsapp_id, media_url, media_mime_type, wa_message_id, sender_jid, raw_payload, is_edited")
-        .eq("contact_id", contactId) as any;
-
-      // Para conversas internas, buscar mensagens de AMBAS as instâncias
-      if (isConversaInterna && instanciaId && instanciaDestinataria) {
-        console.log('[SDRZap] Buscando mensagens de ambas as instâncias:', {
-          instanciaAtual: instanciaId,
-          instanciaDestinataria: instanciaDestinataria.id
-        });
-        query = query.or(`instancia_whatsapp_id.eq.${instanciaId},instancia_whatsapp_id.eq.${instanciaDestinataria.id}`);
-      } else if (instanciaId) {
-        query = query.eq("instancia_whatsapp_id", instanciaId);
-      }
-
-      const { data, error } = await query
-        .order("created_at", { ascending: true });
+      // 1. CARREGA IMEDIATAMENTE do banco (sem esperar Evolution API)
+      const { data, error } = await buildMessagesQuery();
 
       if (!isMounted) {
         console.log('[SDRZap] Componente desmontado, abortando');
@@ -364,8 +327,48 @@ export default function SDRZap() {
         return;
       }
 
-      console.log('[SDRZap] Mensagens carregadas:', data?.length || 0);
+      console.log('[SDRZap] Mensagens carregadas (DB):', data?.length || 0);
       setMensagens(data || []);
+
+      // 2. SINCRONIZAÇÃO EM BACKGROUND com Evolution API (não bloqueia a UI)
+      //    Se retornar mensagens novas, faz re-fetch silencioso para atualizar.
+      if (instanciaId && !isConversaInterna) {
+        setSincronizandoHistorico(true);
+        (async () => {
+          try {
+            const { data: syncResult, error: syncError } = await supabase.functions.invoke(
+              "sincronizar-historico-mensagens",
+              {
+                body: {
+                  contact_id: contactId,
+                  instancia_id: instanciaId,
+                  limit: 50,
+                  page: 1,
+                }
+              }
+            );
+
+            if (syncError) {
+              console.error('[SDRZap] Erro ao sincronizar histórico:', syncError);
+              return;
+            }
+
+            if (!isMounted) return;
+            setHistoricoPage(syncResult?.currentPage ?? 1);
+            setHistoricoTotalPages(syncResult?.pages ?? null);
+
+            if (syncResult?.novas_inseridas > 0) {
+              console.log(`[SDRZap] Sincronização: ${syncResult.novas_inseridas} novas mensagens — re-fetching`);
+              const { data: fresh } = await buildMessagesQuery();
+              if (isMounted && fresh) setMensagens(fresh);
+            }
+          } catch (syncErr) {
+            console.error('[SDRZap] Erro na sincronização:', syncErr);
+          } finally {
+            if (isMounted) setSincronizandoHistorico(false);
+          }
+        })();
+      }
 
       // 1.5. Buscar reações para as mensagens carregadas
       if (data && data.length > 0) {
@@ -2015,6 +2018,20 @@ export default function SDRZap() {
     ? [...conversasCol1, ...conversasCol2].find(c => c.id === activeId)
     : null;
 
+  // Flag derivada: conversa aberta foi respondida por mais de uma instância?
+  // Usada para decidir se mostra o header "quem respondeu" acima de cada bolha.
+  // Em conversa 1-pra-1 com uma única instância respondendo, o header é ruído.
+  const conversaTemMultiplasInstancias = useMemo(() => {
+    const instanciasEnviadoras = new Set<string>();
+    for (const m of mensagens) {
+      if (m.from_me && (m as any).instancia_whatsapp_id) {
+        instanciasEnviadoras.add((m as any).instancia_whatsapp_id);
+        if (instanciasEnviadoras.size > 1) return true;
+      }
+    }
+    return false;
+  }, [mensagens]);
+
   return (
     <DndContext
       sensors={sensors}
@@ -2488,8 +2505,8 @@ export default function SDRZap() {
           </div>
         </div>
 
-        {/* Mensagens - ÁREA COM SCROLL */}
-        <div className="flex-1 overflow-y-auto p-4">
+        {/* Mensagens - ÁREA COM SCROLL (fundo estilo WhatsApp) */}
+        <div className="flex-1 overflow-y-auto p-4 bg-[#EFEAE2] dark:bg-[#0B141A]">
           <div className="space-y-4">
             {conversaSelecionada ? (
               <>
@@ -2583,7 +2600,7 @@ export default function SDRZap() {
                     </Button>
                   )}
                 </div>
-                
+
                 {mensagens.map((msg, index) => {
                   // Detectar se é conversa interna (entre duas instâncias ativas diferentes)
                   const numeroContato = conversaSelecionada.numero_contato;
@@ -2699,7 +2716,7 @@ export default function SDRZap() {
                         </div>
                       )}
                       <div className={`max-w-[70%] ${isMinhaMsg ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-                        {isMinhaMsg && nomeEnviador && (
+                        {isMinhaMsg && nomeEnviador && conversaTemMultiplasInstancias && (
                           <p className="text-xs font-semibold text-right text-muted-foreground px-1">
                             {nomeEnviador}
                           </p>
@@ -2710,14 +2727,14 @@ export default function SDRZap() {
                           </p>
                         )}
                         <div
-                          className={`relative rounded-lg p-3 ${
+                          className={`relative rounded-lg p-3 shadow-sm ${
                             isMinhaMsg
-                              ? msg._error 
-                                ? 'bg-primary/70 text-primary-foreground border-2 border-destructive' 
-                                : msg._sending 
-                                  ? 'bg-primary/80 text-primary-foreground' 
-                                  : 'bg-primary text-primary-foreground'
-                              : 'bg-muted'
+                              ? msg._error
+                                ? 'bg-[#D9FDD3]/70 dark:bg-[#005C4B]/70 text-gray-900 dark:text-gray-50 border-2 border-destructive'
+                                : msg._sending
+                                  ? 'bg-[#D9FDD3]/80 dark:bg-[#005C4B]/80 text-gray-900 dark:text-gray-50'
+                                  : 'bg-[#D9FDD3] dark:bg-[#005C4B] text-gray-900 dark:text-gray-50'
+                              : 'bg-white dark:bg-[#202C33] text-gray-900 dark:text-gray-100'
                           } ${msg.wa_message_id && messageReactions[msg.wa_message_id]?.length > 0 ? 'mb-4' : ''}`}
                         >
                           {!isMinhaMsg && !isConversaInterna && (
@@ -2783,21 +2800,19 @@ export default function SDRZap() {
                             };
                             
                             return (
-                              <div 
+                              <div
                                 onClick={scrollToQuoted}
                                 className={`mb-2 p-2 rounded cursor-pointer border-l-4 transition-colors ${
-                                  isMinhaMsg 
-                                    ? 'bg-primary-foreground/10 border-primary-foreground/50 hover:bg-primary-foreground/20' 
-                                    : 'bg-background/50 border-primary hover:bg-background/70'
+                                  isMinhaMsg
+                                    ? 'bg-black/5 dark:bg-white/10 border-[#005C4B] dark:border-[#D9FDD3] hover:bg-black/10 dark:hover:bg-white/20'
+                                    : 'bg-black/5 dark:bg-white/5 border-[#005C4B] dark:border-[#D9FDD3] hover:bg-black/10 dark:hover:bg-white/10'
                                 }`}
                               >
-                                <p className={`text-xs font-semibold ${
-                                  isMinhaMsg ? 'text-primary-foreground/80' : 'text-primary'
-                                }`}>
+                                <p className="text-xs font-semibold text-[#005C4B] dark:text-[#D9FDD3]">
                                   {quotedSenderName}
                                 </p>
                                 <p className={`text-xs truncate flex items-center ${
-                                  isMinhaMsg ? 'text-primary-foreground/60' : 'text-muted-foreground'
+                                  isMinhaMsg ? 'text-gray-700 dark:text-gray-300' : 'text-gray-600 dark:text-gray-400'
                                 }`}>
                                   {quotedDisplay.icon}
                                   {quotedDisplay.text}
@@ -3478,15 +3493,17 @@ export default function SDRZap() {
                               </p>
                             );
                           })()}
-                          <div className="flex items-center justify-between gap-2 mt-1">
+                          <div className="flex items-center justify-end gap-1 mt-1">
                             <div className="flex items-center gap-1">
-                              <p className={`text-xs ${
-                                isMinhaMsg ? 'text-primary-foreground/70' : 'text-muted-foreground'
+                              <p className={`text-[11px] ${
+                                isMinhaMsg
+                                  ? 'text-gray-600 dark:text-gray-300/80'
+                                  : 'text-gray-500 dark:text-gray-400'
                               }`}>
                                 {msg.is_edited && (
                                   <span className="italic mr-1">editada</span>
                                 )}
-                                {msg.wa_timestamp 
+                                {msg.wa_timestamp
                                   ? format(new Date(msg.wa_timestamp * 1000), "HH:mm", { locale: ptBR })
                                   : format(new Date(msg.created_at), "HH:mm", { locale: ptBR })
                                 }
@@ -3497,9 +3514,9 @@ export default function SDRZap() {
                                   {msg._sending && (
                                     <div className="flex items-center gap-1">
                                       {typeof msg._progress === 'number' && msg._progress > 0 && msg._progress < 100 && (
-                                        <span className="text-[10px] text-primary-foreground/60">{msg._progress}%</span>
+                                        <span className="text-[10px] text-gray-600 dark:text-gray-300/70">{msg._progress}%</span>
                                       )}
-                                      <Loader2 className="h-3 w-3 animate-spin text-primary-foreground/70" />
+                                      <Loader2 className="h-3 w-3 animate-spin text-gray-600 dark:text-gray-300/70" />
                                     </div>
                                   )}
                                   {msg._error && (
@@ -3518,10 +3535,10 @@ export default function SDRZap() {
                                     </div>
                                   )}
                                   {!msg._sending && !msg._error && (
-                                    <MessageStatusIcon 
+                                    <MessageStatusIcon
                                       status={msg.status}
                                       fromMe={msg.from_me}
-                                      className="text-primary-foreground/70"
+                                      className="text-gray-600 dark:text-gray-300/80"
                                     />
                                   )}
                                 </>
