@@ -1,12 +1,23 @@
 import { memo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
-import { User, MoreVertical, Pin, Clock, Ban, Trash2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuPortal,
+} from "@/components/ui/dropdown-menu";
+import { User, MoreVertical, Pin, Clock, Ban, Trash2, UserPlus, UserMinus } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getConversaUrgencyColor, getTempoSemResposta } from "@/utils/urgencyHelpers";
 import type { Conversa } from "@/hooks/useConversas";
+import type { MembroEquipe } from "@/hooks/useEquipe";
 
 interface ConversationCardProps {
   conversa: Conversa;
@@ -17,10 +28,13 @@ interface ConversationCardProps {
   onFollowUp: (id: string) => void;
   onBlacklist: (id: string) => void;
   onDelete: (id: string) => void;
+  onAssign?: (conversaId: string, userId: string | null) => void;
+  equipe?: MembroEquipe[];
 }
 
 export const ConversationCard = memo(function ConversationCard({
-  conversa, isSelected, corInstancia, onClick, onPin, onFollowUp, onBlacklist, onDelete
+  conversa, isSelected, corInstancia, onClick, onPin, onFollowUp, onBlacklist, onDelete,
+  onAssign, equipe
 }: ConversationCardProps) {
   const urgColor = getConversaUrgencyColor(conversa.last_message_from_me ?? null, conversa.ultima_interacao);
   const tempoResp = conversa.last_message_from_me === false && conversa.ultima_interacao
@@ -30,6 +44,8 @@ export const ConversationCard = memo(function ConversationCard({
   const fotoUrl = conversa.foto_contato || conversa.contact?.profile_picture_url;
   const hasFoto = fotoUrl && fotoUrl !== 'NO_PICTURE';
   const contactName = conversa.contact?.name || conversa.numero_contato?.replace('@s.whatsapp.net', '') || 'Desconhecido';
+
+  const responsavel = equipe?.find(m => m.id === conversa.responsavel_atual);
 
   return (
     <Card
@@ -105,6 +121,27 @@ export const ConversationCard = memo(function ConversationCard({
                 )}
               </div>
             </div>
+
+            {/* Row 3 (opcional): badge do responsável */}
+            {responsavel && (
+              <div className="flex items-center mt-0.5">
+                <Badge
+                  variant="outline"
+                  className="text-[9px] px-1.5 py-0 h-4 font-normal"
+                  style={{
+                    borderColor: isSelected ? '#ffffff80' : responsavel.cor_perfil,
+                    color: isSelected ? '#ffffffdd' : responsavel.cor_perfil,
+                    backgroundColor: isSelected ? '#ffffff10' : `${responsavel.cor_perfil}15`,
+                  }}
+                >
+                  <span
+                    className="inline-block w-1.5 h-1.5 rounded-full mr-1"
+                    style={{ backgroundColor: isSelected ? '#ffffffdd' : responsavel.cor_perfil }}
+                  />
+                  {responsavel.nome}
+                </Badge>
+              </div>
+            )}
           </div>
 
           {/* Actions */}
@@ -115,11 +152,47 @@ export const ConversationCard = memo(function ConversationCard({
                   <MoreVertical className="h-3.5 w-3.5" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onPin(conversa.id, !conversa.fixada); }}>
                   <Pin className="h-3.5 w-3.5 mr-2" />
                   {conversa.fixada ? 'Desafixar' : 'Fixar conversa'}
                 </DropdownMenuItem>
+                {onAssign && equipe && equipe.length > 0 && (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <UserPlus className="h-3.5 w-3.5 mr-2" />
+                      {responsavel ? `Reatribuir (${responsavel.nome})` : 'Atribuir para...'}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuPortal>
+                      <DropdownMenuSubContent className="w-48">
+                        {equipe.map(m => (
+                          <DropdownMenuItem
+                            key={m.id}
+                            onClick={(e) => { e.stopPropagation(); onAssign(conversa.id, m.id); }}
+                            disabled={m.id === conversa.responsavel_atual}
+                          >
+                            <span
+                              className="inline-block w-2.5 h-2.5 rounded-full mr-2 flex-shrink-0"
+                              style={{ backgroundColor: m.cor_perfil }}
+                            />
+                            {m.nome}
+                          </DropdownMenuItem>
+                        ))}
+                        {responsavel && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); onAssign(conversa.id, null); }}
+                            >
+                              <UserMinus className="h-3.5 w-3.5 mr-2" />
+                              Remover atribuição
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuPortal>
+                  </DropdownMenuSub>
+                )}
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onFollowUp(conversa.id); }}>
                   <Clock className="h-3.5 w-3.5 mr-2" />
                   Follow-up
@@ -150,6 +223,8 @@ export const ConversationCard = memo(function ConversationCard({
     && prev.conversa.ultima_mensagem === next.conversa.ultima_mensagem
     && prev.conversa.last_message_from_me === next.conversa.last_message_from_me
     && prev.conversa.fixada === next.conversa.fixada
+    && prev.conversa.responsavel_atual === next.conversa.responsavel_atual
     && prev.isSelected === next.isSelected
-    && prev.corInstancia === next.corInstancia;
+    && prev.corInstancia === next.corInstancia
+    && prev.equipe === next.equipe;
 });

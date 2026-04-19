@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useConversas } from "@/hooks/useConversas";
 import { useInstancias } from "@/hooks/useInstancias";
+import { useEquipe } from "@/hooks/useEquipe";
 import { ConversationList } from "@/components/sdr-zap/ConversationList";
 import { PERFIS_PROFISSIONAIS } from "@/utils/constants";
 import { toast } from "sonner";
@@ -126,6 +127,7 @@ export default function SDRZap() {
 
   // Hooks TanStack Query (substituem useState + fetchInstancias/fetchConversas)
   const { data: instancias = [] } = useInstancias();
+  const { data: equipe = [] } = useEquipe();
   const {
     data: conversasPorInstancia = {},
     isLoading: loading,
@@ -1695,6 +1697,46 @@ export default function SDRZap() {
   };
 
   // === Ações do menu de contexto das conversas ===
+  // Atribuir/reatribuir/remover responsável da conversa.
+  // userId=null → remove atribuição. Update otimista no cache + UPDATE no banco.
+  const handleAtribuirConversa = async (conversaId: string, userId: string | null) => {
+    // optimistic
+    queryClient.setQueryData<Record<string, Conversa[]>>(['conversas'], (old) => {
+      if (!old) return old;
+      const next: Record<string, Conversa[]> = {};
+      Object.keys(old).forEach(instId => {
+        next[instId] = old[instId].map(c =>
+          c.id === conversaId ? { ...c, responsavel_atual: userId } : c
+        );
+      });
+      return next;
+    });
+
+    // também atualiza conversa selecionada se for a mesma
+    if (conversaSelecionada?.id === conversaId) {
+      setConversaSelecionada(prev => prev ? { ...prev, responsavel_atual: userId } : null);
+    }
+
+    try {
+      const { error } = await supabase
+        .from('conversas')
+        .update({ responsavel_atual: userId })
+        .eq('id', conversaId);
+      if (error) throw error;
+
+      if (userId) {
+        const membro = equipe.find(m => m.id === userId);
+        toast.success(`Conversa atribuída para ${membro?.nome ?? 'membro da equipe'}`);
+      } else {
+        toast.success('Atribuição removida');
+      }
+    } catch (err) {
+      console.error('Erro ao atribuir conversa:', err);
+      toast.error('Erro ao atribuir conversa');
+      invalidateConversas(); // força refresh para reverter optimistic
+    }
+  };
+
   const handleFixarConversa = async (conversaId: string, fixada: boolean) => {
     try {
       const { error } = await supabase
@@ -2097,6 +2139,9 @@ export default function SDRZap() {
                 if (c) handleEnviarBlacklist(c);
               }}
               onDelete={handleExcluirConversa}
+              onAssign={handleAtribuirConversa}
+              equipe={equipe}
+              currentUserId={userProfile?.id}
               header={
                 <div className="p-2 border-b bg-card flex-shrink-0">
                   <div className="flex items-center justify-between">
@@ -2275,6 +2320,9 @@ export default function SDRZap() {
                 if (c) handleEnviarBlacklist(c);
               }}
               onDelete={handleExcluirConversa}
+              onAssign={handleAtribuirConversa}
+              equipe={equipe}
+              currentUserId={userProfile?.id}
               header={
                 <div className="p-2 border-b bg-card flex-shrink-0">
                   <div className="flex items-center justify-between">
