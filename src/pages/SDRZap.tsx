@@ -1,5 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useConversas } from "@/hooks/useConversas";
+import { useInstancias } from "@/hooks/useInstancias";
+import { ConversationList } from "@/components/sdr-zap/ConversationList";
 import { PERFIS_PROFISSIONAIS } from "@/utils/constants";
 import { toast } from "sonner";
 import { Phone, MessageSquare, User, ChevronDown, Pencil, ArrowRight, FileText, Image as ImageIcon, Video, Mic, Paperclip, Download, Play, ExternalLink, ZoomIn, ZoomOut, X, ChevronLeft, ChevronRight, Search, Plus, UserPlus, MoreVertical, RotateCcw, AlertCircle, Loader2, Camera, RefreshCw, UserCheck, MapPin, Copy, Trash2, Pin, Ban, Clock } from "lucide-react";
@@ -35,8 +39,8 @@ interface Contact {
   jid: string;
   phone: string;
   name: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
   profile_picture_url?: string | null;
   perfil_profissional?: string | null;
   especialidade?: string | null;
@@ -118,14 +122,21 @@ interface MessageReaction {
 
 export default function SDRZap() {
   const { profile: userProfile } = useCurrentUser();
-  const [instancias, setInstancias] = useState<InstanciaWhatsApp[]>([]);
-  const [conversasPorInstancia, setConversasPorInstancia] = useState<Record<string, Conversa[]>>({});
+  const queryClient = useQueryClient();
+
+  // Hooks TanStack Query (substituem useState + fetchInstancias/fetchConversas)
+  const { data: instancias = [] } = useInstancias();
+  const {
+    data: conversasPorInstancia = {},
+    isLoading: loading,
+    invalidate: invalidateConversas,
+  } = useConversas();
+
   const [conversaSelecionada, setConversaSelecionada] = useState<Conversa | null>(null);
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
   const [messageReactions, setMessageReactions] = useState<Record<string, MessageReaction[]>>({});
   const [novaMensagem, setNovaMensagem] = useState("");
   const [enviando, setEnviando] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [instanciasSelecionadasCol1, setInstanciasSelecionadasCol1] = useState<string[]>([]);
   const [nomeColuna1, setNomeColuna1] = useState("Todos");
   const [editandoColuna1, setEditandoColuna1] = useState(false);
@@ -141,11 +152,7 @@ export default function SDRZap() {
   const [imagePreview, setImagePreview] = useState<{ src: string; index: number } | null>(null);
   const [imageZoom, setImageZoom] = useState(1);
   
-  // Estados para pesquisa e nova conversa
-  const [buscaCol1, setBuscaCol1] = useState("");
-  const [buscaCol2, setBuscaCol2] = useState("");
-  const [filterCol1, setFilterCol1] = useState<"todas" | "nao_lidas" | "aguardando">("todas");
-  const [filterCol2, setFilterCol2] = useState<"todas" | "nao_lidas" | "aguardando">("todas");
+  // Estados para nova conversa (busca e filter pills agora são internos ao ConversationList)
   const [modalNovaConversa, setModalNovaConversa] = useState(false);
   const [numeroNovaConversa, setNumeroNovaConversa] = useState("");
   const [verificandoNumero, setVerificandoNumero] = useState(false);
@@ -241,84 +248,12 @@ export default function SDRZap() {
     }
   }, [nomeColuna1]);
 
+  // Realtime global removido: useConversas já mantém a lista sincronizada via
+  // seu próprio canal "conversas-realtime" com debounce interno.
+  // Sincronização inicial de instâncias + fetch de instanciasEnvio acontece abaixo.
   useEffect(() => {
-    fetchData();
-
-    // Realtime para mensagens (quando novas mensagens chegam, atualizar conversas)
-    const messagesChannel = supabase
-      .channel("messages-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
-        () => {
-          console.log('[SDRZap] Nova mensagem recebida via realtime');
-          fetchConversas();
-        }
-      )
-      .subscribe();
-
-    // Realtime para conversas (quando conversas são atualizadas)
-    const conversasChannel = supabase
-      .channel("conversas-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "conversas",
-        },
-        () => {
-          console.log('[SDRZap] Conversa atualizada via realtime');
-          fetchConversas();
-        }
-      )
-      .subscribe();
-
-    // Realtime para instâncias (quando instâncias são adicionadas/atualizadas/deletadas)
-    const instanciasChannel = supabase
-      .channel("instancias-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "instancias_whatsapp",
-        },
-        () => {
-          console.log('[SDRZap] Instâncias atualizadas, recarregando...');
-          fetchInstancias();
-          fetchInstanciasEnvio();
-        }
-      )
-      .subscribe();
-
-    // Realtime para contatos (quando nomes são atualizados)
-    const contactsChannel = supabase
-      .channel("contacts-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "contacts",
-        },
-        (payload) => {
-          console.log('[SDRZap] Contato atualizado via realtime:', payload);
-          fetchConversas();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(messagesChannel);
-      supabase.removeChannel(conversasChannel);
-      supabase.removeChannel(instanciasChannel);
-      supabase.removeChannel(contactsChannel);
-    };
+    sincronizarInstancias();
+    fetchInstanciasEnvio();
   }, []);
 
   useEffect(() => {
@@ -663,6 +598,16 @@ export default function SDRZap() {
     return () => clearInterval(interval);
   }, []);
 
+  // Substitui o canal Realtime "instancias-changes" removido: quando a lista de
+  // instâncias (do useInstancias) muda, ressincroniza o estado local de envio.
+  const instanciasSignature = useMemo(
+    () => instancias.map(i => i.id).sort().join(','),
+    [instancias]
+  );
+  useEffect(() => {
+    if (instanciasSignature) fetchInstanciasEnvio();
+  }, [instanciasSignature]);
+
   // Setar instância selecionada quando conversa é selecionada
   useEffect(() => {
     if (conversaSelecionada) {
@@ -711,12 +656,6 @@ export default function SDRZap() {
     });
   }, [conversasPorInstancia, userProfile]);
 
-  const fetchData = async () => {
-    setLoading(true);
-    await Promise.all([sincronizarInstancias(), fetchInstancias(), fetchConversas(), fetchInstanciasEnvio()]);
-    setLoading(false);
-  };
-
   const sincronizarInstancias = async () => {
     try {
       // Buscar instâncias da Evolution API
@@ -755,169 +694,6 @@ export default function SDRZap() {
       }
     } catch (error) {
       console.error("Erro ao sincronizar instâncias:", error);
-    }
-  };
-
-  const fetchInstancias = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("instancias_whatsapp")
-        .select("*")
-        .neq("status", "deletada") // Mostrar instâncias ativas E inativas (não deletadas)
-        .order("created_at", { ascending: true });
-
-      if (error) throw error;
-      
-      console.log('[SDRZap] Instâncias carregadas:', data);
-      setInstancias((data || []) as InstanciaWhatsApp[]);
-    } catch (error) {
-      console.error("Erro ao buscar instâncias:", error);
-      toast.error("Erro ao carregar instâncias");
-    }
-  };
-
-  const fetchConversas = async () => {
-    try {
-      // NOVA ABORDAGEM: Buscar conversas diretamente da tabela conversas com JOIN para contacts
-      const { data: conversasData, error: conversasError } = await supabase
-        .from("conversas")
-        .select(`
-          id,
-          contact_id,
-          numero_contato,
-          nome_contato,
-          orig_instance_id,
-          current_instance_id,
-          instancia_id,
-          responsavel_atual,
-          status,
-          status_qualificacao,
-          ultima_mensagem,
-          ultima_interacao,
-          tags,
-          unread_count,
-          foto_contato,
-          fixada,
-          last_message_from_me,
-          contacts!conversas_contact_id_fkey (
-            id,
-            jid,
-            phone,
-            name,
-            profile_picture_url,
-            perfil_profissional,
-            especialidade,
-            instituicao,
-            perfil_sugerido_ia,
-            perfil_confirmado
-          )
-        `)
-        .not('contact_id', 'is', null)
-        .order("ultima_interacao", { ascending: false });
-
-      if (conversasError) {
-        console.error("Erro ao buscar conversas:", conversasError);
-        throw conversasError;
-      }
-
-      console.log('[SDRZap] Conversas carregadas:', conversasData);
-
-      // Buscar todas as instâncias (incluindo deletadas) para verificar status
-      const { data: todasInstancias } = await supabase
-        .from("instancias_whatsapp")
-        .select("id, status, numero_chip");
-
-      const instanciasMap = new Map(todasInstancias?.map(i => [i.id, { status: i.status, numero: i.numero_chip?.replace(/\D/g, '') }]) || []);
-
-      // Buscar status da última mensagem de cada conversa
-      const conversaIds = conversasData?.map(c => c.id) || [];
-      const { data: lastMessages } = await supabase
-        .from("mensagens")
-        .select("conversa_id, status, remetente")
-        .in("conversa_id", conversaIds)
-        .order("created_at", { ascending: false });
-
-      // Criar mapa de última mensagem por conversa
-      const lastMessageMap = new Map();
-      lastMessages?.forEach((msg: any) => {
-        if (!lastMessageMap.has(msg.conversa_id)) {
-          lastMessageMap.set(msg.conversa_id, {
-            status: msg.status,
-            from_me: msg.remetente === 'enviada'
-          });
-        }
-      });
-
-      // Agrupar conversas por instância (usar current_instance_id para a visualização atual)
-      const grouped: Record<string, Conversa[]> = {};
-      const DELETED_INSTANCES_KEY = "DELETED_INSTANCES";
-      
-      (conversasData || []).forEach((conv: any) => {
-        // Usar current_instance_id para agrupar (instância atual de atendimento)
-        const instanceId = conv.current_instance_id || conv.orig_instance_id;
-        
-        // Verificar se a instância está deletada
-        const instanceData = instanceId ? instanciasMap.get(instanceId) : null;
-        const isDeleted = instanceData?.status === 'deletada' || !instanceData;
-
-        // Buscar status da última mensagem
-        const lastMsg = lastMessageMap.get(conv.id);
-
-        // Criar objeto Conversa no formato esperado pela UI
-        const conversa: Conversa = {
-          id: conv.id,
-          contact: conv.contacts || {
-            id: conv.contact_id,
-            phone: conv.numero_contato,
-            name: conv.nome_contato,
-            jid: '',
-            profile_picture_url: null
-          },
-          instancia_id: isDeleted ? DELETED_INSTANCES_KEY : (instanceId || DELETED_INSTANCES_KEY),
-          orig_instance_id: conv.orig_instance_id,
-          current_instance_id: conv.current_instance_id,
-          responsavel_atual: conv.responsavel_atual,
-          ultima_mensagem: conv.ultima_mensagem,
-          ultima_interacao: conv.ultima_interacao,
-          nome_contato: conv.nome_contato,
-          numero_contato: conv.numero_contato,
-          foto_contato: conv.foto_contato || conv.contacts?.profile_picture_url,
-          status: conv.status,
-          status_qualificacao: conv.status_qualificacao,
-          tags: conv.tags || [],
-          unread_count: conv.unread_count || 0,
-          last_message_status: lastMsg?.status,
-          last_message_from_me: conv.last_message_from_me ?? lastMsg?.from_me ?? undefined,
-          fixada: conv.fixada || false
-        };
-
-        // Agrupar: se instância deletada, vai para grupo especial
-        const groupKey = isDeleted ? DELETED_INSTANCES_KEY : conversa.instancia_id;
-
-        if (!grouped[groupKey]) {
-          grouped[groupKey] = [];
-        }
-        grouped[groupKey].push(conversa);
-      });
-
-      // Ordenar por última interação (mais recentes primeiro)
-      Object.keys(grouped).forEach(instanceId => {
-        grouped[instanceId].sort((a, b) => {
-          const dateA = new Date(a.ultima_interacao || 0);
-          const dateB = new Date(b.ultima_interacao || 0);
-          return dateB.getTime() - dateA.getTime();
-        });
-      });
-
-      console.log('[SDRZap] Conversas agrupadas:', {
-        total: Object.keys(grouped).length,
-        deletadas: grouped[DELETED_INSTANCES_KEY]?.length || 0
-      });
-
-      setConversasPorInstancia(grouped);
-    } catch (error) {
-      console.error("Erro ao buscar conversas:", error);
-      toast.error("Erro ao carregar conversas");
     }
   };
 
@@ -984,15 +760,18 @@ export default function SDRZap() {
           await supabase.functions.invoke('marcar-mensagens-lidas', {
             body: { conversaId: conversa.id }
           });
-          
-          // Atualizar contador localmente
-          const updated = { ...conversasPorInstancia };
-          Object.keys(updated).forEach(instId => {
-            updated[instId] = updated[instId].map(c => 
-              c.id === conversa.id ? { ...c, unread_count: 0 } : c
-            );
+
+          // Atualizar contador localmente no cache do TanStack Query
+          queryClient.setQueryData<Record<string, Conversa[]>>(['conversas'], (old) => {
+            if (!old) return old;
+            const updated: Record<string, Conversa[]> = {};
+            Object.keys(old).forEach(instId => {
+              updated[instId] = old[instId].map(c =>
+                c.id === conversa.id ? { ...c, unread_count: 0 } : c
+              );
+            });
+            return updated;
           });
-          setConversasPorInstancia(updated);
         } catch (error) {
           console.error('Erro ao marcar mensagens como lidas:', error);
         }
@@ -1018,7 +797,7 @@ export default function SDRZap() {
             } : null);
 
             // Atualizar nas listas
-            fetchConversas();
+            invalidateConversas();
           }
         }).catch(err => {
           console.error('[SDRZap] Erro ao sincronizar contato:', err);
@@ -1047,22 +826,25 @@ export default function SDRZap() {
         }
       });
 
-      // Atualizar conversas na lista
-      const updated = { ...conversasPorInstancia };
-      Object.keys(updated).forEach(instanciaId => {
-        updated[instanciaId] = updated[instanciaId].map(conv => 
-          conv.id === conversaSelecionada.id 
-            ? {
-                ...conv,
-                contact: {
-                  ...conv.contact,
-                  name: novoNomeContato.trim()
+      // Atualizar conversas na lista (cache TanStack Query)
+      queryClient.setQueryData<Record<string, Conversa[]>>(['conversas'], (old) => {
+        if (!old) return old;
+        const updated: Record<string, Conversa[]> = {};
+        Object.keys(old).forEach(instanciaId => {
+          updated[instanciaId] = old[instanciaId].map(conv =>
+            conv.id === conversaSelecionada.id
+              ? {
+                  ...conv,
+                  contact: {
+                    ...conv.contact,
+                    name: novoNomeContato.trim()
+                  }
                 }
-              }
-            : conv
-        );
+              : conv
+          );
+        });
+        return updated;
       });
-      setConversasPorInstancia(updated);
 
       setEditandoNomeContato(false);
       setNovoNomeContato("");
@@ -1759,7 +1541,7 @@ export default function SDRZap() {
     if (sucesso) {
       console.log('[SDRZap] Conversa transferida com sucesso');
       // Recarregar conversas para refletir as mudanças
-      await fetchConversas();
+      await invalidateConversas();
       
       // Se a conversa transferida era a selecionada, manter seleção
       if (conversaSelecionada?.id === conversaId) {
@@ -1904,7 +1686,7 @@ export default function SDRZap() {
         .eq('id', conversaId);
       if (error) throw error;
       toast.success(fixada ? 'Conversa desafixada' : 'Conversa fixada');
-      fetchConversas();
+      invalidateConversas();
     } catch (error) {
       console.error('Erro ao fixar conversa:', error);
       toast.error('Erro ao fixar conversa');
@@ -1921,7 +1703,7 @@ export default function SDRZap() {
       if (error) throw error;
       toast.success('Conversa excluída');
       if (conversaSelecionada?.id === conversaId) setConversaSelecionada(null);
-      fetchConversas();
+      invalidateConversas();
     } catch (error) {
       console.error('Erro ao excluir conversa:', error);
       toast.error('Erro ao excluir conversa. Apenas admins podem excluir.');
@@ -1950,7 +1732,7 @@ export default function SDRZap() {
       setFollowUpConversaId(null);
       setFollowUpData("");
       setFollowUpNota("");
-      fetchConversas();
+      invalidateConversas();
     } catch (error) {
       console.error("Erro ao definir follow-up:", error);
       toast.error("Erro ao definir follow-up");
@@ -1964,7 +1746,7 @@ export default function SDRZap() {
         .eq('id', conversaId);
       if (error) throw error;
       toast.success("Follow-up removido");
-      fetchConversas();
+      invalidateConversas();
     } catch (error) {
       toast.error("Erro ao remover follow-up");
     }
@@ -2019,67 +1801,47 @@ export default function SDRZap() {
     }
   };
 
-  // Filtrar conversas por instâncias selecionadas
-  const getConversasCol1 = () => {
-    // Coluna 1: Mostrar conversas apenas das instâncias selecionadas
-    const todasConversas: Conversa[] = [];
-    
-    if (instanciasSelecionadasCol1.length === 0) {
-      // Se nenhuma instância selecionada, não mostrar nenhuma conversa
-      return [];
-    } else {
-      // Mostrar apenas das instâncias selecionadas
-      instanciasSelecionadasCol1.forEach(instanciaId => {
-        if (conversasPorInstancia[instanciaId]) {
-          todasConversas.push(...conversasPorInstancia[instanciaId]);
-        }
-      });
-    }
-    
-    // Deduplicar conversas por ID (evita duplicatas)
-    const conversasUnicas = Array.from(
-      new Map(todasConversas.map(c => [c.id, c])).values()
-    );
-    
-    const conversasFiltradas = filtrarPorBusca(conversasUnicas, buscaCol1);
-    // Ordenar: fixadas primeiro, depois por última interação
-    return conversasFiltradas.sort((a, b) => {
-      if (a.fixada && !b.fixada) return -1;
-      if (!a.fixada && b.fixada) return 1;
-      return new Date(b.ultima_interacao || 0).getTime() - new Date(a.ultima_interacao || 0).getTime();
+  // Deriva lista de Col1 a partir do cache + filtro multi-select de instâncias.
+  // Ordenação/busca/quick-filter agora são internos ao ConversationList.
+  const conversasCol1 = useMemo<Conversa[]>(() => {
+    if (instanciasSelecionadasCol1.length === 0) return [];
+    const todas: Conversa[] = [];
+    instanciasSelecionadasCol1.forEach(instanciaId => {
+      const arr = conversasPorInstancia[instanciaId];
+      if (arr) todas.push(...arr);
     });
-  };
+    return Array.from(new Map(todas.map(c => [c.id, c])).values());
+  }, [conversasPorInstancia, instanciasSelecionadasCol1]);
 
-  const getConversasCol2 = () => {
-    // Coluna 2: Fila pessoal do usuário
-    // Mostra conversas que:
-    // 1. Pertencem à instância padrão do usuário (orig_instance_id OU current_instance_id)
-    // 2. OU foram explicitamente atribuídas ao usuário (responsavel_atual)
-    
+  // Deriva Col2: conversas da instância padrão do user OU atribuídas a ele.
+  const conversasCol2 = useMemo<Conversa[]>(() => {
     if (!userProfile?.id) return [];
-    
     const minhaInstanciaId = userProfile.instancia_padrao_id;
-    const todasConversas: Conversa[] = Object.values(conversasPorInstancia).flat();
-    
-    // Deduplicar conversas por ID (evita duplicatas se mesma conversa aparecer em múltiplos grupos)
-    const conversasUnicas = Array.from(
-      new Map(todasConversas.map(c => [c.id, c])).values()
-    );
-    
-    const minhasConversas = conversasUnicas.filter(c =>
+    const todas = Object.values(conversasPorInstancia).flat();
+    const unicas = Array.from(new Map(todas.map(c => [c.id, c])).values());
+    return unicas.filter(c =>
       c.orig_instance_id === minhaInstanciaId ||
       c.current_instance_id === minhaInstanciaId ||
       c.responsavel_atual === userProfile.id
     );
-    
-    const conversasFiltradas = filtrarPorBusca(minhasConversas, buscaCol2);
-    // Ordenar: fixadas primeiro, depois por última interação
-    return conversasFiltradas.sort((a, b) => {
-      if (a.fixada && !b.fixada) return -1;
-      if (!a.fixada && b.fixada) return 1;
-      return new Date(b.ultima_interacao || 0).getTime() - new Date(a.ultima_interacao || 0).getTime();
-    });
-  };
+  }, [conversasPorInstancia, userProfile?.id, userProfile?.instancia_padrao_id]);
+
+  // Resolve cor da instância para cada card (usado pelo ConversationList).
+  const getCorInstancia = useCallback((c: Conversa) => {
+    const inst = instancias.find(
+      (i) => i.id === (c.current_instance_id || c.orig_instance_id)
+    );
+    return inst?.cor_identificacao || '#3B82F6';
+  }, [instancias]);
+
+  // Adapter para o dropdown "Blacklist" do card (contrato da ConversationList: onBlacklist(id)).
+  const findConversaById = useCallback((id: string): Conversa | undefined => {
+    for (const arr of Object.values(conversasPorInstancia)) {
+      const found = arr.find(c => c.id === id);
+      if (found) return found;
+    }
+    return undefined;
+  }, [conversasPorInstancia]);
 
   // Função para iniciar nova conversa por número
   const handleNovaConversa = async () => {
@@ -2198,7 +1960,7 @@ export default function SDRZap() {
       toast.success(`Fotos sincronizadas: ${data?.successCount || 0} atualizadas (${instanciasUsadas})`);
       
       // Recarregar conversas para mostrar as fotos
-      await fetchConversas();
+      await invalidateConversas();
     } catch (error) {
       console.error('Erro ao sincronizar fotos:', error);
       toast.error("Erro ao sincronizar fotos dos contatos");
@@ -2231,7 +1993,7 @@ export default function SDRZap() {
       }
       
       // Recarregar conversas para mostrar os nomes atualizados
-      await fetchConversas();
+      await invalidateConversas();
     } catch (error) {
       console.error('Erro ao sincronizar nomes:', error);
       toast.error("Erro ao sincronizar nomes dos contatos");
@@ -2248,31 +2010,8 @@ export default function SDRZap() {
     );
   }
 
-  const conversasCol1Raw = getConversasCol1();
-  const conversasCol2Raw = getConversasCol2();
-
-  // Contadores para quick filter pills
-  const countsCol1 = {
-    nao_lidas: conversasCol1Raw.filter(c => (c.unread_count || 0) > 0).length,
-    aguardando: conversasCol1Raw.filter(c => c.last_message_from_me === false).length,
-  };
-  const countsCol2 = {
-    nao_lidas: conversasCol2Raw.filter(c => (c.unread_count || 0) > 0).length,
-    aguardando: conversasCol2Raw.filter(c => c.last_message_from_me === false).length,
-  };
-
-  // Aplicar quick filter
-  const applyQuickFilter = (list: Conversa[], filter: "todas" | "nao_lidas" | "aguardando") => {
-    if (filter === "nao_lidas") return list.filter(c => (c.unread_count || 0) > 0);
-    if (filter === "aguardando") return list.filter(c => c.last_message_from_me === false);
-    return list;
-  };
-
-  const conversasCol1 = applyQuickFilter(conversasCol1Raw, filterCol1);
-  const conversasCol2 = applyQuickFilter(conversasCol2Raw, filterCol2);
-
   // Buscar conversa sendo arrastada
-  const activeConversa = activeId 
+  const activeConversa = activeId
     ? [...conversasCol1, ...conversasCol2].find(c => c.id === activeId)
     : null;
 
@@ -2313,404 +2052,156 @@ export default function SDRZap() {
             </div>
           ) : (
           <div className="border-r bg-muted/30 overflow-hidden min-w-0 flex flex-col h-full">
-        <div className="p-2 border-b bg-card flex-shrink-0 h-[76px] flex flex-col justify-center">
-          {/* Linha 1: Título e botões */}
-          <div className="flex items-center justify-between mb-1.5">
-            <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
-              <h2 className="font-semibold text-sm truncate">{nomeColuna1}</h2>
-              {userProfile?.role === 'admin_geral' && (
-                <Dialog open={editandoColuna1} onOpenChange={setEditandoColuna1}>
-                  <DialogTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-5 w-5 flex-shrink-0"
-                      onClick={() => setTempNomeCol1(nomeColuna1)}
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-[425px]">
-                    <DialogHeader>
-                      <DialogTitle>Editar nome da coluna</DialogTitle>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="nome-col1">Nome da coluna</Label>
-                        <Input
-                          id="nome-col1"
-                          value={tempNomeCol1}
-                          onChange={(e) => setTempNomeCol1(e.target.value)}
-                          placeholder="Digite o nome da coluna"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={() => setEditandoColuna1(false)}>
-                        Cancelar
-                      </Button>
-                      <Button onClick={() => {
-                        setNomeColuna1(tempNomeCol1);
-                        setEditandoColuna1(false);
-                      }}>
-                        Salvar
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              )}
-              <span className="text-xs text-muted-foreground flex-shrink-0">({conversasCol1.length})</span>
-            </div>
-
-            <div className="flex items-center gap-1">
-              {/* Botão Sincronizar Nomes */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 px-2"
-                onClick={handleSincronizarNomes}
-                disabled={sincronizandoNomes}
-                title="Sincronizar nomes dos contatos via WhatsApp"
-              >
-                {sincronizandoNomes ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
-                )}
-              </Button>
-
-              {/* Botão Sincronizar Fotos */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 px-2"
-                onClick={handleSincronizarFotos}
-                disabled={sincronizandoFotos}
-                title="Sincronizar fotos dos contatos"
-              >
-                {sincronizandoFotos ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Camera className="h-4 w-4" />
-                )}
-              </Button>
-
-              {/* Filtro de Instâncias */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-7">
-                    <ChevronDown className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64 bg-card z-50">
-                <DropdownMenuLabel>Filtrar Instâncias</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <div className="p-2 space-y-2">
-                  {/* Instância Fantasma para Deletadas */}
-                  {conversasPorInstancia["DELETED_INSTANCES"] && conversasPorInstancia["DELETED_INSTANCES"].length > 0 && (
-                    <>
-                      <div 
-                        className="p-2 cursor-pointer border-b border-border pb-3" 
-                        onClick={() => toggleInstanciaCol1("DELETED_INSTANCES")}
-                      >
-                      <div 
-                        className={`flex items-center gap-2 px-3 py-2 rounded-md border-2 transition-all ${
-                          instanciasSelecionadasCol1.includes("DELETED_INSTANCES")
-                            ? 'bg-black text-white border-black'
-                            : 'bg-transparent border-black hover:bg-black/10'
-                        }`}
-                      >
-                        <span className="text-sm font-medium flex-1">
-                          Instâncias Deletadas
-                        </span>
-                        <Badge 
-                          variant="outline" 
-                          className={`text-xs ${
-                            instanciasSelecionadasCol1.includes("DELETED_INSTANCES")
-                              ? 'text-white border-white'
-                              : ''
-                          }`}
-                        >
-                          {conversasPorInstancia["DELETED_INSTANCES"].length}
-                        </Badge>
-                      </div>
-                      </div>
-                      <div className="text-xs text-muted-foreground px-2 py-1 font-medium">
-                        Instâncias Ativas
-                      </div>
-                    </>
-                  )}
-                  
-                  {/* Instâncias Reais (todas disponíveis) */}
-                  {instancias
-                    .map((instancia) => (
-                    <div 
-                      key={instancia.id} 
-                      className="p-2 cursor-pointer" 
-                      onClick={() => toggleInstanciaCol1(instancia.id)}
-                    >
-                      <div 
-                        className={`flex items-center gap-2 px-3 py-2 rounded-md border-2 transition-all ${
-                          instanciasSelecionadasCol1.includes(instancia.id)
-                            ? 'text-white'
-                            : 'bg-transparent hover:opacity-80'
-                        }`}
-                        style={{
-                          borderColor: instancia.cor_identificacao || '#3B82F6',
-                          backgroundColor: instanciasSelecionadasCol1.includes(instancia.id) 
-                            ? (instancia.cor_identificacao || '#3B82F6')
-                            : 'transparent'
-                        }}
-                      >
-                        <span className="text-sm font-medium flex-1">
-                          {instancia.nome_instancia}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            </div>
-          </div>
-
-          {/* Campo de Pesquisa */}
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Pesquisar..."
-              value={buscaCol1}
-              onChange={(e) => setBuscaCol1(e.target.value)}
-              className="pl-7 h-7 text-xs"
-            />
-          </div>
-          {/* Quick Filter Pills */}
-          <div className="flex gap-1 mt-1.5 px-0.5">
-            {([
-              { key: "todas" as const, label: "Todas" },
-              { key: "nao_lidas" as const, label: "Não lidas", count: countsCol1.nao_lidas },
-              { key: "aguardando" as const, label: "Aguardando", count: countsCol1.aguardando },
-            ]).map(f => (
-              <button
-                key={f.key}
-                onClick={() => setFilterCol1(f.key)}
-                className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
-                  filterCol1 === f.key
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-transparent text-muted-foreground border-border hover:border-primary/50"
-                }`}
-              >
-                {f.label}{f.count !== undefined && f.count > 0 ? ` ${f.count}` : ""}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <ScrollArea className="flex-1">
-          <DroppableColumn id="coluna-1">
-            <div className="p-2">
-              {conversasCol1.map((conversa) => {
-                // Buscar cor da instância de origem
-                const instanciaOrigem = instancias.find(i => i.id === conversa.orig_instance_id);
-                const corInstancia = instanciaOrigem?.cor_identificacao || '#3B82F6';
-                const isSelecionada = conversaSelecionada?.id === conversa.id;
-                
-                return (
-                <DraggableCard 
-                  key={conversa.id} 
-                  id={conversa.id}
-                  onClick={() => handleSelecionarConversa(conversa)}
-                >
-                  <Card
-                    className="cursor-pointer transition-all border-2 mb-0.5 overflow-hidden group"
-                    style={{
-                      backgroundColor: isSelecionada ? corInstancia : `${corInstancia}15`,
-                      borderColor: corInstancia,
-                      borderLeftColor: getConversaUrgencyColor(conversa.last_message_from_me, conversa.ultima_interacao),
-                      borderLeftWidth: '4px',
-                      color: isSelecionada ? '#ffffff' : '#000000'
-                    }}
-                  >
-                    <CardContent className="p-2">
-                      <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                        {col1Size >= 22 && (() => {
-                          const foto = conversa.foto_contato || conversa.contact?.profile_picture_url;
-                          if (foto && foto !== 'NO_PICTURE') {
-                            return (
-                              <img 
-                                src={foto}
-                                alt=""
-                                className="h-7 w-7 rounded-full flex-shrink-0 object-cover"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none';
-                                  const placeholder = e.currentTarget.nextElementSibling as HTMLElement;
-                                  if (placeholder) placeholder.classList.remove('hidden');
-                                }}
-                              />
-                            );
-                          }
-                          return null;
-                        })()}
-                        {col1Size >= 22 && (
-                          <div 
-                            className={`flex h-7 w-7 items-center justify-center rounded-full flex-shrink-0 ${
-                              (conversa.foto_contato || conversa.contact?.profile_picture_url) && 
-                              (conversa.foto_contato !== 'NO_PICTURE' && conversa.contact?.profile_picture_url !== 'NO_PICTURE') 
-                                ? 'hidden' : ''
-                            }`}
-                            style={{
-                              backgroundColor: isSelecionada ? '#ffffff20' : `${corInstancia}30`
-                            }}
-                          >
-                            <User 
-                              className="h-3.5 w-3.5" 
-                              style={{ color: isSelecionada ? '#ffffff' : corInstancia }}
-                            />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0 overflow-hidden">
-                          <div className="flex items-center justify-between">
-                            <p 
-                              className="font-medium text-xs truncate flex items-center gap-1"
-                              style={{ color: isSelecionada ? '#ffffff' : '#000000' }}
+            <ConversationList
+              conversas={conversasCol1}
+              selectedId={conversaSelecionada?.id ?? null}
+              getCorInstancia={getCorInstancia}
+              dropZoneId="coluna-1"
+              draggable
+              onSelect={handleSelecionarConversa}
+              onPin={handleFixarConversa}
+              onFollowUp={(id) => setFollowUpConversaId(id)}
+              onBlacklist={(id) => {
+                const c = findConversaById(id);
+                if (c) handleEnviarBlacklist(c);
+              }}
+              onDelete={handleExcluirConversa}
+              header={
+                <div className="p-2 border-b bg-card flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
+                      <h2 className="font-semibold text-sm truncate">{nomeColuna1}</h2>
+                      {userProfile?.role === 'admin_geral' && (
+                        <Dialog open={editandoColuna1} onOpenChange={setEditandoColuna1}>
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 flex-shrink-0"
+                              onClick={() => setTempNomeCol1(nomeColuna1)}
                             >
-                              {conversa.fixada && <Pin className="h-3 w-3 flex-shrink-0" />}
-                              {conversa.contact.name || conversa.contact.phone.replace('@s.whatsapp.net', '')}
-                              {conversa.last_message_from_me !== undefined && conversa.last_message_from_me !== null && (
-                                <span
-                                  className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                                  style={{ backgroundColor: conversa.last_message_from_me ? '#22C55E' : '#EF4444' }}
-                                  title={conversa.last_message_from_me ? 'Aguardando cliente' : 'Aguardando resposta'}
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="sm:max-w-[425px]">
+                            <DialogHeader>
+                              <DialogTitle>Editar nome da coluna</DialogTitle>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                              <div className="grid gap-2">
+                                <Label htmlFor="nome-col1">Nome da coluna</Label>
+                                <Input
+                                  id="nome-col1"
+                                  value={tempNomeCol1}
+                                  onChange={(e) => setTempNomeCol1(e.target.value)}
+                                  placeholder="Digite o nome da coluna"
                                 />
-                              )}
-                            </p>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                <button className="p-0.5 rounded hover:bg-black/10 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <MoreVertical className="h-3.5 w-3.5" style={{ color: isSelecionada ? '#ffffff' : '#00000099' }} />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-44" onClick={(e) => e.stopPropagation()}>
-                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleFixarConversa(conversa.id, !!conversa.fixada); }}>
-                                  <Pin className="h-4 w-4 mr-2" />
-                                  {conversa.fixada ? 'Desafixar' : 'Fixar conversa'}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setFollowUpConversaId(conversa.id); }}>
-                                  <Clock className="h-4 w-4 mr-2" />
-                                  {(conversa as any).follow_up_em ? 'Editar follow-up' : 'Definir follow-up'}
-                                </DropdownMenuItem>
-                                {(conversa as any).follow_up_em && (
-                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleRemoverFollowUp(conversa.id); }}>
-                                    <X className="h-4 w-4 mr-2" />
-                                    Remover follow-up
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEnviarBlacklist(conversa); }}>
-                                  <Ban className="h-4 w-4 mr-2" />
-                                  Enviar p/ Blacklist
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); handleExcluirConversa(conversa.id); }}>
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Excluir conversa
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                          {col1Size >= 20 && (
-                            <div className="flex items-center gap-1 mt-0.5 overflow-hidden">
-                              <Badge 
-                                variant="outline" 
-                                className="text-[9px] px-1 py-0 truncate max-w-[80px]"
-                                style={{
-                                  borderColor: isSelecionada ? '#ffffff' : corInstancia,
-                                  color: isSelecionada ? '#ffffff' : '#000000',
-                                  backgroundColor: 'transparent'
-                                }}
-                              >
-                                {getInstanciaNome(conversa.orig_instance_id)}
-                              </Badge>
-                              {conversa.responsavel_atual && (
-                                <Badge
-                                  variant="secondary"
-                                  className="text-[9px] px-1 py-0 flex-shrink-0"
-                                  style={{
-                                    backgroundColor: isSelecionada ? '#ffffff20' : `${corInstancia}20`,
-                                    color: isSelecionada ? '#ffffff' : '#000000'
-                                  }}
-                                >
-                                  Atribuída
-                                </Badge>
-                              )}
-                              {conversa.contact?.perfil_profissional && (
-                                <Badge
-                                  variant="outline"
-                                  className="text-[9px] px-1 py-0 truncate max-w-[90px] flex-shrink-0"
-                                  style={{
-                                    borderColor: isSelecionada ? '#ffffff80' : '#8B5CF6',
-                                    color: isSelecionada ? '#ffffff' : '#7C3AED',
-                                    backgroundColor: isSelecionada ? '#ffffff10' : '#8B5CF610'
-                                  }}
-                                >
-                                  {PERFIS_PROFISSIONAIS.find(p => p.value === conversa.contact.perfil_profissional)?.label || conversa.contact.perfil_profissional}
-                                </Badge>
-                              )}
+                              </div>
                             </div>
-                          )}
-                          <div className="flex items-center justify-between mt-0.5 gap-1">
-                            {conversa.ultima_interacao && col1Size >= 18 && (
-                              <p 
-                                className="text-[9px] truncate"
-                                style={{ 
-                                  color: isSelecionada ? '#ffffffcc' : '#00000099' 
-                                }}
-                              >
-                                {format(new Date(conversa.ultima_interacao), "dd/MM/yy HH:mm", { locale: ptBR })}
-                              </p>
-                            )}
-                            {conversa.last_message_from_me === false && conversa.ultima_interacao && (
-                              <p
-                                className="text-[10px] font-medium truncate"
-                                style={{ color: getConversaUrgencyColor(conversa.last_message_from_me, conversa.ultima_interacao) }}
-                              >
-                                {getTempoSemResposta(conversa.ultima_interacao)} sem resposta
-                              </p>
-                            )}
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              {col1Size >= 20 && (
-                                <MessageStatusIcon 
-                                  status={conversa.last_message_status}
-                                  fromMe={conversa.last_message_from_me}
-                                  className={isSelecionada ? "text-white" : "text-muted-foreground"}
-                                />
-                              )}
-                              {typeof conversa.unread_count === 'number' && conversa.unread_count > 0 && (
-                                <div 
-                                  className="flex items-center justify-center rounded-full min-w-[16px] h-4 px-1 text-[9px] font-bold bg-primary text-primary-foreground"
+                            <div className="flex justify-end gap-2">
+                              <Button variant="outline" onClick={() => setEditandoColuna1(false)}>
+                                Cancelar
+                              </Button>
+                              <Button onClick={() => {
+                                setNomeColuna1(tempNomeCol1);
+                                setEditandoColuna1(false);
+                              }}>
+                                Salvar
+                              </Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      )}
+                      <span className="text-xs text-muted-foreground flex-shrink-0">({conversasCol1.length})</span>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2"
+                        onClick={handleSincronizarNomes}
+                        disabled={sincronizandoNomes}
+                        title="Sincronizar nomes dos contatos via WhatsApp"
+                      >
+                        {sincronizandoNomes ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2"
+                        onClick={handleSincronizarFotos}
+                        disabled={sincronizandoFotos}
+                        title="Sincronizar fotos dos contatos"
+                      >
+                        {sincronizandoFotos ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-7">
+                            <ChevronDown className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-64 bg-card z-50">
+                          <DropdownMenuLabel>Filtrar Instâncias</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <div className="p-2 space-y-2">
+                            {conversasPorInstancia["DELETED_INSTANCES"] && conversasPorInstancia["DELETED_INSTANCES"].length > 0 && (
+                              <>
+                                <div
+                                  className="p-2 cursor-pointer border-b border-border pb-3"
+                                  onClick={() => toggleInstanciaCol1("DELETED_INSTANCES")}
                                 >
-                                  {conversa.unread_count > 99 ? '99+' : conversa.unread_count}
+                                  <div
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-md border-2 transition-all ${
+                                      instanciasSelecionadasCol1.includes("DELETED_INSTANCES")
+                                        ? 'bg-black text-white border-black'
+                                        : 'bg-transparent border-black hover:bg-black/10'
+                                    }`}
+                                  >
+                                    <span className="text-sm font-medium flex-1">Instâncias Deletadas</span>
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-xs ${
+                                        instanciasSelecionadasCol1.includes("DELETED_INSTANCES") ? 'text-white border-white' : ''
+                                      }`}
+                                    >
+                                      {conversasPorInstancia["DELETED_INSTANCES"].length}
+                                    </Badge>
+                                  </div>
                                 </div>
-                              )}
-                            </div>
+                                <div className="text-xs text-muted-foreground px-2 py-1 font-medium">Instâncias Ativas</div>
+                              </>
+                            )}
+                            {instancias.map((instancia) => (
+                              <div
+                                key={instancia.id}
+                                className="p-2 cursor-pointer"
+                                onClick={() => toggleInstanciaCol1(instancia.id)}
+                              >
+                                <div
+                                  className={`flex items-center gap-2 px-3 py-2 rounded-md border-2 transition-all ${
+                                    instanciasSelecionadasCol1.includes(instancia.id) ? 'text-white' : 'bg-transparent hover:opacity-80'
+                                  }`}
+                                  style={{
+                                    borderColor: instancia.cor_identificacao || '#3B82F6',
+                                    backgroundColor: instanciasSelecionadasCol1.includes(instancia.id)
+                                      ? (instancia.cor_identificacao || '#3B82F6')
+                                      : 'transparent'
+                                  }}
+                                >
+                                  <span className="text-sm font-medium flex-1">{instancia.nome_instancia}</span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </DraggableCard>
-              )})}
-
-
-              {conversasCol1.length === 0 && (
-                <Card className="border-dashed">
-                  <CardContent className="p-6 text-center text-sm text-muted-foreground">
-                    Nenhuma conversa
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </DroppableColumn>
-        </ScrollArea>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                </div>
+              }
+            />
           </div>
           )}
         </ResizablePanel>
@@ -2732,301 +2223,79 @@ export default function SDRZap() {
         </div>
 
         {/* COLUNA 2: Minha Instância */}
-        <ResizablePanel 
-          defaultSize={28} 
-          minSize={15} 
-          maxSize={40} 
+        <ResizablePanel
+          defaultSize={28}
+          minSize={15}
+          maxSize={40}
           onResize={setCol2Size}
         >
           <div className="border-r bg-muted/30 overflow-hidden min-w-0 flex flex-col h-full">
-        <div className="p-2 border-b bg-card flex-shrink-0 h-[76px] flex flex-col justify-center">
-          {/* Linha 1: Título e botões */}
-          <div className="flex items-center justify-between mb-1.5">
-            <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
-              <h2 className="font-semibold text-sm truncate">
-                {userProfile?.instancia_padrao_id 
-                  ? instancias.find(i => i.id === userProfile.instancia_padrao_id)?.nome_instancia || 'Minha Instância'
-                  : 'Minha Instância'
-                }
-              </h2>
-              <span className="text-xs text-muted-foreground flex-shrink-0">({conversasCol2.length})</span>
-            </div>
+            <ConversationList
+              conversas={conversasCol2}
+              selectedId={conversaSelecionada?.id ?? null}
+              getCorInstancia={getCorInstancia}
+              dropZoneId="coluna-2"
+              draggable
+              onSelect={handleSelecionarConversa}
+              onPin={handleFixarConversa}
+              onFollowUp={(id) => setFollowUpConversaId(id)}
+              onBlacklist={(id) => {
+                const c = findConversaById(id);
+                if (c) handleEnviarBlacklist(c);
+              }}
+              onDelete={handleExcluirConversa}
+              header={
+                <div className="p-2 border-b bg-card flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
+                      <h2 className="font-semibold text-sm truncate">
+                        {userProfile?.instancia_padrao_id
+                          ? instancias.find(i => i.id === userProfile.instancia_padrao_id)?.nome_instancia || 'Minha Instância'
+                          : 'Minha Instância'
+                        }
+                      </h2>
+                      <span className="text-xs text-muted-foreground flex-shrink-0">({conversasCol2.length})</span>
+                    </div>
 
-            {/* Botão Nova Conversa */}
-            <Dialog open={modalNovaConversa} onOpenChange={setModalNovaConversa}>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0" title="Nova conversa">
-                  <UserPlus className="h-4 w-4" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[400px]">
-                <DialogHeader>
-                  <DialogTitle>Nova conversa</DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="numero-nova">Número do telefone</Label>
-                    <Input
-                      id="numero-nova"
-                      value={numeroNovaConversa}
-                      onChange={(e) => setNumeroNovaConversa(e.target.value)}
-                      placeholder="Ex: 5547999999999"
-                      onKeyDown={(e) => e.key === 'Enter' && handleNovaConversa()}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Digite o número com código do país e DDD
-                    </p>
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setModalNovaConversa(false)}>
-                    Cancelar
-                  </Button>
-                  <Button onClick={handleNovaConversa} disabled={verificandoNumero}>
-                    {verificandoNumero ? "Verificando..." : "Iniciar conversa"}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          {/* Campo de Pesquisa */}
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Pesquisar..."
-              value={buscaCol2}
-              onChange={(e) => setBuscaCol2(e.target.value)}
-              className="pl-7 h-7 text-xs"
-            />
-          </div>
-          {/* Quick Filter Pills */}
-          <div className="flex gap-1 mt-1.5 px-0.5">
-            {([
-              { key: "todas" as const, label: "Todas" },
-              { key: "nao_lidas" as const, label: "Não lidas", count: countsCol2.nao_lidas },
-              { key: "aguardando" as const, label: "Aguardando", count: countsCol2.aguardando },
-            ]).map(f => (
-              <button
-                key={f.key}
-                onClick={() => setFilterCol2(f.key)}
-                className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
-                  filterCol2 === f.key
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-transparent text-muted-foreground border-border hover:border-primary/50"
-                }`}
-              >
-                {f.label}{f.count !== undefined && f.count > 0 ? ` ${f.count}` : ""}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <ScrollArea className="flex-1">
-          <DroppableColumn id="coluna-2">
-            <div className="p-2">
-              {conversasCol2.map((conversa) => {
-                // Buscar cor da instância atual (current ou origem)
-                const instanciaAtual = instancias.find(i => i.id === (conversa.current_instance_id || conversa.orig_instance_id));
-                const corInstancia = instanciaAtual?.cor_identificacao || '#3B82F6';
-                const isSelecionada = conversaSelecionada?.id === conversa.id;
-                
-                return (
-                <DraggableCard 
-                  key={conversa.id} 
-                  id={conversa.id}
-                  onClick={() => handleSelecionarConversa(conversa)}
-                >
-                  <Card
-                    className="cursor-pointer transition-all border-2 mb-0.5 overflow-hidden group"
-                    style={{
-                      backgroundColor: isSelecionada ? corInstancia : `${corInstancia}15`,
-                      borderColor: corInstancia,
-                      borderLeftColor: getConversaUrgencyColor(conversa.last_message_from_me, conversa.ultima_interacao),
-                      borderLeftWidth: '4px',
-                      color: isSelecionada ? '#ffffff' : '#000000'
-                    }}
-                  >
-                    <CardContent className="p-2">
-                      <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                        {col2Size >= 22 && (() => {
-                          const foto = conversa.foto_contato || conversa.contact?.profile_picture_url;
-                          if (foto && foto !== 'NO_PICTURE') {
-                            return (
-                              <img 
-                                src={foto}
-                                alt=""
-                                className="h-7 w-7 rounded-full flex-shrink-0 object-cover"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none';
-                                  const placeholder = e.currentTarget.nextElementSibling as HTMLElement;
-                                  if (placeholder) placeholder.classList.remove('hidden');
-                                }}
-                              />
-                            );
-                          }
-                          return null;
-                        })()}
-                        {col2Size >= 22 && (
-                          <div 
-                            className={`flex h-7 w-7 items-center justify-center rounded-full flex-shrink-0 ${
-                              (conversa.foto_contato || conversa.contact?.profile_picture_url) && 
-                              (conversa.foto_contato !== 'NO_PICTURE' && conversa.contact?.profile_picture_url !== 'NO_PICTURE') 
-                                ? 'hidden' : ''
-                            }`}
-                            style={{
-                              backgroundColor: isSelecionada ? '#ffffff20' : `${corInstancia}30`
-                            }}
-                          >
-                            <User 
-                              className="h-3.5 w-3.5" 
-                              style={{ color: isSelecionada ? '#ffffff' : corInstancia }}
+                    <Dialog open={modalNovaConversa} onOpenChange={setModalNovaConversa}>
+                      <DialogTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0" title="Nova conversa">
+                          <UserPlus className="h-4 w-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-[400px]">
+                        <DialogHeader>
+                          <DialogTitle>Nova conversa</DialogTitle>
+                        </DialogHeader>
+                        <div className="grid gap-4 py-4">
+                          <div className="grid gap-2">
+                            <Label htmlFor="numero-nova">Número do telefone</Label>
+                            <Input
+                              id="numero-nova"
+                              value={numeroNovaConversa}
+                              onChange={(e) => setNumeroNovaConversa(e.target.value)}
+                              placeholder="Ex: 5547999999999"
+                              onKeyDown={(e) => e.key === 'Enter' && handleNovaConversa()}
                             />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0 overflow-hidden">
-                          <div className="flex items-center justify-between">
-                            <p 
-                              className="font-medium text-xs truncate flex items-center gap-1"
-                              style={{ color: isSelecionada ? '#ffffff' : '#000000' }}
-                            >
-                              {conversa.fixada && <Pin className="h-3 w-3 flex-shrink-0" />}
-                              {conversa.contact.name || conversa.contact.phone.replace('@s.whatsapp.net', '')}
-                              {conversa.last_message_from_me !== undefined && conversa.last_message_from_me !== null && (
-                                <span
-                                  className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                                  style={{ backgroundColor: conversa.last_message_from_me ? '#22C55E' : '#EF4444' }}
-                                  title={conversa.last_message_from_me ? 'Aguardando cliente' : 'Aguardando resposta'}
-                                />
-                              )}
+                            <p className="text-xs text-muted-foreground">
+                              Digite o número com código do país e DDD
                             </p>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                <button className="p-0.5 rounded hover:bg-black/10 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <MoreVertical className="h-3.5 w-3.5" style={{ color: isSelecionada ? '#ffffff' : '#00000099' }} />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-44" onClick={(e) => e.stopPropagation()}>
-                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleFixarConversa(conversa.id, !!conversa.fixada); }}>
-                                  <Pin className="h-4 w-4 mr-2" />
-                                  {conversa.fixada ? 'Desafixar' : 'Fixar conversa'}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setFollowUpConversaId(conversa.id); }}>
-                                  <Clock className="h-4 w-4 mr-2" />
-                                  {(conversa as any).follow_up_em ? 'Editar follow-up' : 'Definir follow-up'}
-                                </DropdownMenuItem>
-                                {(conversa as any).follow_up_em && (
-                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleRemoverFollowUp(conversa.id); }}>
-                                    <X className="h-4 w-4 mr-2" />
-                                    Remover follow-up
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEnviarBlacklist(conversa); }}>
-                                  <Ban className="h-4 w-4 mr-2" />
-                                  Enviar p/ Blacklist
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); handleExcluirConversa(conversa.id); }}>
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Excluir conversa
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                          {col2Size >= 20 && (
-                            <div className="flex items-center gap-1 mt-0.5 overflow-hidden">
-                              {conversa.orig_instance_id !== conversa.current_instance_id && (
-                                <div 
-                                  className="flex items-center gap-1 text-[9px] truncate"
-                                  style={{ color: isSelecionada ? '#ffffffcc' : '#00000099' }}
-                                >
-                                  <span className="truncate max-w-[50px]">{getInstanciaNome(conversa.orig_instance_id)}</span>
-                                  <ArrowRight className="h-2.5 w-2.5 flex-shrink-0" />
-                                  <span className="font-medium truncate max-w-[50px]">{getInstanciaNome(conversa.current_instance_id)}</span>
-                                </div>
-                              )}
-                              {conversa.orig_instance_id === conversa.current_instance_id && (
-                                <Badge 
-                                  variant="outline" 
-                                  className="text-[9px] px-1 py-0 truncate max-w-[80px]"
-                                  style={{
-                                    borderColor: isSelecionada ? '#ffffff' : corInstancia,
-                                    color: isSelecionada ? '#ffffff' : '#000000',
-                                    backgroundColor: 'transparent'
-                                  }}
-                                >
-                                  {getInstanciaNome(conversa.current_instance_id)}
-                                </Badge>
-                              )}
-                              {conversa.contact?.perfil_profissional && (
-                                <Badge
-                                  variant="outline"
-                                  className="text-[9px] px-1 py-0 truncate max-w-[90px] flex-shrink-0"
-                                  style={{
-                                    borderColor: isSelecionada ? '#ffffff80' : '#8B5CF6',
-                                    color: isSelecionada ? '#ffffff' : '#7C3AED',
-                                    backgroundColor: isSelecionada ? '#ffffff10' : '#8B5CF610'
-                                  }}
-                                >
-                                  {PERFIS_PROFISSIONAIS.find(p => p.value === conversa.contact.perfil_profissional)?.label || conversa.contact.perfil_profissional}
-                                </Badge>
-                              )}
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between mt-0.5 gap-1">
-                            {conversa.ultima_interacao && col2Size >= 18 && (
-                              <p
-                                className="text-[9px] truncate"
-                                style={{
-                                  color: isSelecionada ? '#ffffffcc' : '#00000099'
-                                }}
-                              >
-                                {format(new Date(conversa.ultima_interacao), "dd/MM/yy HH:mm", { locale: ptBR })}
-                              </p>
-                            )}
-                            {conversa.last_message_from_me === false && conversa.ultima_interacao && (
-                              <p
-                                className="text-[10px] font-medium truncate"
-                                style={{ color: getConversaUrgencyColor(conversa.last_message_from_me, conversa.ultima_interacao) }}
-                              >
-                                {getTempoSemResposta(conversa.ultima_interacao)} sem resposta
-                              </p>
-                            )}
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              {col2Size >= 20 && (
-                                <MessageStatusIcon 
-                                  status={conversa.last_message_status}
-                                  fromMe={conversa.last_message_from_me}
-                                  className={isSelecionada ? "text-white" : "text-muted-foreground"}
-                                />
-                              )}
-                              {typeof conversa.unread_count === 'number' && conversa.unread_count > 0 && (
-                                <div 
-                                  className="flex items-center justify-center rounded-full min-w-[16px] h-4 px-1 text-[9px] font-bold bg-primary text-primary-foreground"
-                                >
-                                  {conversa.unread_count > 99 ? '99+' : conversa.unread_count}
-                                </div>
-                              )}
-                            </div>
                           </div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </DraggableCard>
-              )})}
-
-
-              {conversasCol2.length === 0 && (
-                <Card className="border-dashed">
-                  <CardContent className="p-6 text-center text-sm text-muted-foreground">
-                    Nenhuma conversa na sua fila
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </DroppableColumn>
-        </ScrollArea>
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" onClick={() => setModalNovaConversa(false)}>
+                            Cancelar
+                          </Button>
+                          <Button onClick={handleNovaConversa} disabled={verificandoNumero}>
+                            {verificandoNumero ? "Verificando..." : "Iniciar conversa"}
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+              }
+            />
           </div>
         </ResizablePanel>
 
@@ -4125,7 +3394,7 @@ export default function SDRZap() {
 
                                    toast.success('Nova conversa iniciada!');
                                    setConversaSelecionada(novaConversa as any);
-                                   fetchConversas();
+                                   invalidateConversas();
                                  } catch (e: any) {
                                    console.error('Erro ao iniciar conversa:', e);
                                    toast.error('Erro ao iniciar conversa');

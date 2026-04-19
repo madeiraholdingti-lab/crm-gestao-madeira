@@ -2,18 +2,22 @@ import { useRef, useMemo, useCallback, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ConversationCard } from "./ConversationCard";
 import { ConversationFilters } from "./ConversationFilters";
+import { DraggableCard } from "@/components/DraggableCard";
+import { DroppableColumn } from "@/components/DroppableColumn";
 import type { Conversa } from "@/hooks/useConversas";
 
 interface ConversationListProps {
   conversas: Conversa[];
   selectedId: string | null;
-  corInstancia: string;
+  getCorInstancia: (conversa: Conversa) => string;
   onSelect: (conversa: Conversa) => void;
   onPin: (id: string, fixada: boolean) => void;
   onFollowUp: (id: string) => void;
   onBlacklist: (id: string) => void;
   onDelete: (id: string) => void;
   header?: React.ReactNode;
+  dropZoneId?: string;
+  draggable?: boolean;
 }
 
 function filtrarPorBusca(lista: Conversa[], busca: string): Conversa[] {
@@ -28,8 +32,9 @@ function filtrarPorBusca(lista: Conversa[], busca: string): Conversa[] {
 }
 
 export function ConversationList({
-  conversas, selectedId, corInstancia, onSelect,
-  onPin, onFollowUp, onBlacklist, onDelete, header
+  conversas, selectedId, getCorInstancia, onSelect,
+  onPin, onFollowUp, onBlacklist, onDelete, header,
+  dropZoneId, draggable
 }: ConversationListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [busca, setBusca] = useState("");
@@ -82,34 +87,51 @@ export function ConversationList({
             {busca ? 'Nenhuma conversa encontrada' : 'Sem conversas'}
           </p>
         ) : (
-          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-            {virtualizer.getVirtualItems().map((virtualItem) => {
-              const conversa = filtered[virtualItem.index];
-              return (
-                <div
-                  key={conversa.id}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualItem.start}px)`,
-                  }}
-                >
-                  <ConversationCard
-                    conversa={conversa}
-                    isSelected={selectedId === conversa.id}
-                    corInstancia={corInstancia}
-                    onClick={() => onSelect(conversa)}
-                    onPin={onPin}
-                    onFollowUp={onFollowUp}
-                    onBlacklist={onBlacklist}
-                    onDelete={onDelete}
-                  />
-                </div>
-              );
-            })}
-          </div>
+          (() => {
+            const virtualBody = (
+              <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+                {virtualizer.getVirtualItems().map((virtualItem) => {
+                  const conversa = filtered[virtualItem.index];
+                  const corInstancia = getCorInstancia(conversa);
+                  const card = (
+                    <ConversationCard
+                      conversa={conversa}
+                      isSelected={selectedId === conversa.id}
+                      corInstancia={corInstancia}
+                      onClick={() => onSelect(conversa)}
+                      onPin={onPin}
+                      onFollowUp={onFollowUp}
+                      onBlacklist={onBlacklist}
+                      onDelete={onDelete}
+                    />
+                  );
+                  return (
+                    <div
+                      key={conversa.id}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualItem.start}px)`,
+                      }}
+                    >
+                      {draggable ? (
+                        <DraggableCard id={conversa.id} onClick={() => onSelect(conversa)}>
+                          {card}
+                        </DraggableCard>
+                      ) : card}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+            return dropZoneId ? (
+              <DroppableColumn id={dropZoneId}>
+                {virtualBody}
+              </DroppableColumn>
+            ) : virtualBody;
+          })()
         )}
       </div>
     </div>
