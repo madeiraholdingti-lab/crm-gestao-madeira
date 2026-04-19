@@ -108,12 +108,22 @@ Deno.serve(async (req) => {
     }
 
     // Lista de nomes de instância/bot conhecidos (para ignorar/limpar)
-    // Também adicionar os nomes de TODAS as instâncias do sistema
+    // Também adicionar os nomes de TODAS as instâncias do sistema.
+    //
+    // Inclui também "nomes contaminados" — pushNames de remetentes de grupo
+    // que foram aplicados em massa a participantes em syncs históricos
+    // (bug pré-migração 04/2026). Manter na lista previne regressão se
+    // algum webhook antigo tentar reaplicar.
     const nomesInstanciaBloqueados = [
       'Dr. Maikon Madeira', 'Dr Maikon Madeira', 'Maikon GSS', 'RUBI',
       'Disparos3367', 'Isadora ', 'Rafaela', 'Disparos Cardiologista',
       'isadoraVolek', 'PacientesRafaela', 'Maikon Madeira',
       'Dr Maikon Madeira Gss Saúde .:', 'Dr Maikon Madeira Gss Saúde',
+      // Nomes contaminados via pushName de grupos
+      'Dr. Sandro Valério Fadel',
+      'Gestao Serviço Saúde',
+      'Mariana Chiarello - Assistente Administrativa',
+      'Bruno Sampaio - Wati',
       // Adicionar nomes de todas as instâncias do banco
       ...(instancias || []).flatMap(i => [i.nome_instancia, i.instancia_id]).filter(Boolean)
     ];

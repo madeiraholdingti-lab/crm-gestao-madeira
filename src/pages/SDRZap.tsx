@@ -316,8 +316,14 @@ export default function SDRZap() {
         instanciaDestinataria: instanciaDestinataria?.nome_instancia 
       });
 
-      // Helper: monta a query de mensagens (compartilhada entre load inicial e re-fetch pós-sync)
-      const buildMessagesQuery = () => {
+      // Helper: busca as últimas N mensagens da conversa.
+      // Crítico: pegamos DESC + limit 500 pra garantir que as mensagens MAIS
+      // RECENTES sempre venham (o padrão do Supabase é 1000 linhas por query;
+      // com .order ASC sem limit, ele cortava as mais recentes em conversas
+      // longas, ex: Ramone 1420 msgs — a bolha "Mandou no grupo" sumia).
+      // Invertemos no final pra exibir em ordem cronológica ASC na UI.
+      const MAX_MENSAGENS = 500;
+      const buildMessagesQuery = async () => {
         let q = supabase
           .from("messages")
           .select("id, text, from_me, wa_timestamp, created_at, status, message_type, instancia_whatsapp_id, media_url, media_mime_type, wa_message_id, sender_jid, raw_payload, is_edited")
@@ -328,7 +334,14 @@ export default function SDRZap() {
         } else if (instanciaId) {
           q = q.eq("instancia_whatsapp_id", instanciaId);
         }
-        return q.order("created_at", { ascending: true });
+
+        const { data, error } = await q
+          .order("created_at", { ascending: false })
+          .limit(MAX_MENSAGENS);
+
+        if (error) return { data: null, error };
+        // Reverter pra ordem cronológica ASC (como a UI espera pra scroll bottom)
+        return { data: (data || []).slice().reverse(), error: null };
       };
 
       // 1. CARREGA IMEDIATAMENTE do banco (sem esperar Evolution API)
