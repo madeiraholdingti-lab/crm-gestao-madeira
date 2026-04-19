@@ -4,7 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useConversas } from "@/hooks/useConversas";
 import { useInstancias } from "@/hooks/useInstancias";
 import { useEquipe } from "@/hooks/useEquipe";
+import { useTasksDaConversa } from "@/hooks/useTasksDaConversa";
 import { ConversationList } from "@/components/sdr-zap/ConversationList";
+import { CreateTaskFromConversaDialog } from "@/components/sdr-zap/CreateTaskFromConversaDialog";
+import { ListTodo } from "lucide-react";
 import { PERFIS_PROFISSIONAIS } from "@/utils/constants";
 import { toast } from "sonner";
 import { Phone, MessageSquare, User, ChevronDown, Pencil, ArrowRight, FileText, Image as ImageIcon, Video, Mic, Paperclip, Download, Play, ExternalLink, ZoomIn, ZoomOut, X, ChevronLeft, ChevronRight, Search, Plus, UserPlus, MoreVertical, RotateCcw, AlertCircle, Loader2, Camera, RefreshCw, UserCheck, MapPin, Copy, Trash2, Pin, Ban, Clock } from "lucide-react";
@@ -156,6 +159,7 @@ export default function SDRZap() {
   
   // Estados para nova conversa (busca e filter pills agora são internos ao ConversationList)
   const [modalNovaConversa, setModalNovaConversa] = useState(false);
+  const [modalCriarTask, setModalCriarTask] = useState(false);
   const [numeroNovaConversa, setNumeroNovaConversa] = useState("");
   const [verificandoNumero, setVerificandoNumero] = useState(false);
   const [sincronizandoFotos, setSincronizandoFotos] = useState(false);
@@ -2059,6 +2063,9 @@ export default function SDRZap() {
     }
   };
 
+  // Tasks vinculadas à conversa aberta — pro badge no header da Col3
+  const { data: tasksDaConversa = [] } = useTasksDaConversa(conversaSelecionada?.id);
+
   // Flag derivada: conversa aberta foi respondida por mais de uma instância?
   // Usada para decidir se mostra o header "quem respondeu" acima de cada bolha.
   // Em conversa 1-pra-1 com uma única instância respondendo, o header é ruído.
@@ -2526,6 +2533,27 @@ export default function SDRZap() {
               </div>
             </div>
             
+            {/* Botão Criar Tarefa + contador de tasks da conversa */}
+            {conversaSelecionada && (
+              <div className="flex-shrink-0 flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs"
+                  onClick={() => setModalCriarTask(true)}
+                  title="Criar tarefa vinculada a essa conversa"
+                >
+                  <ListTodo className="h-4 w-4" />
+                  Tarefa
+                  {tasksDaConversa.length > 0 && (
+                    <Badge variant="secondary" className="ml-0.5 h-4 px-1 text-[10px]">
+                      {tasksDaConversa.length}
+                    </Badge>
+                  )}
+                </Button>
+              </div>
+            )}
+
             {/* Seletor de instância integrado no header */}
             {conversaSelecionada && (
               <div className="flex-shrink-0">
@@ -3857,6 +3885,16 @@ export default function SDRZap() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Modal Criar Tarefa a partir da conversa selecionada */}
+      {conversaSelecionada && (
+        <CreateTaskFromConversaDialog
+          open={modalCriarTask}
+          onOpenChange={setModalCriarTask}
+          conversa={conversaSelecionada as any}
+          criadoPorId={userProfile?.id}
+        />
+      )}
     </DndContext>
   );
 }
