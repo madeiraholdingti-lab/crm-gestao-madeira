@@ -36,7 +36,7 @@ serve(async (req) => {
       );
     }
 
-    const evolutionApiKey = config.evolution_api_key;
+    const evolutionApiKey = config.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY');
     if (!evolutionApiKey) {
       console.error('EVOLUTION_API_KEY não configurada no banco');
       return new Response(
