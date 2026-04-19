@@ -176,6 +176,11 @@ export default function SDRZap() {
   const [calendarModalOpen, setCalendarModalOpen] = useState(false);
   const [calendarConversaId, setCalendarConversaId] = useState<string | null>(null);
 
+  // Follow-up
+  const [followUpConversaId, setFollowUpConversaId] = useState<string | null>(null);
+  const [followUpData, setFollowUpData] = useState("");
+  const [followUpNota, setFollowUpNota] = useState("");
+
   // Função para minimizar/expandir coluna 1
   const toggleCol1 = () => {
     setCol1Minimizada(!col1Minimizada);
