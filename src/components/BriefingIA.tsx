@@ -86,7 +86,19 @@ export const BriefingIA = () => {
       const cached = await fetchCachedBriefing();
       if (cached) {
         setConteudo(cached.conteudo);
-        setLinksAcao(cached.links_acao || []);
+        // links_acao no banco guarda { links: [...], highlights: [...] }
+        // ou apenas o array de links (formato antigo). Suporta ambos.
+        const la = cached.links_acao;
+        if (Array.isArray(la)) {
+          setLinksAcao(la);
+          setHighlights([]);
+        } else if (la && typeof la === 'object') {
+          setLinksAcao(la.links || []);
+          setHighlights(la.highlights || []);
+        } else {
+          setLinksAcao([]);
+          setHighlights([]);
+        }
         setLastGenerated(new Date(cached.gerado_em));
         setLoading(false);
         return;
