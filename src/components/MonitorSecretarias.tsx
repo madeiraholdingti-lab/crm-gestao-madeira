@@ -95,13 +95,15 @@ export const MonitorSecretarias = () => {
    * (cliente aguardando resposta nossa).
    */
   const pendentesFiltradas = useMemo(() => {
-    const inicioHoje = new Date();
-    inicioHoje.setHours(0, 0, 0, 0);
+    // "Hoje" inclui também ontem para o Maikon ter visão rápida do que ficou do dia anterior.
+    const inicioOntem = new Date();
+    inicioOntem.setDate(inicioOntem.getDate() - 1);
+    inicioOntem.setHours(0, 0, 0, 0);
 
     return conversas.filter(c => {
       if (c.last_message_from_me !== false) return false;
       if (!c.ultima_interacao) return false;
-      if (view === "hoje" && new Date(c.ultima_interacao) < inicioHoje) return false;
+      if (view === "hoje" && new Date(c.ultima_interacao) < inicioOntem) return false;
       return true;
     });
   }, [conversas, view]);
