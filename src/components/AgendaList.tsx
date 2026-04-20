@@ -19,48 +19,71 @@ export const AgendaList = () => {
   const em7dias = new Date(today);
   em7dias.setDate(em7dias.getDate() + 7);
 
+  // Descobre se o user logado é admin_geral — se for, vê eventos de TODOS
+  // os médicos/secretárias (caso típico: Maikon admin enxergando agenda da
+  // Isadora que conectou o Google Calendar dele). Senão, filtra pelo próprio
+  // medico_id. RLS no backend já permite isso.
+  const { data: isAdminGeral } = useQuery({
+    queryKey: ["agenda-is-admin"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return false;
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      return data?.role === "admin_geral";
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Eventos do dia corrente
   const { data: eventosHoje, isLoading } = useQuery({
-    queryKey: ["agenda-hoje"],
+    queryKey: ["agenda-hoje", isAdminGeral ?? false],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
-      const { data, error } = await supabase
+      let query = supabase
         .from("eventos_agenda")
         .select("*")
-        .eq("medico_id", user.id)
         .gte("data_hora_inicio", today.toISOString())
         .lt("data_hora_inicio", tomorrow.toISOString())
         .order("data_hora_inicio", { ascending: true });
 
+      if (!isAdminGeral) query = query.eq("medico_id", user.id);
+
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
+    enabled: isAdminGeral !== undefined,
   });
 
   // Próximo evento nos próximos 7 dias (só busca se não há eventos hoje).
   // Usado pra preencher o estado vazio com algo útil em vez de "nenhum compromisso".
   const { data: proximoEvento } = useQuery({
-    queryKey: ["agenda-proximo"],
+    queryKey: ["agenda-proximo", isAdminGeral ?? false],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
 
-      const { data } = await supabase
+      let query = supabase
         .from("eventos_agenda")
         .select("titulo, data_hora_inicio, tipo_evento")
-        .eq("medico_id", user.id)
         .gte("data_hora_inicio", tomorrow.toISOString())
         .lt("data_hora_inicio", em7dias.toISOString())
         .order("data_hora_inicio", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
 
+      if (!isAdminGeral) query = query.eq("medico_id", user.id);
+
+      const { data } = await query.maybeSingle();
       return data;
     },
     // só roda depois de saber que hoje está vazio (economiza query)
-    enabled: !isLoading && (!eventosHoje || eventosHoje.length === 0),
+    enabled: isAdminGeral !== undefined && !isLoading && (!eventosHoje || eventosHoje.length === 0),
   });
 
   // Detecta se user tem Google Calendar conectado. Se não, mostra CTA no vazio.
