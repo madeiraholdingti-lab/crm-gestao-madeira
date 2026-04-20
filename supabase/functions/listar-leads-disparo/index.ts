@@ -75,6 +75,41 @@ serve(async (req) => {
       );
     }
 
+    // Carregar os filtros persistidos da campanha (configurados na criação)
+    // e aplicar na seleção de leads. Antes esses campos existiam mas nunca
+    // eram usados — bug da dor #3 do Maikon (filtro pra evento de cirurgia
+    // cardíaca nov/2026).
+    const { data: campanhaConfig } = await adminClient
+      .from("campanhas_disparo")
+      .select("filtro_tipo_lead, filtro_perfil_profissional, filtro_especialidade")
+      .eq("id", campanhaId)
+      .maybeSingle();
+
+    const filtrosCampanha = {
+      tipoLead: campanhaConfig?.filtro_tipo_lead as string[] | null,
+      perfilProfissional: campanhaConfig?.filtro_perfil_profissional as string[] | null,
+      especialidade: campanhaConfig?.filtro_especialidade as string[] | null,
+    };
+
+    // Se a campanha filtra por perfil_profissional, precisamos cruzar com contacts
+    // (leads não tem esse campo — está em contacts). Buscar uma vez e guardar
+    // apenas os últimos 11 dígitos do telefone pra match posterior.
+    let telefonesPermitidosPorPerfil: Set<string> | null = null;
+    if (filtrosCampanha.perfilProfissional && filtrosCampanha.perfilProfissional.length > 0) {
+      const { data: contactsComPerfil } = await adminClient
+        .from("contacts")
+        .select("phone")
+        .in("perfil_profissional", filtrosCampanha.perfilProfissional)
+        .not("phone", "is", null);
+
+      telefonesPermitidosPorPerfil = new Set(
+        (contactsComPerfil || [])
+          .map((c: { phone: string | null }) => (c.phone || "").replace(/\D/g, ""))
+          .filter(Boolean)
+          .map((digits) => digits.slice(-11)) // normaliza: últimos 11 dígitos (DDD + número)
+      );
+    }
+
     const seteDiasAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const [blacklistRows, campanhaRows, cooldownRows, candidateLeads] = await Promise.all([
@@ -111,6 +146,15 @@ serve(async (req) => {
           .eq("ativo", true)
           .order("created_at", { ascending: false });
 
+        // Filtros PERSISTIDOS da campanha (aplicados sempre)
+        if (filtrosCampanha.tipoLead && filtrosCampanha.tipoLead.length > 0) {
+          query = query.in("tipo_lead", filtrosCampanha.tipoLead);
+        }
+        if (filtrosCampanha.especialidade && filtrosCampanha.especialidade.length > 0) {
+          query = query.in("especialidade_id", filtrosCampanha.especialidade);
+        }
+
+        // Filtros MANUAIS do UI (refinam em cima dos da campanha)
         if (filterTipoLead) {
           query = query.eq("tipo_lead", filterTipoLead);
         }
@@ -148,12 +192,23 @@ serve(async (req) => {
         .map((row) => row.lead_id)
     );
 
-    const disponiveisBase = candidateLeads.filter(
-      (lead) =>
-        !leadsNaBlacklist.has(lead.id) &&
-        !leadsJaNaCampanha.has(lead.id) &&
-        !leadsEmCooldown.has(lead.id)
-    );
+    const disponiveisBase = candidateLeads.filter((lead) => {
+      // Filtros básicos existentes
+      if (leadsNaBlacklist.has(lead.id)) return false;
+      if (leadsJaNaCampanha.has(lead.id)) return false;
+      if (leadsEmCooldown.has(lead.id)) return false;
+
+      // Filtro por perfil_profissional da campanha (cruzando com contacts via telefone)
+      // Só aplica se a campanha configurou esse filtro — caso contrário aceita todos.
+      if (telefonesPermitidosPorPerfil !== null) {
+        const telefoneDigits = (lead.telefone || "").replace(/\D/g, "").slice(-11);
+        if (!telefoneDigits || !telefonesPermitidosPorPerfil.has(telefoneDigits)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
 
     const especialidadeCounts = new Map<string, number>();
     for (const lead of disponiveisBase) {
