@@ -98,8 +98,13 @@ export const AgendaList = () => {
           // ou CTA pra conectar Google Calendar se ainda não tem contas ativas.
           <div className="flex flex-col items-center justify-center py-8 text-center gap-4">
             <div className="flex flex-col items-center gap-2">
-              <CalendarCheck className="h-10 w-10 text-green-600" />
-              <p className="text-sm font-medium text-foreground">Sem compromissos hoje</p>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-mh-teal-500/10 border border-mh-teal-500/20">
+                <CalendarCheck className="h-5 w-5 text-mh-teal-700" />
+              </div>
+              <div>
+                <div className="font-serif-display text-base font-medium text-mh-ink">Agenda livre hoje</div>
+                <p className="text-[11px] text-mh-ink-3 mt-0.5">Sem compromissos marcados.</p>
+              </div>
             </div>
 
             {proximoEvento ? (

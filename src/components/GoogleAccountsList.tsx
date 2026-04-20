@@ -24,9 +24,17 @@ export const GoogleAccountsList = () => {
 
   if (!contas || contas.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground italic">
-        Nenhuma conta conectada ainda. Clique em "Conectar nova conta Google" abaixo.
-      </p>
+      <div className="border border-dashed border-mh-gold-300/50 bg-mh-gold-100/40 rounded-lg p-4 text-center">
+        <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-mh-gold-100 border border-mh-gold-300/40 mb-2">
+          <Mail className="h-4 w-4 text-mh-gold-700" />
+        </div>
+        <div className="font-serif-display text-sm font-medium text-mh-ink mb-0.5">
+          Nenhum Google Calendar conectado
+        </div>
+        <p className="text-[11px] text-mh-ink-3 leading-relaxed max-w-xs mx-auto">
+          Conecte sua conta pra ver eventos do Google diretamente na agenda do CRM. Sync automático a cada 10 min.
+        </p>
+      </div>
     );
   }
 
@@ -42,10 +50,10 @@ export const GoogleAccountsList = () => {
         return (
           <div
             key={acc.id}
-            className="flex items-center justify-between gap-3 border rounded-md p-3"
+            className="flex items-center justify-between gap-3 border rounded-md p-3 bg-card"
           >
             <div className="flex items-center gap-3 min-w-0 flex-1">
-              <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <Mail className="h-4 w-4 text-mh-navy-700 flex-shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{acc.email}</p>
                 <div className="flex items-center gap-2 mt-0.5">
@@ -55,12 +63,12 @@ export const GoogleAccountsList = () => {
                       Reconectar
                     </Badge>
                   ) : temErro ? (
-                    <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700">
+                    <Badge variant="outline" className="text-[10px] border-amber-500 text-amber-700">
                       <AlertCircle className="h-3 w-3 mr-1" />
                       Erro na última sync
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="text-[10px] border-green-500 text-green-700">
+                    <Badge variant="outline" className="text-[10px] border-mh-teal-500 text-mh-teal-700">
                       <CheckCircle2 className="h-3 w-3 mr-1" />
                       Ativa
                     </Badge>
