@@ -8,8 +8,7 @@ import { toast } from "sonner";
 import { LogIn, UserPlus, KeyRound, Mail, ArrowLeft } from "lucide-react";
 import { z } from "zod";
 import maykonectLogo from "@/assets/maykonect-logo.png";
-import loginBackground from "@/assets/login-background.webp";
-import AnimatedDoctorMascot from "@/components/AnimatedDoctorMascot";
+import { MHMark } from "@/components/MHMark";
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Email inválido" }),
@@ -221,37 +220,76 @@ const Login = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-background p-4 font-nunito">
-      {/* Left side - Background Image with Doctor */}
-      <div 
-        className="hidden lg:flex lg:w-[70%] rounded-2xl overflow-hidden relative items-end justify-center"
-      >
-        <img
-          src={loginBackground}
-          alt=""
-          fetchPriority="high"
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-        <AnimatedDoctorMascot 
-          isPasswordFocused={isPasswordFocused}
-          className="w-[400px] h-auto relative z-10"
-        />
-      </div>
+    <div className="grid min-h-screen lg:grid-cols-[1.05fr_1fr] bg-background">
+      {/* Left — institutional hero (navy + decorative gold SVG) */}
+      <aside className="hidden lg:flex relative overflow-hidden flex-col text-mh-navy-100 px-14 py-14 mh-gradient-hero">
+        {/* Decorative concentric circles */}
+        <svg
+          className="absolute -right-16 -top-10 opacity-[0.08] pointer-events-none"
+          width="520" height="520" viewBox="0 0 520 520" fill="none"
+        >
+          {Array.from({ length: 13 }, (_, i) => (
+            <circle key={i} cx="260" cy="260" r={40 + i * 18} stroke="hsl(var(--mh-gold-500))" strokeWidth="0.6" fill="none" />
+          ))}
+        </svg>
+        <svg
+          className="absolute -left-8 -bottom-8 opacity-[0.06] pointer-events-none"
+          width="260" height="260" viewBox="0 0 100 100" fill="none"
+        >
+          <path d="M10 90 L10 10 L30 10 L50 50 L70 10 L90 10 L90 90" stroke="hsl(var(--mh-gold-500))" strokeWidth="1.2" fill="none" />
+        </svg>
 
-      {/* Right side - Login Form */}
-      <div className="w-full lg:w-[30%] flex items-center justify-center p-6 bg-background">
+        {/* Brand block */}
+        <div className="flex items-center gap-4 relative">
+          <MHMark size={48} />
+          <div>
+            <div className="font-serif-display text-xl font-medium leading-tight">Maikonect</div>
+            <div className="text-[10px] mt-1 font-semibold uppercase tracking-[0.18em] text-mh-gold-300">
+              Madeira Holding · Saúde
+            </div>
+          </div>
+        </div>
+
+        {/* Hero copy */}
+        <div className="flex-1 flex items-center mt-10 relative">
+          <div className="max-w-[460px]">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-mh-gold-300 mb-4">
+              Plataforma clínica · acesso autorizado
+            </div>
+            <h1 className="font-serif-display text-4xl lg:text-[44px] font-normal leading-[1.1] tracking-tight text-white">
+              Sua operação médica,<br />
+              em <em className="text-mh-gold-300 italic font-normal">um só lugar</em>.
+            </h1>
+            <p className="font-serif-display mt-5 text-base leading-relaxed text-mh-navy-100/80 font-normal">
+              Atendimento por WhatsApp, agenda clínica, tarefas do time,
+              disparos e inteligência diária assistida por IA — tudo integrado
+              ao padrão Madeira Holding.
+            </p>
+          </div>
+        </div>
+
+        {/* Footer strip */}
+        <div className="relative flex items-center justify-between text-[11px] text-mh-navy-100/60">
+          <span>© {new Date().getFullYear()} Madeira Holding Saúde</span>
+          <span className="font-mono">v2.0 · secure login</span>
+        </div>
+      </aside>
+
+      {/* Right — form */}
+      <div className="w-full flex items-center justify-center p-6 bg-background">
         <div className="w-full max-w-md space-y-8">
-          {/* Mobile logo */}
+          {/* Mobile brand (hero some, mostra brand compacto) */}
           <div className="lg:hidden text-center mb-8">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <img 
-                src={maykonectLogo} 
-                alt="Maikonect Logo" 
-                className="h-10 w-10 rounded-lg object-contain"
-              />
-              <h1 className="font-nunito text-2xl font-bold text-foreground tracking-wide">
-                Maikonect
-              </h1>
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <MHMark size={40} />
+              <div className="text-left">
+                <h1 className="font-serif-display text-xl font-semibold text-foreground leading-none">
+                  Maikonect
+                </h1>
+                <div className="text-[10px] mt-1 font-semibold uppercase tracking-[0.12em] text-mh-gold-600">
+                  Madeira Holding
+                </div>
+              </div>
             </div>
           </div>
 
