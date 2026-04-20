@@ -31,7 +31,7 @@ import ContextoIA from "./pages/ContextoIA";
 import HubWhatsApp from "./pages/HubWhatsApp";
 import AguardandoAprovacao from "./pages/AguardandoAprovacao";
 import NotFound from "./pages/NotFound";
-import maykonectLogo from "@/assets/maykonect-logo.png";
+import { MHMark } from "@/components/MHMark";
 import { ComandoRapidoModal } from "@/components/ComandoRapidoModal";
 import { Sparkles } from "lucide-react";
 
@@ -82,10 +82,13 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
   return (
     <SidebarProvider defaultOpen={true}>
       {/* Mobile Header - only visible on mobile */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex h-14 items-center gap-3 border-b bg-sidebar px-4 md:hidden">
+      <header className="fixed top-0 left-0 right-0 z-50 flex h-14 items-center gap-3 border-b border-white/[0.06] bg-sidebar px-4 md:hidden">
         <SidebarTrigger className="text-sidebar-foreground" />
-        <img src={maykonectLogo} alt="Maikonect" className="h-8 w-8 rounded-lg object-contain" />
-        <span className="font-nunito text-lg font-semibold text-sidebar-foreground">Maikonect</span>
+        <MHMark size={30} />
+        <div className="flex-1">
+          <span className="font-serif-display text-base font-semibold text-sidebar-foreground leading-none">Maikonect</span>
+          <div className="text-[9px] mt-0.5 font-semibold uppercase tracking-[0.12em] text-mh-gold-300">Madeira Holding</div>
+        </div>
       </header>
 
       <div

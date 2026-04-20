@@ -1,16 +1,15 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { 
-  Users, 
-  Target, 
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Users,
+  Target,
   Send,
-  CheckCircle, 
-  XCircle, 
+  CheckCircle2,
+  XCircle,
   ArrowRight,
-  FileSpreadsheet,
-  Ban
+  Ban,
 } from "lucide-react";
 import DisparosTopNav from "@/components/DisparosTopNav";
 
@@ -21,168 +20,143 @@ interface Stats {
   falhas: number;
 }
 
+interface MenuItem {
+  title: string;
+  description: string;
+  icon: typeof Users;
+  path: string;
+  accent: "navy" | "gold" | "teal" | "red";
+}
+
+const MENU: MenuItem[] = [
+  { title: "Leads", description: "Base de contatos, importação CSV, enriquecimento e histórico por campanha.", icon: Users, path: "/disparos-em-massa/leads", accent: "navy" },
+  { title: "Campanhas", description: "Mensagens, filtros por perfil/especialidade/UF e chips rotativos anti-ban.", icon: Target, path: "/disparos-em-massa/campanhas", accent: "gold" },
+  { title: "Envios", description: "Agendamento + regras de disparo (70/dia, intervalos aleatórios).", icon: Send, path: "/disparos-em-massa/envios", accent: "teal" },
+  { title: "Blacklist", description: "Contatos bloqueados que nunca recebem disparos em massa.", icon: Ban, path: "/disparos-em-massa/blacklist", accent: "red" },
+];
+
+const ACCENT_MAP = {
+  navy: { ring: "border-mh-navy-700", bg: "bg-mh-navy-700/10", text: "text-mh-navy-700", hero: "mh-gradient-hero text-mh-gold-100" },
+  gold: { ring: "border-mh-gold-500", bg: "bg-mh-gold-100", text: "text-mh-gold-700", hero: "mh-gradient-gold text-mh-navy-950" },
+  teal: { ring: "border-mh-teal-600", bg: "bg-mh-teal-500/10", text: "text-mh-teal-700", hero: "bg-mh-teal-700 text-white" },
+  red: { ring: "border-destructive", bg: "bg-destructive/10", text: "text-destructive", hero: "bg-destructive text-white" },
+};
+
 export default function DisparosEmMassa() {
   const navigate = useNavigate();
-  const [stats, setStats] = useState<Stats>({
-    totalLeads: 0,
-    totalCampanhas: 0,
-    enviados: 0,
-    falhas: 0
-  });
+  const [stats, setStats] = useState<Stats>({ totalLeads: 0, totalCampanhas: 0, enviados: 0, falhas: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchStats();
+    (async () => {
+      setLoading(true);
+      const [leadsRes, campanhasRes] = await Promise.all([
+        supabase.from("leads").select("id", { count: "exact", head: true }),
+        supabase.from("campanhas_disparo").select("sucesso, falhas"),
+      ]);
+      const enviados = campanhasRes.data?.reduce((acc, c: { sucesso: number | null }) => acc + (c.sucesso || 0), 0) || 0;
+      const falhas = campanhasRes.data?.reduce((acc, c: { falhas: number | null }) => acc + (c.falhas || 0), 0) || 0;
+      setStats({ totalLeads: leadsRes.count || 0, totalCampanhas: campanhasRes.data?.length || 0, enviados, falhas });
+      setLoading(false);
+    })();
   }, []);
 
-  const fetchStats = async () => {
-    setLoading(true);
-    
-    const [leadsRes, campanhasRes] = await Promise.all([
-      supabase.from("leads").select("id", { count: "exact", head: true }),
-      supabase.from("campanhas_disparo").select("sucesso, falhas")
-    ]);
-
-    const enviados = campanhasRes.data?.reduce((acc, c) => acc + (c.sucesso || 0), 0) || 0;
-    const falhas = campanhasRes.data?.reduce((acc, c) => acc + (c.falhas || 0), 0) || 0;
-
-    setStats({
-      totalLeads: leadsRes.count || 0,
-      totalCampanhas: campanhasRes.data?.length || 0,
-      enviados,
-      falhas
-    });
-    setLoading(false);
-  };
-
-  const menuItems = [
-    {
-      title: "Leads",
-      description: "Importe e gerencie sua base de leads com tipos, anotações e histórico de campanhas",
-      icon: Users,
-      path: "/disparos-em-massa/leads",
-      color: "text-blue-500",
-      bgColor: "bg-blue-500/10"
-    },
-    {
-      title: "Campanhas",
-      description: "Crie campanhas de relacionamento, captação, reativação e promocionais",
-      icon: Target,
-      path: "/disparos-em-massa/campanhas",
-      color: "text-purple-500",
-      bgColor: "bg-purple-500/10"
-    },
-    {
-      title: "Envios",
-      description: "Configure e agende disparos com regras anti-bloqueio (70/dia, intervalos aleatórios)",
-      icon: Send,
-      path: "/disparos-em-massa/envios",
-      color: "text-green-500",
-      bgColor: "bg-green-500/10"
-    },
-    {
-      title: "Blacklist",
-      description: "Gerencie leads bloqueados que nunca receberão disparos em massa",
-      icon: Ban,
-      path: "/disparos-em-massa/blacklist",
-      color: "text-red-500",
-      bgColor: "bg-red-500/10"
-    }
+  const kpis = [
+    { label: "Leads ativos", value: stats.totalLeads, icon: Users, tone: "text-mh-navy-700" },
+    { label: "Campanhas", value: stats.totalCampanhas, icon: Target, tone: "text-mh-gold-700" },
+    { label: "Enviados", value: stats.enviados, icon: CheckCircle2, tone: "text-mh-teal-700" },
+    { label: "Falhas", value: stats.falhas, icon: XCircle, tone: "text-destructive" },
   ];
 
   return (
     <div className="p-4 md:p-6">
       <DisparosTopNav />
       <div className="max-w-6xl mx-auto space-y-6">
-          {/* Header */}
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold">Disparos em Massa</h1>
-            <p className="text-muted-foreground mt-1">
-              Gerencie leads, campanhas e envios em massa
-            </p>
+        {/* Cabeçalho institucional */}
+        <div className="flex flex-col gap-1">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mh-gold-600">
+            Operação · Disparos em Massa
           </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-          <Card>
-            <CardContent className="pt-4 md:pt-6">
-              <div className="flex items-center gap-3 md:gap-4">
-                <Users className="h-6 w-6 md:h-8 md:w-8 text-primary flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xl md:text-2xl font-bold">{stats.totalLeads}</p>
-                  <p className="text-xs md:text-sm text-muted-foreground truncate">Leads</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 md:pt-6">
-              <div className="flex items-center gap-3 md:gap-4">
-                <Target className="h-6 w-6 md:h-8 md:w-8 text-purple-500 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xl md:text-2xl font-bold">{stats.totalCampanhas}</p>
-                  <p className="text-xs md:text-sm text-muted-foreground truncate">Campanhas</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 md:pt-6">
-              <div className="flex items-center gap-3 md:gap-4">
-                <CheckCircle className="h-6 w-6 md:h-8 md:w-8 text-green-500 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xl md:text-2xl font-bold">{stats.enviados}</p>
-                  <p className="text-xs md:text-sm text-muted-foreground truncate">Enviados</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 md:pt-6">
-              <div className="flex items-center gap-3 md:gap-4">
-                <XCircle className="h-6 w-6 md:h-8 md:w-8 text-red-500 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xl md:text-2xl font-bold">{stats.falhas}</p>
-                  <p className="text-xs md:text-sm text-muted-foreground truncate">Falhas</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <h1 className="font-serif-display text-2xl md:text-3xl font-medium text-mh-ink leading-tight">
+            Prospecção e relacionamento em escala
+          </h1>
+          <p className="text-sm text-mh-ink-3 mt-1 max-w-2xl">
+            Gerencie leads, campanhas multi-canal e envios com regras anti-ban — tudo integrado aos chips conectados.
+          </p>
         </div>
 
-        {/* Navigation Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {menuItems.map((item) => (
-            <Card 
-              key={item.path}
-              className="cursor-pointer hover:shadow-lg transition-all hover:scale-[1.02] group"
-              onClick={() => navigate(item.path)}
-            >
-              <CardHeader className="pb-3">
-                <div className={`w-12 h-12 rounded-lg ${item.bgColor} flex items-center justify-center mb-3`}>
-                  <item.icon className={`h-6 w-6 ${item.color}`} />
+        {/* KPIs */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {kpis.map((k) => (
+            <Card key={k.label} className="border-border/60">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-start gap-3">
+                  <div className="bg-muted/60 rounded-lg p-2 flex-shrink-0">
+                    <k.icon className={`h-4 w-4 ${k.tone}`} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-mh-ink-3">{k.label}</div>
+                    <div className={`font-serif-display text-2xl font-medium mt-0.5 ${k.tone} tabular-nums`}>
+                      {loading ? "—" : k.value.toLocaleString("pt-BR")}
+                    </div>
+                  </div>
                 </div>
-                <CardTitle className="flex items-center justify-between">
-                  {item.title}
-                  <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
-                </CardTitle>
-                <CardDescription>{item.description}</CardDescription>
-              </CardHeader>
+              </CardContent>
             </Card>
           ))}
         </div>
 
-        {/* Quick Info */}
-        <Card className="bg-muted/50 border-dashed">
-          <CardContent className="pt-6">
+        {/* Cards de navegação */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {MENU.map((item) => {
+            const a = ACCENT_MAP[item.accent];
+            return (
+              <Card
+                key={item.path}
+                className={`cursor-pointer hover:shadow-md transition-all border overflow-hidden group relative hover:${a.ring}`}
+                onClick={() => navigate(item.path)}
+              >
+                <CardContent className="p-0">
+                  <div className="flex items-stretch">
+                    <div className={`${a.hero} w-20 flex items-center justify-center flex-shrink-0`}>
+                      <item.icon className="h-7 w-7" strokeWidth={1.5} />
+                    </div>
+                    <div className="flex-1 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-serif-display text-lg font-medium text-mh-ink leading-tight">
+                            {item.title}
+                          </h3>
+                          <p className="text-[13px] text-mh-ink-3 mt-1 leading-snug">
+                            {item.description}
+                          </p>
+                        </div>
+                        <ArrowRight className="h-4 w-4 text-mh-ink-4 group-hover:text-mh-navy-700 group-hover:translate-x-0.5 transition-all flex-shrink-0 mt-1" />
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* Como funciona — estilo briefing institucional */}
+        <Card className="border-mh-navy-700/20 bg-mh-navy-50">
+          <CardContent className="pt-5 pb-5">
             <div className="flex items-start gap-4">
-              <FileSpreadsheet className="h-6 w-6 text-muted-foreground flex-shrink-0 mt-0.5" />
-              <div className="space-y-2">
-                <p className="font-medium">Como funciona</p>
-                <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
-                  <li>Importe seus leads via CSV na página de <strong>Leads</strong></li>
-                  <li>Crie campanhas com mensagens personalizadas em <strong>Campanhas</strong></li>
-                  <li>Configure e agende os disparos em <strong>Envios</strong></li>
+              <div className="mh-gradient-gold h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Send className="h-4 w-4 text-mh-navy-950" />
+              </div>
+              <div className="space-y-2 flex-1">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mh-gold-700">
+                  Fluxo recomendado
+                </div>
+                <ol className="text-sm text-mh-ink-2 space-y-1.5 list-decimal list-inside marker:text-mh-gold-600 marker:font-semibold">
+                  <li>Importe leads via CSV na aba <strong className="text-mh-navy-700">Leads</strong></li>
+                  <li>Crie campanhas com filtros e mensagens em <strong className="text-mh-navy-700">Campanhas</strong></li>
+                  <li>Agende o disparo em <strong className="text-mh-navy-700">Envios</strong> — múltiplos chips rotativos evitam bloqueio</li>
+                  <li>Acompanhe resultado em tempo real e bloqueie contatos indesejados em <strong className="text-mh-navy-700">Blacklist</strong></li>
                 </ol>
               </div>
             </div>
