@@ -30,6 +30,7 @@ import {
   Briefcase,
   AlertTriangle,
 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 
 interface Pergunta {
   id?: string;
@@ -300,13 +301,18 @@ export default function ContextoIA() {
         <div className="text-center text-muted-foreground py-12">Carregando...</div>
       ) : scripts.length === 0 ? (
         <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center gap-3 py-12">
-            <BrainCircuit className="h-12 w-12 text-muted-foreground/40" />
-            <p className="text-muted-foreground">Nenhum script cadastrado</p>
-            <Button variant="outline" onClick={openNew} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Criar primeiro script
-            </Button>
+          <CardContent className="p-0">
+            <EmptyState
+              icon={BrainCircuit}
+              tone="gold"
+              title="Nenhum script de IA ainda"
+              description="Scripts definem como a IA responde mensagens do WhatsApp — tom, regras, exemplos. Comece criando o primeiro e vincule a uma campanha."
+              action={{
+                label: "Criar primeiro script",
+                onClick: openNew,
+                icon: Plus,
+              }}
+            />
           </CardContent>
         </Card>
       ) : (

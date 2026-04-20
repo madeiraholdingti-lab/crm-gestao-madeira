@@ -500,9 +500,14 @@ export const MonitorSecretarias = () => {
         ))}
 
         {cards.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            Nenhuma conversa aberta no momento
-          </p>
+          <div className="text-center py-6 px-4">
+            <div className="font-serif-display text-base font-medium text-mh-ink mb-1">
+              Sem pendências agora
+            </div>
+            <p className="text-[12px] text-mh-ink-3 leading-relaxed max-w-xs mx-auto">
+              Nenhuma conversa aberta com as secretárias. Tudo em dia.
+            </p>
+          </div>
         )}
       </CardContent>
     </Card>

@@ -112,8 +112,10 @@ export function TaskFlowColumn({
           ))}
 
           {tasks.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              Nenhuma tarefa
+            <div className="text-center py-6 px-3 opacity-60">
+              <div className="text-xs text-mh-ink-3 italic">
+                Solte uma tarefa aqui
+              </div>
             </div>
           )}
         </div>

@@ -116,9 +116,36 @@ export function ConversationList({
       />
       <div ref={scrollRef} className="flex-1 overflow-y-auto mt-1.5 px-1.5">
         {filtered.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-8">
-            {busca ? 'Nenhuma conversa encontrada' : 'Sem conversas'}
-          </p>
+          <div className="py-8 px-3 text-center">
+            {busca ? (
+              <>
+                <div className="font-serif-display text-sm font-medium text-mh-ink mb-1">
+                  Nenhuma conversa
+                </div>
+                <p className="text-[11px] text-mh-ink-3 leading-snug">
+                  Nada encontrado para &ldquo;{busca}&rdquo;.
+                </p>
+              </>
+            ) : filter === "ignoradas" ? (
+              <>
+                <div className="font-serif-display text-sm font-medium text-mh-ink mb-1">
+                  Nenhuma ignorada
+                </div>
+                <p className="text-[11px] text-mh-ink-3 leading-snug">
+                  Use &ldquo;Ignorar&rdquo; no menu de uma conversa pra afastá-la da lista principal.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="font-serif-display text-sm font-medium text-mh-ink mb-1">
+                  Caixa vazia
+                </div>
+                <p className="text-[11px] text-mh-ink-3 leading-snug">
+                  Assim que chegar uma mensagem no WhatsApp conectado, ela aparece aqui.
+                </p>
+              </>
+            )}
+          </div>
         ) : (
           (() => {
             const virtualBody = (

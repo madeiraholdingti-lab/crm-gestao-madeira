@@ -218,8 +218,13 @@ export const TasksSummary = () => {
                   })}
               </div>
             ) : (
-              <div className="text-center py-4 text-muted-foreground text-xs">
-                Nenhuma tarefa encontrada
+              <div className="text-center py-6 px-3">
+                <div className="font-serif-display text-sm font-medium text-mh-ink mb-1">
+                  Lista em dia
+                </div>
+                <p className="text-[11px] text-mh-ink-3 leading-snug">
+                  Nenhuma tarefa nesse filtro.
+                </p>
               </div>
             )}
           </div>
