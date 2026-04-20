@@ -788,17 +788,60 @@ export default function ConfiguracaoEvolution() {
     );
   }
 
+  // Summary strip pros Zaps (conta por status)
+  const summaryActive = instancias.filter(i => i.status === "conectada").length;
+  const summaryDisp = instancias.filter(i => i.status === "disparando").length;
+  const summaryDown = instancias.filter(i => i.status === "desconectada" || i.status === "close").length;
+
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Settings className="h-8 w-8 text-primary" />
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Configurações</h1>
-            <p className="text-muted-foreground">Gerencie conexões e aplicativos</p>
+      {/* Cabeçalho institucional */}
+      <div className="flex items-start justify-between mb-6 gap-4">
+        <div className="flex-1">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mh-gold-600">
+            Operação · Conexões WhatsApp
           </div>
+          <h1 className="font-serif-display text-2xl md:text-3xl font-medium text-mh-ink leading-tight mt-1">
+            Zaps
+          </h1>
+          <p className="text-sm text-mh-ink-3 mt-1 max-w-2xl">
+            Cada Zap é uma linha dedicada. Mantê-los conectados garante atendimento e disparos contínuos.
+          </p>
         </div>
       </div>
+
+      {/* Summary strip — só aparece se houver instâncias */}
+      {instancias.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <Card className="border-mh-teal-500/20">
+            <CardContent className="pt-4 pb-4 flex items-center gap-3">
+              <span className="w-2.5 h-2.5 rounded-full bg-mh-teal-500 ring-4 ring-mh-teal-500/20 flex-shrink-0" />
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-mh-ink-3">Ativos</div>
+                <div className="font-serif-display text-2xl font-medium text-mh-teal-700 tabular-nums">{summaryActive}</div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-mh-navy-700/20">
+            <CardContent className="pt-4 pb-4 flex items-center gap-3">
+              <span className="w-2.5 h-2.5 rounded-full bg-mh-navy-700 flex-shrink-0" />
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-mh-ink-3">Disparando</div>
+                <div className="font-serif-display text-2xl font-medium text-mh-navy-700 tabular-nums">{summaryDisp}</div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-destructive/20">
+            <CardContent className="pt-4 pb-4 flex items-center gap-3">
+              <span className="w-2.5 h-2.5 rounded-full bg-destructive flex-shrink-0" />
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-mh-ink-3">Desconectados</div>
+                <div className="font-serif-display text-2xl font-medium text-destructive tabular-nums">{summaryDown}</div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Tabs defaultValue="evolution" className="w-full">
         <TabsList className="grid w-full max-w-lg grid-cols-3">

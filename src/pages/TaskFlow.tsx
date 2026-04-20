@@ -263,32 +263,41 @@ export default function TaskFlow() {
     return (
       <div className="h-full flex flex-col overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header do Board */}
-          <div className="flex items-center justify-between p-4 border-b bg-card">
+          {/* Header do Board — identidade Madeira Holding */}
+          <div className="flex items-center justify-between p-4 border-b border-border bg-card">
             <div className="flex items-center gap-4">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={handleBackToProfiles}
+                className="hover:bg-muted"
               >
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold"
+                className="w-11 h-11 rounded-full flex items-center justify-center text-white font-serif-display text-xl font-medium shadow-sm"
                 style={{ backgroundColor: selectedProfile.cor }}
               >
-                {selectedProfile.nome.charAt(0).toUpperCase()}
+                {selectedProfile.avatar_url ? (
+                  <img src={selectedProfile.avatar_url} alt={selectedProfile.nome} className="w-full h-full rounded-full object-cover" />
+                ) : (
+                  selectedProfile.nome.charAt(0).toUpperCase()
+                )}
               </div>
               <div>
-                <h1 className="text-xl font-bold">{selectedProfile.nome}</h1>
-                <p className="text-sm text-muted-foreground">Task-Flow Board</p>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-mh-gold-600">
+                  Task-Flow Board
+                </div>
+                <h1 className="font-serif-display text-xl font-medium text-mh-ink leading-tight">
+                  {selectedProfile.nome}
+                </h1>
               </div>
 
-              {/* Métrica de tarefas realizadas hoje */}
-              <div className="flex items-center gap-1.5 ml-4 bg-green-50 text-green-700 px-3 py-1.5 rounded-full">
-                <CheckCircle2 className="h-4 w-4" />
-                <span className="text-sm font-semibold">{completedTodayCount}</span>
-                <span className="text-xs">realizadas hoje</span>
+              {/* Métrica de tarefas realizadas hoje — dourado em vez de verde pra identidade */}
+              <div className="flex items-center gap-2 ml-4 bg-mh-gold-100 text-mh-gold-700 px-3 py-1.5 rounded-full border border-mh-gold-300/50">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span className="font-serif-display text-base font-semibold tabular-nums">{completedTodayCount}</span>
+                <span className="text-[11px] font-medium">realizadas hoje</span>
               </div>
             </div>
 
@@ -298,6 +307,7 @@ export default function TaskFlow() {
                 variant="outline"
                 size="sm"
                 onClick={() => setShowColumnsConfig(true)}
+                className="border-mh-navy-700/20 hover:border-mh-navy-700 hover:bg-mh-navy-50"
               >
                 <Settings className="h-4 w-4 mr-2" />
                 Configurar Colunas
@@ -328,20 +338,26 @@ export default function TaskFlow() {
   // Tela inicial de seleção de perfil
   return (
     <div className="h-full bg-background">
-      <div className="container mx-auto py-8 px-4">
-        <div className="flex items-center justify-between mb-8">
-          <div className="text-center flex-1">
-            <h1 className="text-3xl font-bold mb-2">Task-Flow</h1>
-            <p className="text-muted-foreground">
-              Gestão avançada de tarefas do secretariado
+      <div className="container mx-auto py-10 px-4">
+        <div className="flex items-start justify-between mb-10">
+          <div className="flex-1">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mh-gold-600 mb-2">
+              Operação · Gestão de Tarefas
+            </div>
+            <h1 className="font-serif-display text-3xl md:text-4xl font-medium text-mh-ink leading-tight">
+              Task-Flow
+            </h1>
+            <p className="text-sm text-mh-ink-3 mt-2 max-w-lg">
+              Escolha o perfil para abrir o kanban correspondente. Cada pessoa da equipe
+              tem seu próprio board com as tarefas atribuídas.
             </p>
           </div>
-          
-          {/* Botão de configuração (apenas admin) */}
+
           {isAdmin && (
             <Button
               variant="outline"
               onClick={() => setShowColumnsConfig(true)}
+              className="border-mh-navy-700/20 hover:border-mh-navy-700 hover:bg-mh-navy-50"
             >
               <Settings className="h-4 w-4 mr-2" />
               Configurar Colunas
@@ -359,16 +375,18 @@ export default function TaskFlow() {
             {profiles.map((profile) => (
               <Card
                 key={profile.id}
-                className="cursor-pointer hover:shadow-lg transition-all hover:scale-105 border-2 relative group"
-                style={{ borderColor: profile.cor }}
+                className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-0.5 border relative group overflow-hidden"
                 onClick={() => setSelectedProfile(profile)}
               >
+                {/* Faixa colorida no topo — accent do perfil */}
+                <div className="h-1 w-full" style={{ backgroundColor: profile.cor }} />
+
                 {/* Botão de configuração (apenas admin) */}
                 {isAdmin && (
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                    className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity z-10 h-8 w-8"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleOpenEditProfile(profile);
@@ -377,10 +395,10 @@ export default function TaskFlow() {
                     <UserCog className="h-4 w-4" />
                   </Button>
                 )}
-                <CardContent className="p-8 flex flex-col items-center gap-4">
+                <CardContent className="p-7 flex flex-col items-center gap-3">
                   <div
-                    className="w-24 h-24 rounded-full flex items-center justify-center text-white text-4xl font-bold shadow-lg"
-                    style={{ backgroundColor: profile.cor }}
+                    className="w-20 h-20 rounded-full flex items-center justify-center text-white font-serif-display text-3xl font-medium shadow-md ring-4"
+                    style={{ backgroundColor: profile.cor, ['--tw-ring-color' as string]: `${profile.cor}20` }}
                   >
                     {profile.avatar_url ? (
                       <img
@@ -392,9 +410,9 @@ export default function TaskFlow() {
                       profile.nome.charAt(0).toUpperCase()
                     )}
                   </div>
-                  <h2 className="text-2xl font-semibold">{profile.nome}</h2>
-                  <p className="text-muted-foreground text-sm">
-                    Clique para abrir o board
+                  <h2 className="font-serif-display text-xl font-medium text-mh-ink mt-1">{profile.nome}</h2>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-mh-ink-3 group-hover:text-mh-gold-600 transition-colors">
+                    Abrir board →
                   </p>
                 </CardContent>
               </Card>
