@@ -107,8 +107,25 @@ export function TaskFlowBoard({ selectedProfile, allProfiles, initialTaskId }: T
 
   useEffect(() => {
     fetchData();
-    setupRealtimeSubscription();
   }, [selectedProfile.id]);
+
+  // Realtime: subscription única, isolada do fetchData pra evitar re-subscribe.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`task_flow_tasks_changes_${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "task_flow_tasks" },
+        () => {
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // Abrir tarefa automaticamente se initialTaskId for passado
   useEffect(() => {
