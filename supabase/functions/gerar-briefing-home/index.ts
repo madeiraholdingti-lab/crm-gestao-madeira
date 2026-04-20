@@ -257,12 +257,12 @@ Comece com uma saudação com base no horário (Bom dia/Boa tarde/Boa noite).`
       });
     }
 
-    // Salvar no banco (highlights vai em links_acao por retrocompat — podemos
-    // migrar pra coluna própria depois se quisermos)
+    // Salvar no banco. links_acao guarda { links, highlights } pra preservar
+    // os highlights ao recarregar do cache.
     await supabase.from("briefings_home").insert({
       user_id,
       conteudo,
-      links_acao: linksAcao,
+      links_acao: { links: linksAcao, highlights },
     });
 
     return new Response(
