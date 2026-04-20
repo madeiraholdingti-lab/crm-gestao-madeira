@@ -255,8 +255,9 @@ export const MonitorSecretarias = () => {
                     ? "bg-primary text-primary-foreground"
                     : "bg-transparent text-muted-foreground hover:bg-muted"
                 }`}
+                title="Hoje e ontem"
               >
-                Hoje
+                Hoje + Ontem
               </button>
               <button
                 type="button"
