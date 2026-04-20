@@ -767,90 +767,97 @@ export default function LeadsPage() {
               { label: "Leads" }
             ]} 
           />
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold">Leads</h1>
-              <p className="text-muted-foreground mt-1">
-                Gerencie sua base de leads para campanhas
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mh-gold-600">
+                Disparos · Base
+              </div>
+              <h1 className="font-serif-display text-2xl md:text-3xl font-medium text-mh-ink leading-tight mt-1">
+                Leads
+              </h1>
+              <p className="text-sm text-mh-ink-3 mt-1">
+                Base de contatos, importação CSV e histórico por campanha.
               </p>
             </div>
-            <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowImportHistory(true)}>
-              <FileSpreadsheet className="mr-2 h-4 w-4" />
-              Histórico
-            </Button>
-            <Button variant="outline" onClick={handleDownloadTemplate}>
-              <Download className="mr-2 h-4 w-4" />
-              Modelo CSV
-            </Button>
-            <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
-              <Upload className="mr-2 h-4 w-4" />
-              Importar CSV
-            </Button>
-            <Button onClick={() => {
-              setEditingLead(null);
-              setFormLead({ nome: "", telefone: "", email: "", tipo_lead: "novo", especialidade_id: "", especialidades_secundarias_ids: [], origem: "", anotacoes: "" });
-              setLeadDialogOpen(true);
-            }}>
-              <Plus className="mr-2 h-4 w-4" />
-              Novo Lead
-            </Button>
+            <div className="flex gap-2 flex-wrap">
+              <Button variant="outline" size="sm" onClick={() => setShowImportHistory(true)}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Histórico
+              </Button>
+              <Button variant="outline" onClick={handleDownloadTemplate}>
+                <Download className="mr-2 h-4 w-4" />
+                Modelo CSV
+              </Button>
+              <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                Importar CSV
+              </Button>
+              <Button onClick={() => {
+                setEditingLead(null);
+                setFormLead({ nome: "", telefone: "", email: "", tipo_lead: "novo", especialidade_id: "", especialidades_secundarias_ids: [], origem: "", anotacoes: "" });
+                setLeadDialogOpen(true);
+              }}>
+                <Plus className="mr-2 h-4 w-4" />
+                Novo Lead
+              </Button>
+            </div>
           </div>
-        </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <Users className="h-8 w-8 text-primary" />
-                <div>
-                  <p className="text-2xl font-bold">{totalLeads.toLocaleString()}</p>
-                  <p className="text-sm text-muted-foreground">Total de Leads</p>
+          {/* Stats — tokens Madeira Holding */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card className="border-mh-navy-700/20">
+              <CardContent className="pt-4 pb-4 flex items-start gap-3">
+                <div className="bg-mh-navy-100 rounded-lg p-2 flex-shrink-0">
+                  <Users className="h-4 w-4 text-mh-navy-700" />
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <Users className="h-8 w-8 text-teal-500" />
-                <div>
-                  <p className="text-2xl font-bold">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-mh-ink-3">Total de Leads</div>
+                  <div className="font-serif-display text-2xl font-medium text-mh-navy-700 tabular-nums mt-0.5">
+                    {totalLeads.toLocaleString("pt-BR")}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-mh-teal-500/20">
+              <CardContent className="pt-4 pb-4 flex items-start gap-3">
+                <div className="bg-mh-teal-500/10 rounded-lg p-2 flex-shrink-0">
+                  <Users className="h-4 w-4 text-mh-teal-700" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-mh-ink-3">Médicos (página)</div>
+                  <div className="font-serif-display text-2xl font-medium text-mh-teal-700 tabular-nums mt-0.5">
                     {leads.filter(l => l.tipo_lead === "medico").length}
-                  </p>
-                  <p className="text-sm text-muted-foreground">Médicos (página)</p>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <Users className="h-8 w-8 text-cyan-500" />
-                <div>
-                  <p className="text-2xl font-bold">
+              </CardContent>
+            </Card>
+            <Card className="border-mh-gold-500/30">
+              <CardContent className="pt-4 pb-4 flex items-start gap-3">
+                <div className="bg-mh-gold-100 rounded-lg p-2 flex-shrink-0">
+                  <Users className="h-4 w-4 text-mh-gold-700" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-mh-ink-3">Pacientes (página)</div>
+                  <div className="font-serif-display text-2xl font-medium text-mh-gold-700 tabular-nums mt-0.5">
                     {leads.filter(l => l.tipo_lead === "paciente").length}
-                  </p>
-                  <p className="text-sm text-muted-foreground">Pacientes (página)</p>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <Users className="h-8 w-8 text-blue-500" />
-                <div>
-                  <p className="text-2xl font-bold">
+              </CardContent>
+            </Card>
+            <Card className="border-border/60">
+              <CardContent className="pt-4 pb-4 flex items-start gap-3">
+                <div className="bg-muted rounded-lg p-2 flex-shrink-0">
+                  <Users className="h-4 w-4 text-mh-ink-3" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-mh-ink-3">Novos (página)</div>
+                  <div className="font-serif-display text-2xl font-medium text-mh-ink-2 tabular-nums mt-0.5">
                     {leads.filter(l => l.tipo_lead === "novo").length}
-                  </p>
-                  <p className="text-sm text-muted-foreground">Novos (página)</p>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              </CardContent>
+            </Card>
+          </div>
 
         {/* Filters */}
         <div className="flex flex-col md:flex-row gap-3 items-stretch">

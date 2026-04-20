@@ -296,11 +296,16 @@ export default function CampanhasPage() {
               { label: "Campanhas" }
             ]} 
           />
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold">Campanhas</h1>
-              <p className="text-muted-foreground mt-1">
-                Crie e gerencie campanhas para disparos em massa
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mh-gold-600">
+                Disparos · Campanhas
+              </div>
+              <h1 className="font-serif-display text-2xl md:text-3xl font-medium text-mh-ink leading-tight mt-1">
+                Campanhas
+              </h1>
+              <p className="text-sm text-mh-ink-3 mt-1">
+                Crie e gerencie campanhas para disparos em massa com filtros avançados.
               </p>
             </div>
           <Button onClick={() => {

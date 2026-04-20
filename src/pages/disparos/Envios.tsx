@@ -1169,11 +1169,16 @@ export default function EnviosPage() {
               { label: "Envios" }
             ]} 
           />
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold">Envios</h1>
-              <p className="text-muted-foreground mt-1">
-                Configure e agende disparos em massa
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mh-gold-600">
+                Disparos · Execução
+              </div>
+              <h1 className="font-serif-display text-2xl md:text-3xl font-medium text-mh-ink leading-tight mt-1">
+                Envios
+              </h1>
+              <p className="text-sm text-mh-ink-3 mt-1">
+                Configure e agende disparos em massa com regras anti-ban.
               </p>
             </div>
           <Button

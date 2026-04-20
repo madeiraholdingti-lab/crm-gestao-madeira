@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Settings, Wifi, WifiOff, RefreshCw, Phone, Plus, QrCode, Trash2, PhoneOff, Smartphone, AppWindow, BrainCircuit } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -888,14 +889,18 @@ export default function ConfiguracaoEvolution() {
 
       {instancias.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Phone className="h-16 w-16 text-muted-foreground mb-4" />
-            <p className="text-lg font-medium text-muted-foreground">
-              Nenhuma instância WhatsApp configurada
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Clique em "Nova Instância" para começar
-            </p>
+          <CardContent className="p-0">
+            <EmptyState
+              icon={Phone}
+              tone="gold"
+              title="Nenhuma instância WhatsApp ainda"
+              description="Conecte seu primeiro Zap — cada linha pode ser usada pra atendimento, disparos ou IA. Escaneia o QR do celular e está pronto."
+              action={{
+                label: "Nova Instância",
+                onClick: () => setShowAddModal(true),
+                icon: Plus,
+              }}
+            />
           </CardContent>
         </Card>
       ) : (

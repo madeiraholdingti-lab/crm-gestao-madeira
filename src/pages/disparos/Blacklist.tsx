@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Ban, Plus, Search, Trash2, UserX, Phone, Calendar, AlertTriangle } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -170,15 +171,17 @@ export default function Blacklist() {
     <div className="p-4 md:p-6">
       <DisparosTopNav />
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        {/* Header institucional */}
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-              <Ban className="h-7 w-7 text-red-500" />
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-destructive">
+              Disparos · Bloqueios
+            </div>
+            <h1 className="font-serif-display text-2xl md:text-3xl font-medium text-mh-ink leading-tight mt-1">
               Blacklist
             </h1>
-            <p className="text-muted-foreground mt-1">
-              Leads bloqueados que nunca receberão disparos
+            <p className="text-sm text-mh-ink-3 mt-1">
+              Leads bloqueados que nunca receberão disparos em massa.
             </p>
           </div>
           
@@ -337,9 +340,22 @@ export default function Blacklist() {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               </div>
             ) : filteredBlacklist.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {searchTerm ? "Nenhum resultado encontrado" : "Nenhum lead na blacklist"}
-              </div>
+              <EmptyState
+                icon={Ban}
+                tone={searchTerm ? "muted" : "gold"}
+                title={searchTerm ? "Nenhum resultado" : "Blacklist vazia"}
+                description={
+                  searchTerm
+                    ? `Nada encontrado para "${searchTerm}". Tente outra busca ou limpe o filtro.`
+                    : "Aqui ficam os contatos que nunca devem receber disparos. Adicione um número manualmente ou espere que seja bloqueado automaticamente."
+                }
+                action={searchTerm ? undefined : {
+                  label: "Adicionar à Blacklist",
+                  onClick: () => setDialogOpen(true),
+                  icon: Plus,
+                }}
+                secondaryAction={searchTerm ? { label: "Limpar busca", onClick: () => setSearchTerm("") } : undefined}
+              />
             ) : (
               <Table>
                 <TableHeader>
