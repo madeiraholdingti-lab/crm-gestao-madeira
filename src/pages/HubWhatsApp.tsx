@@ -47,14 +47,16 @@ const HubWhatsApp = () => {
   return (
     <div className="h-[calc(100vh-4rem)] bg-background p-4 md:p-6 overflow-y-auto">
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
+        {/* Header institucional */}
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Network className="h-6 w-6 text-primary" />
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mh-gold-600">
+            Operação · Inteligência de Conversas
+          </div>
+          <h1 className="font-serif-display text-2xl md:text-3xl font-medium text-mh-ink leading-tight mt-1">
             Hub WhatsApp
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Central de inteligência dos seus contatos em todos os números
+          <p className="text-sm text-mh-ink-3 mt-1">
+            Central de inteligência dos seus contatos em todos os números conectados.
           </p>
         </div>
 

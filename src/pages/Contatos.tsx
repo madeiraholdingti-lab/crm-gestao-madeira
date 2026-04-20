@@ -564,10 +564,10 @@ const Contatos = () => {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="border-b bg-card p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+      {/* Header institucional */}
+      <div className="border-b border-border bg-card px-4 py-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
             <Button
               variant="ghost"
               size="icon"
@@ -576,9 +576,22 @@ const Contatos = () => {
             >
               {coluna1Minimizada ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
             </Button>
-            <h1 className="text-2xl font-bold">Contatos</h1>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-mh-gold-600">
+                Base de relacionamento
+              </div>
+              <h1 className="font-serif-display text-xl font-medium text-mh-ink leading-tight">
+                Contatos
+              </h1>
+            </div>
+            {contacts.length > 0 && (
+              <span className="ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-mh-navy-50 border border-mh-navy-100 text-[11px] font-medium text-mh-navy-700">
+                <span className="tabular-nums font-semibold">{contacts.length.toLocaleString("pt-BR")}</span>
+                <span className="text-mh-ink-3">contatos</span>
+              </span>
+            )}
           </div>
-          <Button variant="outline" className="gap-2" onClick={() => setImportModalOpen(true)}>
+          <Button variant="outline" className="gap-2 border-mh-navy-700/20 hover:border-mh-navy-700 hover:bg-mh-navy-50" onClick={() => setImportModalOpen(true)}>
             <Upload className="h-4 w-4" />
             Importar Contatos
           </Button>

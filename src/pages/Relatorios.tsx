@@ -629,14 +629,18 @@ export default function Relatorios() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <BarChart3 className="h-8 w-8 text-primary" />
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Relatórios de Disparos</h1>
-            <p className="text-muted-foreground">Métricas e análises de campanhas</p>
+      {/* Cabeçalho institucional */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mh-gold-600">
+            Inteligência · Análise de Desempenho
           </div>
+          <h1 className="font-serif-display text-2xl md:text-3xl font-medium text-mh-ink leading-tight mt-1">
+            Relatórios de Disparos
+          </h1>
+          <p className="text-sm text-mh-ink-3 mt-1">
+            Métricas e análises de campanhas em tempo real.
+          </p>
         </div>
       </div>
 

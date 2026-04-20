@@ -276,18 +276,18 @@ export default function ContextoIA() {
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 max-w-5xl mx-auto">
-      {/* Header */}
+      {/* Header institucional */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-primary/10 p-2.5">
-            <BrainCircuit className="h-7 w-7 text-primary" />
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mh-gold-600">
+            Inteligência · Automação
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Contexto IA</h1>
-            <p className="text-sm text-muted-foreground">
-              Gerencie scripts de IA para respostas automáticas no WhatsApp
-            </p>
-          </div>
+          <h1 className="font-serif-display text-2xl md:text-3xl font-medium text-mh-ink leading-tight mt-1">
+            Contexto IA
+          </h1>
+          <p className="text-sm text-mh-ink-3 mt-1">
+            Gerencie scripts de IA para respostas automáticas no WhatsApp.
+          </p>
         </div>
         <Button onClick={openNew} className="gap-2">
           <Plus className="h-4 w-4" />

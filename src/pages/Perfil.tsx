@@ -193,13 +193,15 @@ export default function Perfil() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <User className="h-8 w-8 text-primary" />
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Meu Perfil</h1>
-            <p className="text-muted-foreground">Gerencie suas informações pessoais</p>
+      <div className="flex items-start justify-between mb-6 gap-4">
+        <div className="flex-1">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mh-gold-600">
+            Conta · Preferências
           </div>
+          <h1 className="font-serif-display text-2xl md:text-3xl font-medium text-mh-ink leading-tight mt-1">
+            Meu Perfil
+          </h1>
+          <p className="text-sm text-mh-ink-3 mt-1">Gerencie suas informações pessoais e integrações.</p>
         </div>
       </div>
 

@@ -261,11 +261,16 @@ export default function DisparosAutomaticos() {
 
   return (
     <div className="container mx-auto py-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Disparos Agendados</h1>
-          <p className="text-muted-foreground mt-1">
-            Configure mensagens agendadas para serem enviadas automaticamente
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mh-gold-600">
+            Operação · Automação
+          </div>
+          <h1 className="font-serif-display text-2xl md:text-3xl font-medium text-mh-ink leading-tight mt-1">
+            Disparos Agendados
+          </h1>
+          <p className="text-sm text-mh-ink-3 mt-1">
+            Configure mensagens agendadas para serem enviadas automaticamente.
           </p>
         </div>
         <Button onClick={() => setDialogOpen(true)}>
