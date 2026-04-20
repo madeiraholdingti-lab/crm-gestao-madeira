@@ -186,6 +186,8 @@ export default function SDRZap() {
   // Follow-up
   const [followUpConversaId, setFollowUpConversaId] = useState<string | null>(null);
   const [followUpData, setFollowUpData] = useState("");
+  const [ignorarConversaId, setIgnorarConversaId] = useState<string | null>(null);
+  const [ignorarMotivo, setIgnorarMotivo] = useState("");
   const [followUpNota, setFollowUpNota] = useState("");
 
   // Função para minimizar/expandir coluna 1
@@ -1769,6 +1771,65 @@ export default function SDRZap() {
     }
   };
 
+  /**
+   * Ignorar conversa — dor do Maikon na reunião de 20/04:
+   * "vendedor de móveis que eu não quero responder fica batendo como pendente".
+   * Marca ignorada_em=now + motivo opcional + ignorada_por=userLogado.
+   * A lista esconde das abas Todas/Não lidas/Aguardando e mostra só em "Ignoradas".
+   * Pra reverter, mesmo fluxo: jaIgnorada=true zera os campos.
+   */
+  const handleToggleIgnorarConversa = (conversaId: string, jaIgnorada: boolean) => {
+    if (jaIgnorada) {
+      // Reativar direto (sem modal)
+      reativarConversa(conversaId);
+    } else {
+      // Abre modal pra capturar motivo
+      setIgnorarConversaId(conversaId);
+      setIgnorarMotivo("");
+    }
+  };
+
+  const reativarConversa = async (conversaId: string) => {
+    try {
+      const { error } = await supabase
+        .from('conversas')
+        .update({
+          ignorada_em: null,
+          ignorada_motivo: null,
+          ignorada_por: null,
+        })
+        .eq('id', conversaId);
+      if (error) throw error;
+      toast.success('Conversa reativada');
+      invalidateConversas();
+    } catch (err) {
+      console.error('Erro ao reativar conversa:', err);
+      toast.error('Erro ao reativar conversa');
+    }
+  };
+
+  const confirmarIgnorarConversa = async () => {
+    if (!ignorarConversaId || !userProfile?.id) return;
+    try {
+      const { error } = await supabase
+        .from('conversas')
+        .update({
+          ignorada_em: new Date().toISOString(),
+          ignorada_motivo: ignorarMotivo.trim() || null,
+          ignorada_por: userProfile.id,
+        })
+        .eq('id', ignorarConversaId);
+      if (error) throw error;
+      toast.success('Conversa movida para Ignoradas');
+      setIgnorarConversaId(null);
+      setIgnorarMotivo("");
+      invalidateConversas();
+    } catch (err) {
+      console.error('Erro ao ignorar conversa:', err);
+      toast.error('Erro ao ignorar conversa');
+    }
+  };
+
   const handleExcluirConversa = async (conversaId: string) => {
     if (!confirm('Tem certeza que deseja excluir esta conversa?')) return;
     try {
@@ -2235,6 +2296,7 @@ export default function SDRZap() {
               }}
               onDelete={handleExcluirConversa}
               onAssign={handleAtribuirConversa}
+              onIgnore={handleToggleIgnorarConversa}
               equipe={equipe}
               currentUserId={userProfile?.id}
               header={
@@ -2416,6 +2478,7 @@ export default function SDRZap() {
               }}
               onDelete={handleExcluirConversa}
               onAssign={handleAtribuirConversa}
+              onIgnore={handleToggleIgnorarConversa}
               equipe={equipe}
               currentUserId={userProfile?.id}
               header={
@@ -3986,6 +4049,45 @@ export default function SDRZap() {
           criadoPorId={userProfile?.id}
         />
       )}
+
+      {/* Dialog Ignorar conversa — motivo opcional pra auditoria */}
+      <Dialog open={!!ignorarConversaId} onOpenChange={(open) => {
+        if (!open) { setIgnorarConversaId(null); setIgnorarMotivo(""); }
+      }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Ignorar conversa</DialogTitle>
+            <DialogDescription>
+              A conversa some da lista principal e vai pra aba "Ignoradas". Pode reativar depois.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Motivo (opcional)</Label>
+              <Input
+                value={ignorarMotivo}
+                onChange={(e) => setIgnorarMotivo(e.target.value)}
+                placeholder="Ex: vendedor, spam, golpe"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmarIgnorarConversa();
+                }}
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Útil pro Maikon/equipe ver depois por que foi ignorada.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => { setIgnorarConversaId(null); setIgnorarMotivo(""); }}>
+                Cancelar
+              </Button>
+              <Button onClick={confirmarIgnorarConversa} className="flex-1">
+                Ignorar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DndContext>
   );
 }

@@ -901,10 +901,16 @@ Deno.serve(async (req) => {
 
     // 9. Atualizar ou criar conversa vinculada ao número WhatsApp
     if (numeroWhatsappId) {
+      // IMPORTANTE: filtrar por instância! Antes só filtrava por phone, o que
+      // (a) retornava conversa de outra instância e (b) com UNIQUE(numero, instance)
+      // no DB agora dois webhooks simultâneos batiam o SELECT antes do INSERT e
+      // davam conflict. Lookup por (phone, instance) + UPSERT com onConflict
+      // resolve a race.
       const { data: existingConversa } = await supabase
         .from('conversas')
         .select('id, unread_count')
         .eq('numero_contato', phone)
+        .eq('current_instance_id', instanciaWhatsappId)
         .maybeSingle();
 
       const isFromContact = !Boolean(data.key.fromMe);
@@ -936,30 +942,34 @@ Deno.serve(async (req) => {
           .from('conversas')
           .update(updateData)
           .eq('id', existingConversa.id);
-        
+
         console.log('Conversa atualizada:', existingConversa.id, 'unread_count:', updateData.unread_count);
       } else {
+        const insertPayload = {
+          numero_contato: phone,
+          nome_contato: isFromContact ? (pushName || null) : null,
+          contact_id: contact.id,
+          numero_whatsapp_id: numeroWhatsappId,
+          orig_instance_id: instanciaWhatsappId,
+          current_instance_id: instanciaWhatsappId,
+          instancia_id: instanciaWhatsappId,
+          ultima_mensagem: messageText,
+          ultima_interacao: new Date().toISOString(),
+          status: 'novo',
+          unread_count: isFromContact ? 1 : 0,
+          last_message_from_me: isFromContact ? (isClosure ? null : false) : true,
+        };
+
+        // UPSERT com onConflict: se dois webhooks chegam ao mesmo tempo e ambos
+        // viram "não existe", o segundo cai no UPDATE em vez de criar duplicata.
         const { data: newConversa, error: conversaError } = await supabase
           .from('conversas')
-          .insert({
-            numero_contato: phone,
-            nome_contato: isFromContact ? (pushName || null) : null,
-            contact_id: contact.id,
-            numero_whatsapp_id: numeroWhatsappId,
-            orig_instance_id: instanciaWhatsappId,
-            current_instance_id: instanciaWhatsappId,
-            instancia_id: instanciaWhatsappId,
-            ultima_mensagem: messageText,
-            ultima_interacao: new Date().toISOString(),
-            status: 'novo',
-            unread_count: isFromContact ? 1 : 0,
-            last_message_from_me: isFromContact ? (isClosure ? null : false) : true,
-          })
+          .upsert(insertPayload, { onConflict: 'numero_contato,current_instance_id' })
           .select()
           .single();
 
         if (conversaError) {
-          console.error('Erro ao criar conversa:', conversaError);
+          console.error('Erro ao criar/atualizar conversa:', conversaError);
         } else {
           console.log('Nova conversa criada:', newConversa.id);
 

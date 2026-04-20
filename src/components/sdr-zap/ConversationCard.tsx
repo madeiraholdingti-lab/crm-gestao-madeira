@@ -12,7 +12,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
-import { User, MoreVertical, Pin, Clock, Ban, Trash2, UserPlus, UserMinus } from "lucide-react";
+import { User, MoreVertical, Pin, Clock, Ban, Trash2, UserPlus, UserMinus, EyeOff, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getConversaUrgencyColor, getTempoSemResposta } from "@/utils/urgencyHelpers";
@@ -29,13 +29,15 @@ interface ConversationCardProps {
   onBlacklist: (id: string) => void;
   onDelete: (id: string) => void;
   onAssign?: (conversaId: string, userId: string | null) => void;
+  onIgnore?: (id: string, jaIgnorada: boolean) => void;
   equipe?: MembroEquipe[];
 }
 
 export const ConversationCard = memo(function ConversationCard({
   conversa, isSelected, corInstancia, onClick, onPin, onFollowUp, onBlacklist, onDelete,
-  onAssign, equipe
+  onAssign, onIgnore, equipe
 }: ConversationCardProps) {
+  const isIgnorada = !!conversa.ignorada_em;
   const urgColor = getConversaUrgencyColor(conversa.last_message_from_me ?? null, conversa.ultima_interacao);
   const tempoResp = conversa.last_message_from_me === false && conversa.ultima_interacao
     ? getTempoSemResposta(conversa.ultima_interacao)
@@ -86,7 +88,8 @@ export const ConversationCard = memo(function ConversationCard({
             <div className="flex items-center justify-between gap-1">
               <div className="flex items-center gap-1 min-w-0 flex-1">
                 {conversa.fixada && <Pin className="h-3 w-3 flex-shrink-0 opacity-60" />}
-                <span className="text-sm font-semibold truncate">{contactName}</span>
+                {isIgnorada && <EyeOff className="h-3 w-3 flex-shrink-0 opacity-50" />}
+                <span className={`text-sm font-semibold truncate ${isIgnorada ? 'opacity-60 italic' : ''}`}>{contactName}</span>
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
                 {conversa.ultima_interacao && (
@@ -197,6 +200,15 @@ export const ConversationCard = memo(function ConversationCard({
                   <Clock className="h-3.5 w-3.5 mr-2" />
                   Follow-up
                 </DropdownMenuItem>
+                {onIgnore && (
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onIgnore(conversa.id, isIgnorada); }}>
+                    {isIgnorada ? (
+                      <><Eye className="h-3.5 w-3.5 mr-2" /> Reativar conversa</>
+                    ) : (
+                      <><EyeOff className="h-3.5 w-3.5 mr-2" /> Ignorar conversa</>
+                    )}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onBlacklist(conversa.id); }}>
                   <Ban className="h-3.5 w-3.5 mr-2" />
                   Enviar p/ Blacklist
@@ -223,6 +235,7 @@ export const ConversationCard = memo(function ConversationCard({
     && prev.conversa.ultima_mensagem === next.conversa.ultima_mensagem
     && prev.conversa.last_message_from_me === next.conversa.last_message_from_me
     && prev.conversa.fixada === next.conversa.fixada
+    && prev.conversa.ignorada_em === next.conversa.ignorada_em
     && prev.conversa.responsavel_atual === next.conversa.responsavel_atual
     && prev.isSelected === next.isSelected
     && prev.corInstancia === next.corInstancia

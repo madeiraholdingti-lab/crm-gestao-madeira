@@ -17,6 +17,7 @@ interface ConversationListProps {
   onBlacklist: (id: string) => void;
   onDelete: (id: string) => void;
   onAssign?: (conversaId: string, userId: string | null) => void;
+  onIgnore?: (id: string, jaIgnorada: boolean) => void;
   equipe?: MembroEquipe[];
   currentUserId?: string;
   header?: React.ReactNode;
@@ -38,7 +39,7 @@ function filtrarPorBusca(lista: Conversa[], busca: string): Conversa[] {
 export function ConversationList({
   conversas, selectedId, getCorInstancia, onSelect,
   onPin, onFollowUp, onBlacklist, onDelete, header,
-  dropZoneId, draggable, onAssign, equipe, currentUserId
+  dropZoneId, draggable, onAssign, onIgnore, equipe, currentUserId
 }: ConversationListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [busca, setBusca] = useState("");
@@ -65,17 +66,27 @@ export function ConversationList({
 
   const searched = useMemo(() => filtrarPorBusca(assignFiltered, busca), [assignFiltered, busca]);
 
+  // Ignoradas só aparecem quando o filtro é "ignoradas". Nos outros 3 filtros
+  // (Todas/Não lidas/Aguardando) ficam escondidas — essa é a dor que o Maikon
+  // levantou: "não quero ver vendedor de móveis aqui batendo toda hora".
+  const visiveisNosFiltrosNormais = useMemo(
+    () => searched.filter(c => !c.ignorada_em),
+    [searched]
+  );
+
   const filtered = useMemo(() => {
-    if (filter === "nao_lidas") return searched.filter(c => (c.unread_count || 0) > 0);
-    if (filter === "aguardando") return searched.filter(c => c.last_message_from_me === false);
-    return searched;
-  }, [searched, filter]);
+    if (filter === "ignoradas") return searched.filter(c => !!c.ignorada_em);
+    if (filter === "nao_lidas") return visiveisNosFiltrosNormais.filter(c => (c.unread_count || 0) > 0);
+    if (filter === "aguardando") return visiveisNosFiltrosNormais.filter(c => c.last_message_from_me === false);
+    return visiveisNosFiltrosNormais;
+  }, [searched, visiveisNosFiltrosNormais, filter]);
 
   const counts = useMemo(() => ({
-    todas: searched.length,
-    nao_lidas: searched.filter(c => (c.unread_count || 0) > 0).length,
-    aguardando: searched.filter(c => c.last_message_from_me === false).length,
-  }), [searched]);
+    todas: visiveisNosFiltrosNormais.length,
+    nao_lidas: visiveisNosFiltrosNormais.filter(c => (c.unread_count || 0) > 0).length,
+    aguardando: visiveisNosFiltrosNormais.filter(c => c.last_message_from_me === false).length,
+    ignoradas: searched.filter(c => !!c.ignorada_em).length,
+  }), [searched, visiveisNosFiltrosNormais]);
 
   const virtualizer = useVirtualizer({
     count: filtered.length,
@@ -126,6 +137,7 @@ export function ConversationList({
                       onBlacklist={onBlacklist}
                       onDelete={onDelete}
                       onAssign={onAssign}
+                      onIgnore={onIgnore}
                       equipe={equipe}
                     />
                   );

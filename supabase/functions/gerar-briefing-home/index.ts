@@ -39,10 +39,13 @@ serve(async (req) => {
     const duasHorasAtras = new Date(agora.getTime() - 2 * 60 * 60 * 1000).toISOString();
 
     // 1. Conversas abertas por responsável (limit 100 para controle de custo)
+    //    Exclui ignoradas: Maikon pediu que conversas marcadas pra ignorar
+    //    não entrem no "sem resposta há +2h" (ex: vendedor de móveis).
     const { data: conversasAbertas } = await supabase
       .from("conversas")
       .select("id, responsavel_atual, ultima_interacao, ultima_mensagem, nome_contato, numero_contato, status")
       .in("status", ["novo", "Aguardando Contato", "Em Atendimento"])
+      .is("ignorada_em", null)
       .not("responsavel_atual", "is", null)
       .order("ultima_interacao", { ascending: true })
       .limit(100);

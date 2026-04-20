@@ -6,9 +6,10 @@ interface FilterCounts {
   todas: number;
   nao_lidas: number;
   aguardando: number;
+  ignoradas: number;
 }
 
-export type StatusFilter = "todas" | "nao_lidas" | "aguardando";
+export type StatusFilter = "todas" | "nao_lidas" | "aguardando" | "ignoradas";
 export type AssignFilter = "all" | "mine" | "unassigned";
 
 interface ConversationFiltersProps {
@@ -28,6 +29,7 @@ const STATUS_PILLS: { key: StatusFilter; label: string }[] = [
   { key: "todas", label: "Todas" },
   { key: "nao_lidas", label: "Não lidas" },
   { key: "aguardando", label: "Aguardando" },
+  { key: "ignoradas", label: "Ignoradas" },
 ];
 
 const ASSIGN_PILLS: { key: AssignFilter; label: string }[] = [

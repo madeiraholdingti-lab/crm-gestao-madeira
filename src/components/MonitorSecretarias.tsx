@@ -123,6 +123,7 @@ export const MonitorSecretarias = () => {
           contact:contacts!conversas_contact_id_fkey(name, perfil_profissional)
         `)
         .in("status", ["novo", "Aguardando Contato", "Em Atendimento"])
+        .is("ignorada_em", null)
         .gte("ultima_interacao", cutoff.toISOString())
         .order("ultima_interacao", { ascending: false })
         .limit(200);

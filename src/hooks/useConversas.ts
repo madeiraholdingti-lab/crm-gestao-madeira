@@ -34,6 +34,9 @@ export interface Conversa {
   last_message_status?: string;
   last_message_from_me?: boolean;
   fixada?: boolean;
+  ignorada_em?: string | null;
+  ignorada_motivo?: string | null;
+  ignorada_por?: string | null;
 }
 
 const DELETED_INSTANCES_KEY = "DELETED_INSTANCES";
@@ -47,6 +50,7 @@ async function fetchConversas(): Promise<Record<string, Conversa[]>> {
       responsavel_atual, status, status_qualificacao,
       ultima_mensagem, ultima_interacao, tags, unread_count,
       foto_contato, fixada, last_message_from_me,
+      ignorada_em, ignorada_motivo, ignorada_por,
       contacts!conversas_contact_id_fkey (
         id, jid, phone, name, profile_picture_url,
         perfil_profissional, especialidade, instituicao,
@@ -93,7 +97,10 @@ async function fetchConversas(): Promise<Record<string, Conversa[]>> {
       tags: conv.tags || [],
       unread_count: conv.unread_count || 0,
       last_message_from_me: conv.last_message_from_me ?? undefined,
-      fixada: conv.fixada || false
+      fixada: conv.fixada || false,
+      ignorada_em: conv.ignorada_em || null,
+      ignorada_motivo: conv.ignorada_motivo || null,
+      ignorada_por: conv.ignorada_por || null,
     };
 
     const groupKey = isDeleted ? DELETED_INSTANCES_KEY : conversa.instancia_id;
