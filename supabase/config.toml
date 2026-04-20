@@ -2,3 +2,6 @@ project_id = "yycpctrcefxemgahhxgx"
 
 [functions.gerar-briefing-home]
 verify_jwt = false
+
+[functions.evolution-messages-webhook]
+verify_jwt = false

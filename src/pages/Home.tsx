@@ -11,9 +11,27 @@ const Home = () => {
   const isAdminOrMedico = profile?.role === "admin_geral" || profile?.role === "medico";
   const isDisparador = profile?.role === "disparador";
 
+  const now = new Date();
+  const hora = now.getHours();
+  const saudacao = hora < 12 ? "Bom dia" : hora < 18 ? "Boa tarde" : "Boa noite";
+  const dataFmt = now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+  const nomeCurto = (profile as { nome?: string } | null)?.nome?.split(" ")[0] || "Dr. Maikon";
+
   return (
     <div className="h-[calc(100vh-4rem)] bg-background p-4 overflow-y-auto">
       <div className="flex flex-col gap-4">
+        {/* Cabeçalho institucional — serif display + data, identidade Madeira Holding */}
+        {isAdminOrMedico && (
+          <div className="flex flex-col gap-1 px-1 pt-2">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mh-ink-3">
+              {saudacao}, {nomeCurto} · {dataFmt}
+            </div>
+            <h1 className="font-serif-display text-2xl sm:text-3xl font-medium text-mh-ink leading-tight">
+              Panorama do consultório
+            </h1>
+          </div>
+        )}
+
         {/* Briefing IA — topo, só admin/medico */}
         {isAdminOrMedico && (
           <BriefingIA />

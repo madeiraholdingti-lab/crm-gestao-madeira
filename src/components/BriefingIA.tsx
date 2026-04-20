@@ -145,14 +145,16 @@ export const BriefingIA = () => {
 
   if (loading) {
     return (
-      <Card>
-        <CardHeader className="bg-gradient-to-r from-violet-500/10 to-blue-500/10 border-b py-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Brain className="h-4 w-4" />
-            Briefing IA
+      <Card className="overflow-hidden border-mh-navy-700/30 shadow-[0_10px_30px_-12px_hsl(var(--mh-navy-900)/0.35)]">
+        <CardHeader className="mh-gradient-hero border-b border-mh-navy-700/40 py-4 px-5">
+          <CardTitle className="flex items-center gap-3 text-base text-mh-gold-100">
+            <div className="mh-gradient-gold h-9 w-9 rounded-lg flex items-center justify-center shadow-sm">
+              <Brain className="h-4 w-4 text-mh-navy-950" />
+            </div>
+            <span className="font-serif-display text-lg font-medium">Briefing inteligente</span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-4">
+        <CardContent className="p-5">
           <Skeleton className="h-4 w-3/4 mb-2" />
           <Skeleton className="h-4 w-full mb-2" />
           <Skeleton className="h-4 w-2/3" />
@@ -162,26 +164,33 @@ export const BriefingIA = () => {
   }
 
   return (
-    <Card>
-      <CardHeader className="bg-gradient-to-r from-violet-500/10 to-blue-500/10 border-b py-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Brain className="h-4 w-4" />
-            Briefing IA
+    <Card className="overflow-hidden border-mh-navy-700/30 shadow-[0_10px_30px_-12px_hsl(var(--mh-navy-900)/0.35)]">
+      <CardHeader className="mh-gradient-hero border-b border-mh-navy-700/40 py-4 px-5">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-3 text-base text-mh-gold-100">
+            <div className="mh-gradient-gold h-9 w-9 rounded-lg flex items-center justify-center shadow-sm">
+              <Brain className="h-4 w-4 text-mh-navy-950" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-serif-display text-lg font-medium leading-tight">Briefing inteligente</span>
+              <span className="text-[11px] uppercase tracking-[0.12em] text-mh-gold-300/90 font-medium">
+                Madeira Holding · panorama do dia
+              </span>
+            </div>
           </CardTitle>
           <Button
             variant="ghost"
             size="sm"
             onClick={handleRefresh}
             disabled={refreshing}
-            className="h-7 text-xs"
+            className="h-8 text-xs text-mh-gold-100 hover:text-mh-gold-300 hover:bg-white/5"
           >
             <RefreshCw className={`h-3 w-3 mr-1 ${refreshing ? "animate-spin" : ""}`} />
             Atualizar
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="p-4">
+      <CardContent className="p-5">
         {conteudo || highlights.length > 0 ? (
           <div className="space-y-3">
             {/* HIGHLIGHTS — bullets com ícones de severidade + métricas destacadas.

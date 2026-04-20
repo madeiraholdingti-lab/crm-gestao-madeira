@@ -8,54 +8,76 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 0 0% 98%;
-    --foreground: 215 25% 15%;
+    /* Madeira Holding brand — navy institucional + dourado + teal */
+    --mh-navy-950: 215 62% 10%;
+    --mh-navy-900: 215 57% 13%;
+    --mh-navy-800: 215 52% 18%;
+    --mh-navy-700: 216 52% 25%;
+    --mh-navy-600: 216 49% 33%;
+    --mh-navy-500: 214 48% 44%;
+    --mh-navy-100: 215 60% 94%;
+    --mh-navy-50:  215 50% 97%;
+    --mh-gold-700: 42 63% 33%;
+    --mh-gold-600: 42 62% 43%;
+    --mh-gold-500: 42 65% 54%;
+    --mh-gold-300: 42 72% 72%;
+    --mh-gold-100: 42 75% 89%;
+    --mh-teal-700: 176 73% 21%;
+    --mh-teal-600: 175 71% 28%;
+    --mh-teal-500: 175 71% 37%;
+    --mh-ink:   215 62% 10%;
+    --mh-ink-2: 216 32% 22%;
+    --mh-ink-3: 217 18% 43%;
+    --mh-ink-4: 215 18% 60%;
+
+    --background: 215 50% 97%;
+    --foreground: 215 62% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 215 25% 15%;
+    --card-foreground: 215 62% 10%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 215 25% 15%;
+    --popover-foreground: 215 62% 10%;
 
-    --primary: 210 100% 45%;
+    --primary: 216 49% 33%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 215 25% 15%;
+    --secondary: 215 60% 94%;
+    --secondary-foreground: 216 52% 25%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 15% 50%;
+    --muted: 215 60% 94%;
+    --muted-foreground: 217 18% 43%;
 
-    --accent: 165 80% 42%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 42 65% 54%;
+    --accent-foreground: 215 62% 10%;
 
-    --destructive: 0 85% 60%;
+    --destructive: 3 63% 47%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 210 100% 45%;
+    --border: 216 31% 90%;
+    --input: 216 31% 90%;
+    --ring: 216 49% 33%;
 
-    --radius: 0.5rem;
+    --radius: 0.625rem;
 
-    --chart-1: 210 100% 45%;
-    --chart-2: 165 80% 42%;
-    --chart-3: 30 90% 55%;
-    --chart-4: 280 70% 55%;
+    --chart-1: 216 49% 33%;
+    --chart-2: 42 65% 54%;
+    --chart-3: 175 71% 37%;
+    --chart-4: 3 63% 47%;
 
-    --sidebar-background: 215 25% 15%;
-    --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 210 100% 45%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 215 25% 20%;
-    --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 215 25% 25%;
-    --sidebar-ring: 210 100% 45%;
+    --sidebar-background: 215 62% 10%;
+    --sidebar-foreground: 215 60% 94%;
+    --sidebar-primary: 42 65% 54%;
+    --sidebar-primary-foreground: 215 62% 10%;
+    --sidebar-accent: 215 52% 18%;
+    --sidebar-accent-foreground: 215 60% 94%;
+    --sidebar-border: 216 52% 25%;
+    --sidebar-ring: 42 65% 54%;
 
     --kanban-card: 0 0% 100%;
-    --kanban-header: 210 100% 45%;
-    --shadow-soft: 210 20% 80%;
-    
+    --kanban-header: 216 49% 33%;
+    --shadow-soft: 215 30% 80%;
+
     --master-area: 0 70% 96%;
     --detail-area: 142 70% 96%;
   }
@@ -119,7 +141,28 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: 'cv11', 'ss01';
   }
+
+  .font-serif-display {
+    font-family: 'Fraunces', Georgia, serif;
+    font-feature-settings: 'ss01';
+    letter-spacing: -0.01em;
+  }
+}
+
+.mh-gradient-hero {
+  background: linear-gradient(135deg,
+    hsl(var(--mh-navy-950)) 0%,
+    hsl(var(--mh-navy-800)) 60%,
+    hsl(var(--mh-navy-700)) 100%);
+}
+
+.mh-gradient-gold {
+  background: linear-gradient(135deg,
+    hsl(var(--mh-gold-500)),
+    hsl(var(--mh-gold-700)));
 }
 
 @keyframes blink-error {

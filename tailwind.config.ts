@@ -15,8 +15,42 @@ export default {
     extend: {
       fontFamily: {
         nunito: ['Nunito', 'sans-serif'],
+        sans: ['Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        serif: ['Fraunces', 'Georgia', 'serif'],
+        display: ['Fraunces', 'Georgia', 'serif'],
       },
       colors: {
+        /* Madeira Holding brand */
+        mh: {
+          navy: {
+            50:  'hsl(var(--mh-navy-50))',
+            100: 'hsl(var(--mh-navy-100))',
+            500: 'hsl(var(--mh-navy-500))',
+            600: 'hsl(var(--mh-navy-600))',
+            700: 'hsl(var(--mh-navy-700))',
+            800: 'hsl(var(--mh-navy-800))',
+            900: 'hsl(var(--mh-navy-900))',
+            950: 'hsl(var(--mh-navy-950))',
+          },
+          gold: {
+            100: 'hsl(var(--mh-gold-100))',
+            300: 'hsl(var(--mh-gold-300))',
+            500: 'hsl(var(--mh-gold-500))',
+            600: 'hsl(var(--mh-gold-600))',
+            700: 'hsl(var(--mh-gold-700))',
+          },
+          teal: {
+            500: 'hsl(var(--mh-teal-500))',
+            600: 'hsl(var(--mh-teal-600))',
+            700: 'hsl(var(--mh-teal-700))',
+          },
+          ink: {
+            DEFAULT: 'hsl(var(--mh-ink))',
+            2: 'hsl(var(--mh-ink-2))',
+            3: 'hsl(var(--mh-ink-3))',
+            4: 'hsl(var(--mh-ink-4))',
+          },
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

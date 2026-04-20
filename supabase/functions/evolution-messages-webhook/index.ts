@@ -349,14 +349,24 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validar API key (opcional)
-    const expectedApiKey = Deno.env.get('EVOLUTION_API_KEY');
-    if (expectedApiKey && payload.body?.apikey !== expectedApiKey) {
-      console.error('API key inválida');
-      return new Response(
-        JSON.stringify({ success: false, error: 'API key inválida' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
-      );
+    // Validar API key — aceita tanto a global quanto qualquer per-instância
+    // cadastrada em instancias_whatsapp.token_instancia. Evolution envia apikey
+    // por instância (ex: 7995AA66...), não a global (429683C...).
+    const incomingApiKey = payload.body?.apikey;
+    const globalApiKey = Deno.env.get('EVOLUTION_API_KEY');
+    if (incomingApiKey && globalApiKey && incomingApiKey !== globalApiKey) {
+      const { data: instancia } = await supabase
+        .from('instancias_whatsapp')
+        .select('id')
+        .eq('token_instancia', incomingApiKey)
+        .maybeSingle();
+      if (!instancia) {
+        console.error('API key não reconhecida:', incomingApiKey.substring(0, 6) + '***');
+        return new Response(
+          JSON.stringify({ success: false, error: 'API key inválida' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
+        );
+      }
     }
 
     const data = payload.body?.data || payload.data;
