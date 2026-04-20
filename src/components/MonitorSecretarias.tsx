@@ -320,7 +320,7 @@ export const MonitorSecretarias = () => {
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
             <span className="text-xs font-medium">
-              {view === "hoje" ? "Aguardando resposta hoje" : `Pendentes (últimos ${CUTOFF_HISTORICO_DIAS} dias)`}
+              {view === "hoje" ? "Aguardando resposta (hoje + ontem)" : `Pendentes (últimos ${CUTOFF_HISTORICO_DIAS} dias)`}
             </span>
             {topPendentes.length > 0 && (
               <Badge variant="outline" className="text-[10px] px-1.5 py-0">
@@ -332,7 +332,7 @@ export const MonitorSecretarias = () => {
           {topPendentes.length === 0 ? (
             <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 dark:bg-green-950/30 rounded-lg p-3">
               <CheckCircle2 className="h-4 w-4" />
-              {view === "hoje" ? "Nenhuma pendência hoje — todos responderam ✓" : "Nada pendente no período"}
+              {view === "hoje" ? "Nenhuma pendência de hoje ou ontem — todos responderam ✓" : "Nada pendente no período"}
             </div>
           ) : (
             <div className="space-y-1.5">
