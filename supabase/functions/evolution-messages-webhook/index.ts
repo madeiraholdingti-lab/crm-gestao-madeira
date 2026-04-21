@@ -86,17 +86,41 @@ Deno.serve(async (req) => {
 
       console.log(`Processando ${contacts.length} contatos do evento ${event}`);
 
-      // Buscar nomes conhecidos de instâncias para evitar usar como nome de contato
+      // Blocklist de nomes que NUNCA devem ser aplicados a contatos via
+      // contacts.* events. Combina: nomes das instâncias + nomes dos
+      // profiles da equipe (tanto o profile.nome quanto variações óbvias).
+      // Em 13/04 houve contaminação: contacts.set sincronizou a agenda da
+      // Isadora e aplicou "Isadora Cristina Volek" em múltiplos contatos.
       const { data: instancias } = await supabase
         .from('instancias_whatsapp')
         .select('nome_instancia, numero_chip');
-      
+      const { data: profilesTeam } = await supabase
+        .from('profiles')
+        .select('nome');
+
       const instanceNames = new Set<string>();
       const instanceNumbers = new Set<string>();
+      const blockedNames = new Set<string>();
+
       if (instancias) {
         instancias.forEach(inst => {
-          if (inst.nome_instancia) instanceNames.add(inst.nome_instancia.toLowerCase());
+          if (inst.nome_instancia) {
+            const n = inst.nome_instancia.toLowerCase();
+            instanceNames.add(n);
+            blockedNames.add(n);
+          }
           if (inst.numero_chip) instanceNumbers.add(inst.numero_chip);
+        });
+      }
+      if (profilesTeam) {
+        profilesTeam.forEach(p => {
+          if (p.nome) {
+            const n = p.nome.toLowerCase().trim();
+            blockedNames.add(n);
+            // Também bloqueia variações iniciais com 2+ palavras (ex: "Isadora Cristina")
+            const parts = n.split(/\s+/);
+            if (parts.length >= 2) blockedNames.add(`${parts[0]} ${parts[1]}`);
+          }
         });
       }
 
@@ -118,16 +142,38 @@ Deno.serve(async (req) => {
 
         const phone = jid.split('@')[0].replace(/\s+/g, '');
 
-        // IMPORTANTE: Não usar nome se parecer ser nome de instância/bot
-        // Verificar se o nome contém partes do nome de alguma instância
-        const nameLower = contactName.toLowerCase();
+        // Check anti-contaminação: o nome proposto bate com um membro da
+        // equipe (instância OU profile)? Se sim, é quase certo que é ruído
+        // da agenda da fonte (alguém salvou a própria equipe no celular).
+        const nameLower = contactName.toLowerCase().trim();
         let isInstanceName = false;
-        
-        for (const instName of instanceNames) {
-          if (nameLower.includes(instName) || instName.includes(nameLower.substring(0, 5))) {
-            isInstanceName = true;
-            console.log(`Ignorando update - nome "${contactName}" parece ser de instância "${instName}"`);
-            break;
+
+        // Bloqueio direto por nome completo
+        if (blockedNames.has(nameLower)) {
+          isInstanceName = true;
+          console.log(`Ignorando - nome "${contactName}" está na blocklist da equipe`);
+        }
+
+        // Bloqueio por prefixo de instância (fallback pra variações com ":")
+        if (!isInstanceName) {
+          for (const instName of instanceNames) {
+            if (nameLower.includes(instName) || instName.includes(nameLower.substring(0, 5))) {
+              isInstanceName = true;
+              console.log(`Ignorando update - nome "${contactName}" parece ser de instância "${instName}"`);
+              break;
+            }
+          }
+        }
+
+        // Bloqueio por pattern "Nome Sobrenome" que case com profile
+        if (!isInstanceName) {
+          for (const blocked of blockedNames) {
+            // Se o contactName COMEÇA com qualquer nome bloqueado (ex: "Isadora" em "Isadora Cristina Volek")
+            if (blocked.length >= 5 && (nameLower.startsWith(blocked) || blocked.startsWith(nameLower))) {
+              isInstanceName = true;
+              console.log(`Ignorando - "${contactName}" colide com nome bloqueado "${blocked}"`);
+              break;
+            }
           }
         }
         

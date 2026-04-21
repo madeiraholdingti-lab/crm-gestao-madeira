@@ -3804,7 +3804,25 @@ export default function SDRZap() {
                               </p>
                             );
                           })()}
-                          <div className="flex items-center justify-end gap-1 mt-1">
+                          <div className="flex items-center justify-end gap-1.5 mt-1">
+                            {/* Dot colorido da instância que enviou — deixa claro "quem é quem"
+                                quando a mesma conversa foi atendida por múltiplas instâncias */}
+                            {isMinhaMsg && instanciaMensagem && (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded"
+                                style={{
+                                  backgroundColor: `${instanciaMensagem.cor_identificacao || '#0891B2'}20`,
+                                  color: instanciaMensagem.cor_identificacao || '#0891B2',
+                                }}
+                                title={`Enviado por ${instanciaMensagem.nome_instancia}`}
+                              >
+                                <span
+                                  className="inline-block w-1.5 h-1.5 rounded-full"
+                                  style={{ backgroundColor: instanciaMensagem.cor_identificacao || '#0891B2' }}
+                                />
+                                {instanciaMensagem.nome_instancia}
+                              </span>
+                            )}
                             <div className="flex items-center gap-1">
                               <p className={`text-[11px] ${
                                 isMinhaMsg
