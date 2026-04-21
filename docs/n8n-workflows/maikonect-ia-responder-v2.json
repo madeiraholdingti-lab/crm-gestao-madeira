@@ -1,0 +1,429 @@
+{
+  "id": "maikonectIaResponderV2",
+  "name": "Maikonect — IA Responder v2",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "maikonect-ia-responder-v2",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "maikonect-ia-responder-v2-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aceita {campanha_envio_id} direto OU {} pra varredura em lote.\n// Devolve lista de envio_ids a processar.\n\nconst body = $json.body || {};\nconst envioEspecifico = body.campanha_envio_id;\n\nif (envioEspecifico) {\n  return [{ json: { envio_id: envioEspecifico, modo: 'single' } }];\n}\nreturn [{ json: { modo: 'batch' } }];\n"
+      },
+      "id": "node-mode-switch",
+      "name": "Decidir modo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/campanha_envios?select=id,campanha_id,lead_id,telefone,respondeu_em,primeira_msg_contato_em,status,campanha:campanha_id(nome,briefing_ia,status,mensagem)&status=eq.em_conversa&primeira_msg_contato_em=not.is.null&primeira_msg_contato_em=lt.{{ new Date(Date.now() - 15000).toISOString() }}&limit=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-batch",
+      "name": "Buscar envios pendentes (batch)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, -120]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/campanha_envios?id=eq.{{ $json.envio_id }}&select=id,campanha_id,lead_id,telefone,respondeu_em,primeira_msg_contato_em,status,campanha:campanha_id(nome,briefing_ia,status,mensagem)",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-single",
+      "name": "Buscar envio específico",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 120]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  { "leftValue": "={{ $json.modo }}", "rightValue": "single", "operator": { "type": "string", "operation": "equals" } }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "single"
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  { "leftValue": "={{ $json.modo }}", "rightValue": "batch", "operator": { "type": "string", "operation": "equals" } }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "batch"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-modo-switch",
+      "name": "Rotear modo",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [320, 0]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "node-split-loop",
+      "name": "Loop por envio",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Busca envio + briefing + último contato. Valida se IA está ativa.\n\nconst envio = $json;\nconst camp = envio.campanha;\n\nif (!camp) return [{ json: { skip: true, reason: 'sem campanha' } }];\nif (!['ativa','em_andamento'].includes(camp.status)) return [{ json: { skip: true, reason: `campanha ${camp.status}` } }];\n\nconst briefing = camp.briefing_ia || {};\nif (!briefing.ia_ativa) return [{ json: { skip: true, reason: 'ia_ativa=false' } }];\n\nreturn [{\n  json: {\n    envio_id: envio.id,\n    campanha_id: envio.campanha_id,\n    lead_id: envio.lead_id,\n    telefone: envio.telefone,\n    campanha_nome: camp.nome,\n    mensagem_inicial: camp.mensagem,\n    briefing,\n    primeira_msg_contato_em_lock: envio.primeira_msg_contato_em,\n  }\n}];\n"
+      },
+      "id": "node-validate",
+      "name": "Validar IA ativa",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/messages?contact_id=eq.{{ $json.lead_id }}&select=text,from_me,wa_timestamp,created_at,message_type&order=created_at.desc&limit=30",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-history",
+      "name": "Buscar histórico msgs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Monta prompt pra Gemini baseado no briefing + histórico\n\nconst envio = $('Validar IA ativa').item.json;\nconst msgs = ($json || []).slice().reverse(); // ordem cronológica\n\nconst b = envio.briefing || {};\nconst persona = b.persona || 'Você é um representante da GSS Saúde do Dr. Maikon Madeira (cirurgião cardíaco).';\nconst contexto = b.contexto || '';\nconst objetivo = b.objetivo || 'Qualificar interesse do lead e escalar pra humano se demonstrar interesse.';\nconst beneficios = Array.isArray(b.beneficios) && b.beneficios.length > 0\n  ? '\\n\\nBenefícios:\\n' + b.beneficios.map(x => `- ${x}`).join('\\n')\n  : '';\nconst objecoes = Array.isArray(b.objecoes) && b.objecoes.length > 0\n  ? '\\n\\nObjeções comuns:\\n' + b.objecoes.map(o => `- \"${o.pergunta}\": ${o.resposta}`).join('\\n')\n  : '';\nconst proibidas = Array.isArray(b.palavras_proibidas) && b.palavras_proibidas.length > 0\n  ? `\\n\\nNUNCA use: ${b.palavras_proibidas.join(', ')}.`\n  : '';\n\nconst kws = Array.isArray(b.handoff_keywords) ? b.handoff_keywords : ['salario','salário','valor','remuneração','remuneracao'];\nconst ultimaMsgContato = msgs.filter(m => !m.from_me).slice(-1)[0];\nconst textoUltima = (ultimaMsgContato?.text || '').toLowerCase();\nconst keywordMatch = kws.some(k => textoUltima.includes(k.toLowerCase()));\n\nconst systemPrompt = `${persona}\\n\\n${contexto}\\n\\nOBJETIVO: ${objetivo}\\n\\nMENSAGEM INICIAL QUE FOI ENVIADA:\\n\"${envio.mensagem_inicial || ''}\"${beneficios}${objecoes}${proibidas}\\n\\nREGRAS:\\n- Responda CURTO e NATURAL (1-2 frases preferencial, máx 3 msgs).\\n- NÃO use emoji auto, NÃO use markdown/bold, NÃO use bullets.\\n- Varie cumprimentos (oi/opa/e aí) - EVITE \"Olá!\".\\n- Se pedir salário/valor/remuneração → NÃO responda valor. Escale (alerta_lead=true).\\n- Se lead disser que não tem interesse → conversa_encerrada=true.\\n- Se demonstrar interesse forte → alerta_lead=true.\\n\\nSEMPRE devolva JSON no formato:\\n{ \"messages\": [\"msg1\",\"msg2\"], \"alerta_lead\": boolean, \"motivo_alerta\": \"\", \"conversa_encerrada\": boolean }`;\n\nconst transcricao = msgs.map(m => {\n  const who = m.from_me ? 'EQUIPE' : 'LEAD';\n  const tag = m.message_type && m.message_type !== 'text' ? ` [${m.message_type}]` : '';\n  return `${who}${tag}: ${m.text || '(sem texto)'}`;\n}).join('\\n');\n\nconst warn = keywordMatch ? '\\n\\n[ALERTA: detectamos palavra-chave de handoff na última msg. Considere alerta_lead=true.]' : '';\n\nconst userPrompt = `Conversa:\\n\\n${transcricao}${warn}\\n\\nResponda APENAS à última msg do lead. Devolva JSON.`;\n\nreturn [{\n  json: {\n    ...envio,\n    keywordMatch,\n    systemPrompt,\n    userPrompt,\n    gemini_body: {\n      systemInstruction: { parts: [{ text: systemPrompt }] },\n      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],\n      generationConfig: {\n        temperature: 0.7,\n        responseMimeType: 'application/json',\n        responseSchema: {\n          type: 'object',\n          properties: {\n            messages: { type: 'array', items: { type: 'string' } },\n            alerta_lead: { type: 'boolean' },\n            motivo_alerta: { type: 'string' },\n            conversa_encerrada: { type: 'boolean' }\n          },\n          required: ['messages','alerta_lead','motivo_alerta','conversa_encerrada']\n        }\n      }\n    }\n  }\n}];\n"
+      },
+      "id": "node-build-prompt",
+      "name": "Montar prompt Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyAo7ClWQZnZgtLu4et55WaXWWLVgvP35aI",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.gemini_body) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "id": "node-gemini-call",
+      "name": "Chamar Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse resposta Gemini\nconst envio = $('Montar prompt Gemini').item.json;\nconst raw = $json;\nconst text = raw?.candidates?.[0]?.content?.parts?.[0]?.text || '';\n\nlet parsed;\ntry {\n  const clean = text.replace(/^```json\\s*/i, '').replace(/```$/, '').trim();\n  parsed = JSON.parse(clean);\n} catch (e) {\n  return [{ json: { ...envio, erro: 'JSON inválido Gemini', raw: text.slice(0, 300) } }];\n}\n\nreturn [{\n  json: {\n    ...envio,\n    ia_messages: parsed.messages || [],\n    alerta_lead: !!parsed.alerta_lead,\n    motivo_alerta: parsed.motivo_alerta || '',\n    conversa_encerrada: !!parsed.conversa_encerrada,\n    deve_fazer_handoff: !!(envio.keywordMatch || parsed.alerta_lead),\n  }\n}];\n"
+      },
+      "id": "node-parse",
+      "name": "Parse resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/campanha_envios?id=eq.{{ $json.envio_id }}&select=primeira_msg_contato_em",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-recheck-lock",
+      "name": "Re-check lock (debounce)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Se o lead picou uma msg nova enquanto o Gemini estava respondendo,\n// o primeira_msg_contato_em mudou — aborta pra não responder desatualizado.\n\nconst envio = $('Parse resposta').item.json;\nconst atual = Array.isArray($json) ? $json[0] : $json;\nconst agoraEm = atual?.primeira_msg_contato_em;\n\nif (agoraEm !== envio.primeira_msg_contato_em_lock) {\n  return [{ json: { ...envio, abortado: true, reason: 'debounce invalidado (lead picou msg nova)' } }];\n}\n\nreturn [{ json: envio }];\n"
+      },
+      "id": "node-lock-check",
+      "name": "Lock válido?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Busca instância que a IA usa pra responder (briefing.handoff_numero_chip\n// OU primeiro chip_ids da campanha). Normaliza telefone.\n\nconst envio = $json;\nif (envio.abortado) return [{ json: envio }];\n\nconst b = envio.briefing || {};\nconst chipId = b.handoff_numero_chip;\n\n// Normaliza telefone pro padrão +55\nfunction normalize(raw) {\n  let d = (raw || '').replace(/\\D/g, '');\n  if (d.startsWith('55') && d.length > 11) d = d.slice(2);\n  if (d.length < 10 || d.length > 11) return null;\n  if (d.length === 10) {\n    const c = parseInt(d[2], 10);\n    if (c >= 6) d = d.slice(0, 2) + '9' + d.slice(2);\n  }\n  return '55' + d;\n}\n\nconst phone = normalize(envio.telefone);\nif (!phone) return [{ json: { ...envio, abortado: true, reason: 'telefone inválido' } }];\n\nreturn [{ json: { ...envio, phone_normalized: phone, chip_ia_id: chipId } }];\n"
+      },
+      "id": "node-prep-send",
+      "name": "Preparar envio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/instancias_whatsapp?select=id,nome_instancia&status=in.(conectada,ativa,open)&{{ $json.chip_ia_id ? 'id=eq.' + $json.chip_ia_id : 'limit=1' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-chip",
+      "name": "Buscar instância IA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dispara cada msg via Evolution com presence 'composing' + delay natural.\n// NOTA: n8n node limits — pra não complicar com loop interno, enviamos\n// somente a primeira msg. Se precisar mandar múltiplas, iterate external.\n\nconst envio = $('Preparar envio').item.json;\nif (envio.abortado) return [{ json: envio }];\n\nconst instancia = Array.isArray($json) ? $json[0] : $json;\nconst instanciaNome = instancia?.nome_instancia;\nif (!instanciaNome) return [{ json: { ...envio, abortado: true, reason: 'sem instância IA disponível' } }];\n\nreturn [{\n  json: {\n    ...envio,\n    instancia_nome: instanciaNome,\n    primeira_msg: (envio.ia_messages && envio.ia_messages[0]) || 'Ok!',\n    todas_msgs: envio.ia_messages || [],\n  }\n}];\n"
+      },
+      "id": "node-pick-instance",
+      "name": "Definir instância",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2860, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sdsd-evolution-api.r65ocn.easypanel.host/chat/sendPresence/{{ encodeURIComponent($json.instancia_nome) }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $json.phone_normalized, presence: 'composing', delay: Math.max(1500, Math.min(4000, $json.primeira_msg.length * 50)) }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "apikey", "value": "429683C4C977415CAAFCCE10F7D57E11" }
+          ]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "node-presence",
+      "name": "Digitando...",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3080, 0]
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "seconds"
+      },
+      "id": "node-wait-presence",
+      "name": "Aguardar presence",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [3300, 0],
+      "webhookId": "wait-presence-ia"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/{{ encodeURIComponent($('Definir instância').item.json.instancia_nome) }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $('Definir instância').item.json.phone_normalized, text: $('Definir instância').item.json.primeira_msg }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "apikey", "value": "429683C4C977415CAAFCCE10F7D57E11" }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "node-send-msg",
+      "name": "Enviar msg IA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3520, 0]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/campanha_envios?id=eq.{{ $('Definir instância').item.json.envio_id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $('Definir instância').item.json.conversa_encerrada ? 'descartado' : $('Definir instância').item.json.deve_fazer_handoff ? 'qualificado' : 'em_conversa', primeira_msg_contato_em: null }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-update-status",
+      "name": "Atualizar status envio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3740, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, processado: $('Definir instância').item.json.envio_id, status_final: $('Definir instância').item.json.conversa_encerrada ? 'descartado' : $('Definir instância').item.json.deve_fazer_handoff ? 'qualificado' : 'em_conversa', handoff: $('Definir instância').item.json.deve_fazer_handoff }) }}",
+        "options": {}
+      },
+      "id": "node-respond",
+      "name": "Responder webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [3960, 0]
+    },
+    {
+      "parameters": {
+        "content": "# Maikonect IA Responder v2\n\n**Trigger:** webhook POST /maikonect-ia-responder-v2\n\n**Payload aceito:**\n- `{ campanha_envio_id: uuid }` → processa específico\n- `{}` → modo batch (varre pendentes)\n\n**Fluxo:**\n1. Decide modo\n2. Busca envio(s) com briefing + histórico\n3. Valida IA ativa no briefing\n4. Monta prompt Gemini 2.5 Flash\n5. Parse JSON estruturado\n6. Re-check lock (anti-debounce race)\n7. Envia via Evolution (presence + msg)\n8. Atualiza status em campanha_envios\n\n**Backup:** \"WhatsApp - Prospecção | Dr. Maikon\" (antigo, não ativar junto).",
+        "height": 420,
+        "width": 380
+      },
+      "id": "node-sticky-info",
+      "name": "ℹ️ Info",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-400, -200]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Decidir modo", "type": "main", "index": 0 }]]
+    },
+    "Decidir modo": {
+      "main": [[{ "node": "Rotear modo", "type": "main", "index": 0 }]]
+    },
+    "Rotear modo": {
+      "main": [
+        [{ "node": "Buscar envio específico", "type": "main", "index": 0 }],
+        [{ "node": "Buscar envios pendentes (batch)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar envios pendentes (batch)": {
+      "main": [[{ "node": "Loop por envio", "type": "main", "index": 0 }]]
+    },
+    "Buscar envio específico": {
+      "main": [[{ "node": "Loop por envio", "type": "main", "index": 0 }]]
+    },
+    "Loop por envio": {
+      "main": [
+        [{ "node": "Validar IA ativa", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validar IA ativa": {
+      "main": [[{ "node": "Buscar histórico msgs", "type": "main", "index": 0 }]]
+    },
+    "Buscar histórico msgs": {
+      "main": [[{ "node": "Montar prompt Gemini", "type": "main", "index": 0 }]]
+    },
+    "Montar prompt Gemini": {
+      "main": [[{ "node": "Chamar Gemini", "type": "main", "index": 0 }]]
+    },
+    "Chamar Gemini": {
+      "main": [[{ "node": "Parse resposta", "type": "main", "index": 0 }]]
+    },
+    "Parse resposta": {
+      "main": [[{ "node": "Re-check lock (debounce)", "type": "main", "index": 0 }]]
+    },
+    "Re-check lock (debounce)": {
+      "main": [[{ "node": "Lock válido?", "type": "main", "index": 0 }]]
+    },
+    "Lock válido?": {
+      "main": [[{ "node": "Preparar envio", "type": "main", "index": 0 }]]
+    },
+    "Preparar envio": {
+      "main": [[{ "node": "Buscar instância IA", "type": "main", "index": 0 }]]
+    },
+    "Buscar instância IA": {
+      "main": [[{ "node": "Definir instância", "type": "main", "index": 0 }]]
+    },
+    "Definir instância": {
+      "main": [[{ "node": "Digitando...", "type": "main", "index": 0 }]]
+    },
+    "Digitando...": {
+      "main": [[{ "node": "Aguardar presence", "type": "main", "index": 0 }]]
+    },
+    "Aguardar presence": {
+      "main": [[{ "node": "Enviar msg IA", "type": "main", "index": 0 }]]
+    },
+    "Enviar msg IA": {
+      "main": [[{ "node": "Atualizar status envio", "type": "main", "index": 0 }]]
+    },
+    "Atualizar status envio": {
+      "main": [[{ "node": "Responder webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "versionId": "mkt-ia-v2-initial",
+  "meta": { "templateCredsSetupCompleted": false },
+  "triggerCount": 1,
+  "tags": []
+}
