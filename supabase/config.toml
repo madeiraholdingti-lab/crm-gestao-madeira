@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.campanha-ia-responder]
 verify_jwt = false
+
+[functions.assistente-maikon]
+verify_jwt = false

@@ -991,6 +991,62 @@ Deno.serve(async (req) => {
 
         console.log('Conversa atualizada:', existingConversa.id, 'unread_count:', updateData.unread_count);
 
+        // ── Assistente Maikon (Stage 6): comando /m, !bot, /maikonect ──
+        // Se msg do contato (fromMe=false) começa com prefix bot e phone está
+        // na whitelist, rotea pra assistente-maikon em vez de seguir flow normal.
+        if (isFromContact && messageText && typeof messageText === 'string') {
+          try {
+            const { data: cfgBot } = await supabase
+              .from('config_global')
+              .select('bot_ativo, bot_admin_phones, bot_trigger_prefixes')
+              .limit(1).single();
+
+            if (cfgBot?.bot_ativo && Array.isArray(cfgBot.bot_admin_phones)) {
+              const senderPhone = phone; // já normalizado acima (só dígitos)
+              const whitelist = (cfgBot.bot_admin_phones as string[])
+                .map(p => p.replace(/\D/g, ''));
+              const phoneOnlyDigits = senderPhone.replace(/\D/g, '');
+              // Match por sufixo — cobre variações com/sem 55/9
+              const isAdmin = whitelist.some(p =>
+                phoneOnlyDigits.endsWith(p.slice(-10)) || p.endsWith(phoneOnlyDigits.slice(-10))
+              );
+
+              if (isAdmin) {
+                const prefixes = (cfgBot.bot_trigger_prefixes as string[] | null) || ['/m', '!bot', '/maikonect'];
+                const trimmed = messageText.trim();
+                const lower = trimmed.toLowerCase();
+                const matchPrefix = prefixes.find(p => lower.startsWith(p.toLowerCase() + ' ') || lower === p.toLowerCase());
+
+                if (matchPrefix) {
+                  const comando = trimmed.slice(matchPrefix.length).trim();
+                  console.log(`[bot-maikon] trigger de ${senderPhone}: "${comando}"`);
+
+                  // Fire-and-forget — o bot responde async
+                  const supabaseUrlBot = Deno.env.get('SUPABASE_URL')!;
+                  const svcKeyBot = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+                  fetch(`${supabaseUrlBot}/functions/v1/assistente-maikon`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${svcKeyBot}`,
+                    },
+                    body: JSON.stringify({
+                      msg: comando || 'oi',
+                      sender_phone: senderPhone,
+                      instancia_id: instanciaWhatsappId,
+                      instancia_nome: instanceName,
+                    }),
+                  }).catch(e => console.error('[bot-maikon] falha invoke:', e));
+
+                  // Não continua flow normal pra essa msg (é comando)
+                }
+              }
+            }
+          } catch (botErr) {
+            console.warn('[bot-maikon] erro check:', botErr);
+          }
+        }
+
         // ── Callback de campanha: lead respondeu? ──
         // Se a msg é do contato E ele tem campanha_envios com status='enviado'
         // em campanha ativa, marca respondeu_em + flip status pra em_conversa.
