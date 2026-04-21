@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.processar-campanha-v2]
 verify_jwt = false
+
+[functions.campanha-ia-responder]
+verify_jwt = false
