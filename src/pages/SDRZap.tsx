@@ -2663,15 +2663,16 @@ export default function SDRZap() {
                         </Button>
                       </div>
                     ) : (
-                      <div className="flex flex-col gap-0">
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        {/* Linha 1: nome grande + edit */}
                         <div className="flex items-center gap-1 min-w-0">
-                          <h2 className="font-semibold text-sm truncate">
+                          <h2 className="font-semibold text-[15px] truncate leading-tight">
                             {conversaSelecionada.contact.name || conversaSelecionada.contact.phone.replace('@s.whatsapp.net', '')}
                           </h2>
-                          <Button 
-                            size="icon" 
-                            variant="ghost" 
-                            className="h-5 w-5"
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-5 w-5 text-mh-ink-3"
                             onClick={() => {
                               setEditandoNomeContato(true);
                               setNovoNomeContato(conversaSelecionada.contact.name || "");
@@ -2680,37 +2681,30 @@ export default function SDRZap() {
                             <Pencil className="h-3 w-3" />
                           </Button>
                         </div>
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground min-w-0">
-                          <Phone className="h-3 w-3 flex-shrink-0" />
-                          <span className="truncate">{conversaSelecionada.contact.phone.replace('@s.whatsapp.net', '')}</span>
-                          <span className="mx-1">|</span>
-                          <span className="truncate">{instancias.find(i => i.id === conversaSelecionada.instancia_id)?.nome_instancia || 'N/A'}</span>
-                        </div>
-                        {conversaSelecionada.contact?.perfil_profissional && (
-                          <div className="flex items-center gap-1 mt-0.5">
+                        {/* Linha 2: telefone + chips (perfil, especialidade) */}
+                        <div className="flex items-center gap-1.5 text-[11px] text-mh-ink-3 min-w-0 flex-wrap">
+                          <span className="inline-flex items-center gap-1 font-mono tabular-nums">
+                            <Phone className="h-2.5 w-2.5 flex-shrink-0" />
+                            {conversaSelecionada.contact.phone.replace('@s.whatsapp.net', '')}
+                          </span>
+                          {conversaSelecionada.contact?.perfil_profissional && (
                             <Badge
                               variant="outline"
-                              className="text-[10px] px-1.5 py-0 border-violet-400 text-violet-700 bg-violet-50"
+                              className="text-[10px] px-1.5 py-0 h-4 border-mh-gold-500 text-mh-gold-700 bg-mh-gold-100/60 gap-0.5"
                             >
                               {PERFIS_PROFISSIONAIS.find(p => p.value === conversaSelecionada.contact.perfil_profissional)?.label || conversaSelecionada.contact.perfil_profissional}
+                              {!conversaSelecionada.contact.perfil_confirmado && (
+                                <span className="text-[8px] opacity-70 ml-0.5" title="Sugestão da IA — não confirmado">IA</span>
+                              )}
                             </Badge>
-                            {conversaSelecionada.contact.especialidade && (
-                              <span className="text-[10px] text-muted-foreground truncate">
-                                {conversaSelecionada.contact.especialidade}
-                              </span>
-                            )}
-                            {conversaSelecionada.contact.instituicao && (
-                              <span className="text-[10px] text-muted-foreground truncate">
-                                · {conversaSelecionada.contact.instituicao}
-                              </span>
-                            )}
-                            {!conversaSelecionada.contact.perfil_confirmado && (
-                              <span className="text-[9px] text-amber-600" title="Sugestão da IA — ainda não confirmado">
-                                (IA)
-                              </span>
-                            )}
-                          </div>
-                        )}
+                          )}
+                          {conversaSelecionada.contact?.especialidade && (
+                            <span className="truncate">· {conversaSelecionada.contact.especialidade}</span>
+                          )}
+                          {conversaSelecionada.contact?.instituicao && (
+                            <span className="truncate">· {conversaSelecionada.contact.instituicao}</span>
+                          )}
+                        </div>
                       </div>
                     )}
                   </>
@@ -3027,16 +3021,9 @@ export default function SDRZap() {
                         </div>
                       )}
                       <div className={`max-w-[70%] ${isMinhaMsg ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-                        {isMinhaMsg && nomeEnviador && conversaTemMultiplasInstancias && (
-                          <p className="text-xs font-semibold text-right text-muted-foreground px-1">
-                            {nomeEnviador}
-                          </p>
-                        )}
-                        {isConversaInterna && (
-                          <p className="text-xs font-semibold text-muted-foreground px-1">
-                            {nomeRemetente}
-                          </p>
-                        )}
+                        {/* Label acima da bolha foi removido - a info de "quem enviou" agora
+                            vai num badge colorido INTERNO (ao lado do horário). Evita redundância
+                            visual de ver "isadoraVolek" 2x na mesma mensagem. */}
                         <div
                           className={`relative rounded-lg p-3 shadow-sm ${
                             isMinhaMsg

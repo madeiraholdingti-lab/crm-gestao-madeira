@@ -180,29 +180,31 @@ All colors MUST be HSL.
 
 /* ===== Chat WhatsApp-style ===== */
 
-/* Wallpaper sutil no fundo do chat — padrão de pontos que imita a
-   textura do WhatsApp sem depender de asset externo. O opacity baixo
-   mantém as bolhas como protagonistas. */
+/* Wallpaper do chat — tom creme caracteristico do WhatsApp com pattern
+   de círculos sutis. Usa !important pra vencer qualquer util do Tailwind
+   que possa estar setando bg branco no container. */
 .wa-chat-wallpaper {
-  background-color: #EFEAE2;
+  background-color: #efeae2 !important;
   background-image:
-    radial-gradient(circle at 15% 25%, rgba(6,95,70,0.04) 1px, transparent 1px),
-    radial-gradient(circle at 75% 60%, rgba(6,95,70,0.03) 1.5px, transparent 1.5px),
-    radial-gradient(circle at 40% 80%, rgba(6,95,70,0.04) 1px, transparent 1px),
-    radial-gradient(circle at 90% 15%, rgba(6,95,70,0.03) 1px, transparent 1px);
-  background-size: 80px 80px, 120px 120px, 100px 100px, 90px 90px;
-  background-position: 0 0, 20px 30px, 50px 10px, 10px 60px;
+    radial-gradient(circle at 20% 35%, rgba(17, 27, 33, 0.06) 1.5px, transparent 2px),
+    radial-gradient(circle at 70% 70%, rgba(17, 27, 33, 0.05) 1.5px, transparent 2px),
+    radial-gradient(circle at 50% 10%, rgba(17, 27, 33, 0.05) 1px, transparent 1.5px),
+    radial-gradient(circle at 90% 50%, rgba(17, 27, 33, 0.04) 1.5px, transparent 2px),
+    radial-gradient(circle at 10% 85%, rgba(17, 27, 33, 0.05) 1px, transparent 1.5px);
+  background-size: 60px 60px, 80px 80px, 70px 70px, 90px 90px, 50px 50px;
+  background-position: 0 0, 30px 20px, 15px 40px, 5px 25px, 35px 10px;
 }
 
 .dark .wa-chat-wallpaper {
-  background-color: #0B141A;
+  background-color: #0b141a !important;
   background-image:
-    radial-gradient(circle at 15% 25%, rgba(255,255,255,0.025) 1px, transparent 1px),
-    radial-gradient(circle at 75% 60%, rgba(255,255,255,0.02) 1.5px, transparent 1.5px),
-    radial-gradient(circle at 40% 80%, rgba(255,255,255,0.025) 1px, transparent 1px),
-    radial-gradient(circle at 90% 15%, rgba(255,255,255,0.02) 1px, transparent 1px);
-  background-size: 80px 80px, 120px 120px, 100px 100px, 90px 90px;
-  background-position: 0 0, 20px 30px, 50px 10px, 10px 60px;
+    radial-gradient(circle at 20% 35%, rgba(255, 255, 255, 0.035) 1.5px, transparent 2px),
+    radial-gradient(circle at 70% 70%, rgba(255, 255, 255, 0.03) 1.5px, transparent 2px),
+    radial-gradient(circle at 50% 10%, rgba(255, 255, 255, 0.03) 1px, transparent 1.5px),
+    radial-gradient(circle at 90% 50%, rgba(255, 255, 255, 0.025) 1.5px, transparent 2px),
+    radial-gradient(circle at 10% 85%, rgba(255, 255, 255, 0.03) 1px, transparent 1.5px);
+  background-size: 60px 60px, 80px 80px, 70px 70px, 90px 90px, 50px 50px;
+  background-position: 0 0, 30px 20px, 15px 40px, 5px 25px, 35px 10px;
 }
 
 /* Tail das bolhas — ponta triangular characterística do WhatsApp.
