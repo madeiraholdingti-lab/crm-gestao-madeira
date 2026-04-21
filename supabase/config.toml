@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.analisar-conversa-ia]
 verify_jwt = false
+
+[functions.processar-campanha-v2]
+verify_jwt = false

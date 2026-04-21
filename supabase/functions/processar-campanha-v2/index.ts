@@ -1,0 +1,485 @@
+// processar-campanha-v2
+// Engine de disparo genérico (prospecção / evento / reativação / divulgação / pós-op).
+// Baseado no campanha-disparo-processor do sigma-new, adaptado pras tabelas
+// do Maikonect e simplificado pro caso-de-uso do Dr. Maikon.
+//
+// Fluxo:
+//  1. Recebe { campanha_id } ou varre campanhas ativas (modo cron)
+//  2. Lock atômico via proximo_envio_em
+//  3. Valida horário comercial + dia da semana + limite diário
+//  4. Pega N leads pendentes da campanha
+//  5. Pra cada lead: resolve spintax, normaliza fone, envia via Evolution
+//     com rotação de chips + fallback
+//  6. Registra em campanha_envios + atualiza contadores
+//  7. Se sobrou lead, agenda próximo lote e self-invoke
+//
+// Tabelas: campanhas_disparo, campanha_envios, leads, instancias_whatsapp, config_global
+// Status campanha_envios: 'pendente' → 'enviado' | 'erro' | 'NoZap'
+
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const MAX_EXECUTION_MS = 50_000;
+const SEND_TIMEOUT_MS = 15_000;
+const LOCK_DURATION_S = 90;
+
+interface Instancia {
+  id: string;
+  nome_instancia: string;
+  numero_chip: string | null;
+  status: string;
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const campanha_id: string | undefined = body.campanha_id;
+    const modoCron = !campanha_id;
+
+    if (modoCron) {
+      // Varre campanhas elegíveis agora
+      const now = new Date().toISOString();
+      const { data: candidatas } = await supabase
+        .from("campanhas_disparo")
+        .select("id")
+        .eq("ativo", true)
+        .in("status", ["ativa", "em_andamento"])
+        .or(`proximo_envio_em.is.null,proximo_envio_em.lte.${now}`)
+        .limit(5);
+
+      const results: Record<string, unknown>[] = [];
+      for (const c of candidatas || []) {
+        const r = await processarCampanha(supabase, c.id);
+        results.push({ campanha: c.id, ...r });
+      }
+      return json({ ok: true, modo: "cron", processadas: results.length, results });
+    }
+
+    const result = await processarCampanha(supabase, campanha_id!);
+    return json(result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[campanha-v2] ERRO:", msg);
+    return new Response(JSON.stringify({ ok: false, error: msg }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
+
+async function processarCampanha(supabase: any, campanha_id: string): Promise<Record<string, unknown>> {
+  // ── Buscar campanha ──
+  const { data: camp, error: campErr } = await supabase
+    .from("campanhas_disparo")
+    .select("*")
+    .eq("id", campanha_id)
+    .single();
+
+  if (campErr || !camp) return { ok: false, error: "Campanha não encontrada" };
+  if (!camp.ativo) return { ok: true, msg: "Campanha desativada (ativo=false)" };
+  if (["pausada", "finalizada", "arquivada", "cancelada"].includes(camp.status)) {
+    return { ok: true, msg: `Campanha ${camp.status}` };
+  }
+  if (!["ativa", "em_andamento", "rascunho"].includes(camp.status)) {
+    return { ok: true, msg: `Status incompatível: ${camp.status}` };
+  }
+
+  // ── Janela horário + dia da semana ──
+  if (!dentroDaJanela(camp)) {
+    return { ok: true, msg: "Fora da janela horário/dia", dentro: false };
+  }
+
+  // ── Lock atômico via proximo_envio_em ──
+  if (camp.proximo_envio_em) {
+    const nextTime = new Date(camp.proximo_envio_em).getTime();
+    if (nextTime > Date.now()) {
+      return { ok: true, msg: "Aguardando próximo lote", agendado: camp.proximo_envio_em };
+    }
+  }
+
+  const lockUntil = new Date(Date.now() + LOCK_DURATION_S * 1000).toISOString();
+  // Try lock: se proximo_envio_em é null OU está no passado
+  const { data: lockResult } = await supabase
+    .from("campanhas_disparo")
+    .update({ proximo_envio_em: lockUntil })
+    .eq("id", campanha_id)
+    .or(`proximo_envio_em.is.null,proximo_envio_em.lte.${new Date().toISOString()}`)
+    .select("id");
+
+  if (!lockResult || lockResult.length === 0) {
+    return { ok: true, msg: "Outro processo rodando" };
+  }
+
+  // ── Config ──
+  const batchSize = 10; // leads por execução
+  const delayMinMs = ((camp.intervalo_min_minutos || 1) * 60 * 1000) / 10; // converte min → sec (dividido por 10 pra ser mais agressivo)
+  const delayMaxMs = ((camp.intervalo_max_minutos || 2) * 60 * 1000) / 10;
+  const delayBatchMinMs = 5 * 60 * 1000;
+  const delayBatchMaxMs = 10 * 60 * 1000;
+  const limiteDiario = camp.envios_por_dia || 120;
+
+  // ── Chips disponíveis ──
+  const chipIds: string[] = camp.chip_ids || (camp.instancia_id ? [camp.instancia_id] : []);
+  if (chipIds.length === 0) {
+    await limparLock(supabase, campanha_id);
+    return { ok: false, error: "Nenhum chip configurado na campanha" };
+  }
+
+  const { data: chipsRaw } = await supabase
+    .from("instancias_whatsapp")
+    .select("id, nome_instancia, numero_chip, status")
+    .in("id", chipIds)
+    .in("status", ["conectada", "ativa", "open"]);
+
+  const chipsDisponiveis = (chipsRaw || []) as Instancia[];
+  if (chipsDisponiveis.length === 0) {
+    await limparLock(supabase, campanha_id);
+    return { ok: false, error: "Nenhum chip conectado" };
+  }
+
+  // ── Evolution API config ──
+  const { data: evoConfig } = await supabase
+    .from("config_global")
+    .select("evolution_base_url, evolution_api_key")
+    .limit(1)
+    .single();
+
+  const evoUrl = (evoConfig?.evolution_base_url as string | undefined)?.replace(/\/+$/, "");
+  const evoKey = evoConfig?.evolution_api_key as string | undefined;
+  if (!evoUrl || !evoKey) {
+    await limparLock(supabase, campanha_id);
+    return { ok: false, error: "Evolution API não configurada" };
+  }
+
+  // ── Limite diário ──
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const { count: enviadosHoje } = await supabase
+    .from("campanha_envios")
+    .select("id", { count: "exact", head: true })
+    .eq("campanha_id", campanha_id)
+    .eq("status", "enviado")
+    .gte("enviado_em", hoje.toISOString());
+
+  if ((enviadosHoje || 0) >= limiteDiario) {
+    await limparLock(supabase, campanha_id);
+    console.log(`[campanha-v2] Limite diário atingido: ${enviadosHoje}/${limiteDiario}`);
+    return { ok: true, msg: "Limite diário atingido", enviados: enviadosHoje };
+  }
+
+  const restante = limiteDiario - (enviadosHoje || 0);
+  const lote = Math.min(batchSize, restante);
+
+  // ── Buscar envios pendentes ──
+  const { data: pendentes, error: pendErr } = await supabase
+    .from("campanha_envios")
+    .select("id, lead_id, telefone, lead:lead_id(nome, telefone, tipo_lead, especialidade_id)")
+    .eq("campanha_id", campanha_id)
+    .eq("status", "pendente")
+    .order("created_at", { ascending: true })
+    .limit(lote);
+
+  if (pendErr) throw new Error("Erro ao buscar pendentes: " + pendErr.message);
+
+  if (!pendentes || pendentes.length === 0) {
+    await limparLock(supabase, campanha_id);
+    console.log("[campanha-v2] Sem pendentes");
+    return { ok: true, msg: "Sem leads pendentes", enviados: 0 };
+  }
+
+  // ── Processar lote ──
+  const startTime = Date.now();
+  let sent = 0, failed = 0, nozap = 0, chipIndex = 0;
+  const chipMetrics: Record<string, { ok: number; err: number }> = {};
+
+  for (let i = 0; i < pendentes.length; i++) {
+    const envio = pendentes[i];
+    const lead = envio.lead as { nome?: string; telefone?: string } | null;
+    const phoneRaw = envio.telefone || lead?.telefone;
+
+    if (!phoneRaw) {
+      failed++;
+      await supabase.from("campanha_envios")
+        .update({ status: "erro", erro: "Sem telefone" })
+        .eq("id", envio.id);
+      continue;
+    }
+
+    if (Date.now() - startTime + SEND_TIMEOUT_MS + 2000 > MAX_EXECUTION_MS) {
+      console.log("[campanha-v2] Timeout de execução atingido, deixa pro próximo");
+      break;
+    }
+
+    // Pause check a cada 5
+    if (i > 0 && i % 5 === 0) {
+      const { data: curr } = await supabase
+        .from("campanhas_disparo")
+        .select("status, ativo")
+        .eq("id", campanha_id)
+        .single();
+      if (!curr?.ativo || ["pausada", "finalizada", "cancelada"].includes(curr?.status)) {
+        console.log("[campanha-v2] Pausa detectada");
+        break;
+      }
+    }
+
+    // Rotação de chips
+    const chipPrimario = chipsDisponiveis[chipIndex % chipsDisponiveis.length];
+    chipIndex++;
+    const chipsParaTentar = [
+      chipPrimario,
+      ...chipsDisponiveis.filter((c) => c.id !== chipPrimario.id),
+    ];
+
+    // Spintax + template
+    const tplRaw = camp.mensagem || "Olá, {{nome}}!";
+    const tplSpintaxed = camp.spintax_ativo !== false ? resolveSpintax(tplRaw) : tplRaw;
+    const msgFinal = applyTemplate(tplSpintaxed, {
+      nome: lead?.nome || "Dr(a)",
+    });
+
+    const phone = normalizeBrazilianPhone(phoneRaw);
+    if (!phone) {
+      failed++;
+      await supabase.from("campanha_envios")
+        .update({ status: "erro", erro: "Telefone inválido" })
+        .eq("id", envio.id);
+      continue;
+    }
+
+    // Envio com fallback
+    let success = false;
+    let chipUsado: Instancia | null = null;
+    let lastError = "";
+    let tentativas = 0;
+    let isNoZap = false;
+
+    for (const chipTry of chipsParaTentar) {
+      tentativas++;
+      try {
+        const endpoint = `${evoUrl}/message/sendText/${encodeURIComponent(chipTry.nome_instancia)}`;
+        const resp = await fetchWithTimeout(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: evoKey },
+          body: JSON.stringify({ number: phone, text: msgFinal }),
+        }, SEND_TIMEOUT_MS);
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          // Detecta NoZap (número sem WhatsApp)
+          if (errText.includes("exists\":false") || errText.includes("not-whatsapp") || resp.status === 400) {
+            isNoZap = true;
+            lastError = `NoZap: ${errText.slice(0, 150)}`;
+            bumpChip(chipMetrics, chipTry.id, false);
+            break; // não adianta tentar outro chip se não tem WA
+          }
+          throw new Error(`Evolution ${resp.status}: ${errText.slice(0, 200)}`);
+        }
+
+        success = true;
+        chipUsado = chipTry;
+        bumpChip(chipMetrics, chipTry.id, true);
+        break;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        bumpChip(chipMetrics, chipTry.id, false);
+      }
+    }
+
+    if (success && chipUsado) {
+      sent++;
+      await supabase.from("campanha_envios").update({
+        status: "enviado",
+        enviado_em: new Date().toISOString(),
+        tentativas,
+        erro: null,
+      }).eq("id", envio.id);
+      console.log(`[campanha-v2] ✅ ${lead?.nome || phone} via ${chipUsado.nome_instancia}`);
+    } else if (isNoZap) {
+      nozap++;
+      await supabase.from("campanha_envios").update({
+        status: "NoZap",
+        erro: lastError.slice(0, 400),
+        tentativas,
+      }).eq("id", envio.id);
+    } else {
+      failed++;
+      await supabase.from("campanha_envios").update({
+        status: "erro",
+        erro: `Todos ${tentativas} chip(s) falharam: ${lastError.slice(0, 400)}`,
+        tentativas,
+      }).eq("id", envio.id);
+    }
+
+    // Delay entre msgs
+    if (i < pendentes.length - 1) {
+      await sleep(randomDelay(delayMinMs, delayMaxMs));
+    }
+  }
+
+  // ── Atualiza contadores da campanha ──
+  await supabase.from("campanhas_disparo").update({
+    sucesso: (camp.sucesso || 0) + sent,
+    falhas: (camp.falhas || 0) + failed,
+    enviados: (camp.enviados || 0) + sent + nozap + failed,
+  }).eq("id", campanha_id);
+
+  // ── Diagnóstico chips ──
+  for (const [chipId, m] of Object.entries(chipMetrics)) {
+    const total = m.ok + m.err;
+    const taxaErro = total > 0 ? m.err / total : 0;
+    if (total >= 3 && taxaErro >= 0.5) {
+      console.warn(`[campanha-v2] 🚨 Chip ${chipId} suspeito: ${m.err}/${total} erros`);
+      // Não marca como inativo no DB — só loga. Manual check.
+    }
+  }
+
+  // ── Resta lead? ──
+  const { count: remaining } = await supabase
+    .from("campanha_envios")
+    .select("id", { count: "exact", head: true })
+    .eq("campanha_id", campanha_id)
+    .eq("status", "pendente");
+
+  if ((remaining || 0) > 0) {
+    const { data: latestCamp } = await supabase
+      .from("campanhas_disparo")
+      .select("status, ativo")
+      .eq("id", campanha_id)
+      .single();
+
+    if (latestCamp?.ativo && latestCamp.status !== "pausada") {
+      const pause = randomDelay(delayBatchMinMs, delayBatchMaxMs);
+      const nextAt = new Date(Date.now() + pause).toISOString();
+      await supabase.from("campanhas_disparo")
+        .update({ proximo_envio_em: nextAt })
+        .eq("id", campanha_id);
+      console.log(`[campanha-v2] Próximo lote em ${Math.round(pause / 1000)}s`);
+    } else {
+      await limparLock(supabase, campanha_id);
+    }
+  } else {
+    await limparLock(supabase, campanha_id);
+    // Marca como concluída se tinha rodado (foi ativa em algum momento)
+    await supabase.from("campanhas_disparo").update({
+      status: "finalizada",
+      concluido_em: new Date().toISOString(),
+    }).eq("id", campanha_id).eq("status", "ativa");
+    console.log(`[campanha-v2] Campanha ${campanha_id} concluída`);
+  }
+
+  return { ok: true, sent, failed, nozap, remaining: remaining || 0 };
+}
+
+// ── Helpers ──
+
+async function limparLock(supabase: any, campanha_id: string) {
+  await supabase.from("campanhas_disparo")
+    .update({ proximo_envio_em: null })
+    .eq("id", campanha_id);
+}
+
+function dentroDaJanela(camp: Record<string, unknown>): boolean {
+  const hIni = camp.horario_inicio as string | null;
+  const hFim = camp.horario_fim as string | null;
+  const dias = (camp.dias_semana as number[] | null) || null;
+
+  const now = new Date();
+  // Converte pra BRT (UTC-3)
+  const brt = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+  const diaSemana = brt.getUTCDay(); // 0=domingo
+  const horaAgora = brt.getUTCHours() * 60 + brt.getUTCMinutes();
+
+  if (dias && dias.length > 0 && !dias.includes(diaSemana)) return false;
+
+  if (hIni && hFim) {
+    const [hi, mi] = hIni.split(":").map(Number);
+    const [hf, mf] = hFim.split(":").map(Number);
+    const ini = hi * 60 + (mi || 0);
+    const fim = hf * 60 + (mf || 0);
+    if (horaAgora < ini || horaAgora > fim) return false;
+  }
+  return true;
+}
+
+function json(body: Record<string, unknown>) {
+  return new Response(JSON.stringify(body), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function randomDelay(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+async function fetchWithTimeout(url: string, opts: RequestInit, timeout: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function bumpChip(m: Record<string, { ok: number; err: number }>, id: string, ok: boolean) {
+  if (!m[id]) m[id] = { ok: 0, err: 0 };
+  if (ok) m[id].ok++;
+  else m[id].err++;
+}
+
+function normalizeBrazilianPhone(raw: string): string | null {
+  let digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("55") && digits.length > 11) digits = digits.slice(2);
+  if (digits.length < 10 || digits.length > 11) return null;
+  if (digits.length === 10) {
+    const d = parseInt(digits[2], 10);
+    if (d >= 6) digits = digits.slice(0, 2) + "9" + digits.slice(2);
+  }
+  return "55" + digits;
+}
+
+function resolveSpintax(text: string): string {
+  let result = text;
+  // Preserva placeholders {{var}}
+  const placeholders: string[] = [];
+  result = result.replace(/\{\{([^}]+)\}\}/g, (_, name) => {
+    const idx = placeholders.length;
+    placeholders.push(`{{${name}}}`);
+    return `\x00VAR${idx}\x00`;
+  });
+
+  // Expande {a|b|c}
+  let iter = 0;
+  while (result.includes("{") && iter < 50) {
+    result = result.replace(/\{([^{}]+)\}/g, (_, group: string) => {
+      const options = group.split("|");
+      const pick = Math.floor(Math.random() * options.length);
+      return options[pick].trim();
+    });
+    iter++;
+  }
+
+  // Restaura placeholders
+  result = result.replace(/\x00VAR(\d+)\x00/g, (_, idx) => placeholders[parseInt(idx)]);
+  return result.replace(/\n{3,}/g, "\n\n").replace(/ {2,}/g, " ").trim();
+}
+
+function applyTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key) => vars[key] ?? match);
+}
