@@ -990,6 +990,42 @@ Deno.serve(async (req) => {
           .eq('id', existingConversa.id);
 
         console.log('Conversa atualizada:', existingConversa.id, 'unread_count:', updateData.unread_count);
+
+        // ── Callback de campanha: lead respondeu? ──
+        // Se a msg é do contato E ele tem campanha_envios com status='enviado'
+        // em campanha ativa, marca respondeu_em + flip status pra em_conversa.
+        // A IA responder (Stage 4) vai usar vw_envios_aguardando_ia pra processar.
+        if (isFromContact && contact?.id) {
+          try {
+            const { data: envioAtivo } = await supabase
+              .from('campanha_envios')
+              .select('id, status, respondeu_em, campanha:campanha_id(status, briefing_ia)')
+              .eq('lead_id', contact.id)
+              .in('status', ['enviado', 'em_conversa'])
+              .order('enviado_em', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (envioAtivo) {
+              const camp = (envioAtivo.campanha as { status?: string } | null);
+              if (camp && ['ativa', 'em_andamento'].includes(camp.status || '')) {
+                const updates: Record<string, unknown> = {
+                  primeira_msg_contato_em: new Date().toISOString(),
+                };
+                if (envioAtivo.status === 'enviado') {
+                  updates.status = 'em_conversa';
+                  updates.respondeu_em = new Date().toISOString();
+                  console.log(`[callback] Lead ${contact.id} respondeu campanha (flip em_conversa)`);
+                }
+                await supabase.from('campanha_envios')
+                  .update(updates)
+                  .eq('id', envioAtivo.id);
+              }
+            }
+          } catch (cbErr) {
+            console.warn('[callback-campanha] erro ignorável:', cbErr);
+          }
+        }
       } else {
         const insertPayload = {
           numero_contato: phone,
