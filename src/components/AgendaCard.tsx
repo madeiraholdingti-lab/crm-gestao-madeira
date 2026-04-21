@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Calendar, Clock } from "lucide-react";
+import { Clock } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -14,10 +14,10 @@ interface AgendaCardProps {
 }
 
 const tipoEventoConfig = {
-  consulta: { label: "Consulta", color: "bg-blue-500" },
-  retorno: { label: "Retorno", color: "bg-green-500" },
-  reuniao: { label: "Reunião", color: "bg-purple-500" },
-  exame: { label: "Exame", color: "bg-orange-500" },
+  consulta: { label: "Consulta", color: "bg-mh-navy-700" },
+  retorno: { label: "Retorno", color: "bg-mh-teal-600" },
+  reuniao: { label: "Reunião", color: "bg-mh-gold-600" },
+  exame: { label: "Exame", color: "bg-amber-600" },
 };
 
 const statusConfig = {
@@ -26,6 +26,41 @@ const statusConfig = {
   cancelado: { label: "Cancelado", variant: "destructive" as const },
   concluido: { label: "Concluído", variant: "outline" as const },
 };
+
+/**
+ * Normaliza descrição do Google Calendar:
+ * - Converte <br>, </p>, </div> em quebras de linha (depois vira espaço)
+ * - Remove tags HTML restantes
+ * - Decodifica entidades HTML comuns
+ * - Encurta URLs longas (mostra só domínio + ...) pra não expandir o card
+ * - Normaliza espaços
+ */
+function cleanDescription(raw: string): string {
+  if (!raw) return "";
+  let out = raw
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<\/(p|div|li)>/gi, " ")
+    .replace(/<[^>]+>/g, "") // remove todas as outras tags
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+
+  // Encurta URLs longas (>45 chars) mantendo só domínio
+  out = out.replace(/https?:\/\/(\S{46,})/g, (match) => {
+    try {
+      const url = new URL(match);
+      return `${url.hostname}/…`;
+    } catch {
+      return match.slice(0, 40) + "…";
+    }
+  });
+
+  // Normaliza whitespace
+  return out.replace(/\s+/g, " ").trim();
+}
 
 export const AgendaCard = ({
   titulo,
@@ -37,9 +72,9 @@ export const AgendaCard = ({
 }: AgendaCardProps) => {
   const tipoConfig = tipoEventoConfig[tipo_evento as keyof typeof tipoEventoConfig] || {
     label: tipo_evento,
-    color: "bg-gray-500",
+    color: "bg-mh-ink-3",
   };
-  
+
   const statusInfo = statusConfig[status as keyof typeof statusConfig] || {
     label: status,
     variant: "secondary" as const,
@@ -47,33 +82,42 @@ export const AgendaCard = ({
 
   const horaInicio = format(new Date(data_hora_inicio), "HH:mm", { locale: ptBR });
   const horaFim = format(new Date(data_hora_fim), "HH:mm", { locale: ptBR });
+  const descricaoLimpa = descricao ? cleanDescription(descricao) : "";
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
-          <div className={`${tipoConfig.color} w-1 h-full rounded-full flex-shrink-0`} />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-              <span className="font-semibold text-sm">
-                {horaInicio} - {horaFim}
+    <Card className="hover:shadow-md transition-shadow overflow-hidden">
+      <CardContent className="p-3 overflow-hidden">
+        <div className="flex items-start gap-2.5 min-w-0">
+          <div className={`${tipoConfig.color} w-1 self-stretch rounded-full flex-shrink-0`} />
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <div className="flex items-center gap-1.5 mb-1 text-mh-ink-3">
+              <Clock className="h-3 w-3 flex-shrink-0" />
+              <span className="font-mono text-[11px] font-semibold tabular-nums">
+                {horaInicio} – {horaFim}
               </span>
             </div>
-            
-            <h3 className="font-medium text-base mb-2 truncate">{titulo}</h3>
-            
-            <div className="flex flex-wrap gap-2 mb-2">
-              <Badge variant="outline" className="text-xs">
+
+            <h3 className="font-serif-display font-medium text-[15px] leading-tight mb-1.5 break-words text-mh-ink">
+              {titulo}
+            </h3>
+
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
                 {tipoConfig.label}
               </Badge>
-              <Badge variant={statusInfo.variant} className="text-xs">
+              <Badge variant={statusInfo.variant} className="text-[10px] px-1.5 py-0 h-4">
                 {statusInfo.label}
               </Badge>
             </div>
-            
-            {descricao && (
-              <p className="text-sm text-muted-foreground line-clamp-2">{descricao}</p>
+
+            {descricaoLimpa && (
+              <p
+                className="text-[11.5px] text-mh-ink-3 line-clamp-2 leading-snug"
+                style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}
+                title={descricaoLimpa}
+              >
+                {descricaoLimpa}
+              </p>
             )}
           </div>
         </div>
