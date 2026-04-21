@@ -12,6 +12,7 @@ import {
   Ban,
 } from "lucide-react";
 import DisparosTopNav from "@/components/DisparosTopNav";
+import { ChipSaudeCard } from "@/components/disparos/ChipSaudeCard";
 
 interface Stats {
   totalLeads: number;
@@ -140,6 +141,9 @@ export default function DisparosEmMassa() {
             );
           })}
         </div>
+
+        {/* Saúde dos chips — observabilidade do engine v2 */}
+        <ChipSaudeCard />
 
         {/* Como funciona — estilo briefing institucional */}
         <Card className="border-mh-navy-700/20 bg-mh-navy-50">

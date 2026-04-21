@@ -258,15 +258,21 @@ async function processarCampanha(supabase: any, campanha_id: string): Promise<Re
       continue;
     }
 
-    // Envio com fallback
+    // Envio com fallback + log por tentativa
     let success = false;
     let chipUsado: Instancia | null = null;
     let lastError = "";
     let tentativas = 0;
     let isNoZap = false;
+    let lastHttpStatus: number | null = null;
 
     for (const chipTry of chipsParaTentar) {
       tentativas++;
+      const t0 = Date.now();
+      let tryResult: 'enviado' | 'erro' | 'nozap' = 'erro';
+      let tryHttpStatus: number | null = null;
+      let tryErro: string | null = null;
+
       try {
         const endpoint = `${evoUrl}/message/sendText/${encodeURIComponent(chipTry.nome_instancia)}`;
         const resp = await fetchWithTimeout(endpoint, {
@@ -275,27 +281,53 @@ async function processarCampanha(supabase: any, campanha_id: string): Promise<Re
           body: JSON.stringify({ number: phone, text: msgFinal }),
         }, SEND_TIMEOUT_MS);
 
+        tryHttpStatus = resp.status;
+        lastHttpStatus = resp.status;
+
         if (!resp.ok) {
           const errText = await resp.text();
+          tryErro = errText.slice(0, 500);
           // Detecta NoZap (número sem WhatsApp)
           if (errText.includes("exists\":false") || errText.includes("not-whatsapp") || resp.status === 400) {
             isNoZap = true;
+            tryResult = 'nozap';
             lastError = `NoZap: ${errText.slice(0, 150)}`;
             bumpChip(chipMetrics, chipTry.id, false);
-            break; // não adianta tentar outro chip se não tem WA
+            await logDisparo(supabase, {
+              campanha_id, envio_id: envio.id, lead_id: envio.lead_id,
+              instancia_id: chipTry.id, telefone: phone, mensagem: msgFinal,
+              resultado: tryResult, http_status: tryHttpStatus, erro: tryErro,
+              duracao_ms: Date.now() - t0, tentativa: tentativas,
+            });
+            break;
           }
           throw new Error(`Evolution ${resp.status}: ${errText.slice(0, 200)}`);
         }
 
         success = true;
         chipUsado = chipTry;
+        tryResult = 'enviado';
         bumpChip(chipMetrics, chipTry.id, true);
+        await logDisparo(supabase, {
+          campanha_id, envio_id: envio.id, lead_id: envio.lead_id,
+          instancia_id: chipTry.id, telefone: phone, mensagem: msgFinal,
+          resultado: tryResult, http_status: tryHttpStatus, erro: null,
+          duracao_ms: Date.now() - t0, tentativa: tentativas,
+        });
         break;
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
+        tryErro = lastError.slice(0, 500);
         bumpChip(chipMetrics, chipTry.id, false);
+        await logDisparo(supabase, {
+          campanha_id, envio_id: envio.id, lead_id: envio.lead_id,
+          instancia_id: chipTry.id, telefone: phone, mensagem: msgFinal,
+          resultado: 'erro', http_status: tryHttpStatus, erro: tryErro,
+          duracao_ms: Date.now() - t0, tentativa: tentativas,
+        });
       }
     }
+    void lastHttpStatus;
 
     if (success && chipUsado) {
       sent++;
@@ -335,13 +367,28 @@ async function processarCampanha(supabase: any, campanha_id: string): Promise<Re
     enviados: (camp.enviados || 0) + sent + nozap + failed,
   }).eq("id", campanha_id);
 
-  // ── Diagnóstico chips ──
-  for (const [chipId, m] of Object.entries(chipMetrics)) {
-    const total = m.ok + m.err;
-    const taxaErro = total > 0 ? m.err / total : 0;
-    if (total >= 3 && taxaErro >= 0.5) {
-      console.warn(`[campanha-v2] 🚨 Chip ${chipId} suspeito: ${m.err}/${total} erros`);
-      // Não marca como inativo no DB — só loga. Manual check.
+  // ── Diagnóstico chips + auto-pause ──
+  // Checa taxa de erro global nas últimas 20 msgs do chip (não só essa execução).
+  // Se >30% → marca status='suspeito' no DB, tira da rotação automaticamente.
+  for (const chipId of Object.keys(chipMetrics)) {
+    const { data: ultimas20 } = await supabase
+      .from("disparos_logs")
+      .select("resultado")
+      .eq("instancia_id", chipId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    const total = ultimas20?.length ?? 0;
+    const erros = (ultimas20 || []).filter((l: { resultado: string }) => l.resultado === 'erro').length;
+    const taxa = total > 0 ? erros / total : 0;
+
+    if (total >= 10 && taxa >= 0.3) {
+      await supabase
+        .from("instancias_whatsapp")
+        .update({ status: 'suspeito' })
+        .eq("id", chipId)
+        .neq("status", 'suspeito');
+      console.warn(`[campanha-v2] 🚨 Chip ${chipId} auto-pausado: ${erros}/${total} erros (${Math.round(taxa*100)}%)`);
     }
   }
 
@@ -482,4 +529,31 @@ function resolveSpintax(text: string): string {
 
 function applyTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (match, key) => vars[key] ?? match);
+}
+
+async function logDisparo(supabase: any, entry: {
+  campanha_id: string; envio_id: string; lead_id: string | null;
+  instancia_id: string; telefone: string; mensagem: string;
+  resultado: 'enviado' | 'erro' | 'nozap' | 'skip';
+  http_status: number | null; erro: string | null;
+  duracao_ms: number; tentativa: number;
+}) {
+  try {
+    await supabase.from("disparos_logs").insert({
+      campanha_id: entry.campanha_id,
+      campanha_envio_id: entry.envio_id,
+      lead_id: entry.lead_id,
+      instancia_id: entry.instancia_id,
+      telefone: entry.telefone,
+      mensagem_enviada: entry.mensagem.slice(0, 1000),
+      resultado: entry.resultado,
+      http_status: entry.http_status,
+      erro_texto: entry.erro,
+      duracao_ms: entry.duracao_ms,
+      tentativa: entry.tentativa,
+    });
+  } catch (err) {
+    // log falhar não pode quebrar envio
+    console.warn("[logDisparo] falhou:", err);
+  }
 }
