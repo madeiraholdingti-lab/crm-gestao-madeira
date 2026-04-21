@@ -555,6 +555,48 @@ export default function SDRZap() {
             });
           }
         )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "messages",
+            filter: `contact_id=eq.${contactId}`,
+          },
+          (payload) => {
+            // Handler de UPDATE — crítico pra status (DELIVERED/READ), edição
+            // da mensagem e atualizações do webhook que chegam depois do
+            // INSERT inicial. Sem isso o chat fica com estado defasado e as
+            // mensagens do WhatsApp não aparecem corretamente.
+            const updatedMsg = payload.new as any;
+            setMensagens((prev) => {
+              const idx = prev.findIndex(m =>
+                m.id === updatedMsg.id ||
+                (m.wa_message_id && m.wa_message_id === updatedMsg.wa_message_id)
+              );
+              if (idx === -1) return prev;
+
+              const prevMsg = prev[idx];
+              const merged = {
+                ...prevMsg,
+                id: updatedMsg.id,
+                text: updatedMsg.text ?? prevMsg.text,
+                from_me: updatedMsg.from_me,
+                wa_timestamp: updatedMsg.wa_timestamp ?? prevMsg.wa_timestamp,
+                created_at: updatedMsg.created_at ?? prevMsg.created_at,
+                status: updatedMsg.status ?? prevMsg.status,
+                message_type: updatedMsg.message_type ?? prevMsg.message_type,
+                media_url: updatedMsg.media_url ?? prevMsg.media_url,
+                media_mime_type: updatedMsg.media_mime_type ?? prevMsg.media_mime_type,
+                wa_message_id: updatedMsg.wa_message_id ?? prevMsg.wa_message_id,
+                message_context_info: updatedMsg.message_context_info ?? prevMsg.message_context_info,
+              };
+              const updated = [...prev];
+              updated[idx] = merged;
+              return updated;
+            });
+          }
+        )
         .subscribe((status) => {
           console.log('[SDRZap] Status do canal realtime (messages):', status);
         });
