@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.evolution-messages-webhook]
 verify_jwt = false
+
+[functions.analisar-conversa-ia]
+verify_jwt = false

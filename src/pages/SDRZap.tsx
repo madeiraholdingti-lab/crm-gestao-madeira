@@ -7,10 +7,11 @@ import { useEquipe } from "@/hooks/useEquipe";
 import { useTasksDaConversa } from "@/hooks/useTasksDaConversa";
 import { ConversationList } from "@/components/sdr-zap/ConversationList";
 import { CreateTaskFromConversaDialog } from "@/components/sdr-zap/CreateTaskFromConversaDialog";
+import { AnaliseIACard } from "@/components/sdr-zap/AnaliseIACard";
 import { ListTodo } from "lucide-react";
 import { PERFIS_PROFISSIONAIS } from "@/utils/constants";
 import { toast } from "sonner";
-import { Phone, MessageSquare, User, ChevronDown, Pencil, ArrowRight, FileText, Image as ImageIcon, Video, Mic, Paperclip, Download, Play, ExternalLink, ZoomIn, ZoomOut, X, ChevronLeft, ChevronRight, Search, Plus, UserPlus, MoreVertical, RotateCcw, AlertCircle, Loader2, Camera, RefreshCw, UserCheck, MapPin, Copy, Trash2, Pin, Ban, Clock } from "lucide-react";
+import { Phone, MessageSquare, User, ChevronDown, Pencil, ArrowRight, FileText, Image as ImageIcon, Video, Mic, Paperclip, Download, Play, ExternalLink, ZoomIn, ZoomOut, X, ChevronLeft, ChevronRight, Search, Plus, UserPlus, MoreVertical, RotateCcw, AlertCircle, Loader2, Camera, RefreshCw, UserCheck, MapPin, Copy, Trash2, Pin, Ban, Clock, Sparkles } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -160,6 +161,7 @@ export default function SDRZap() {
   // Estados para nova conversa (busca e filter pills agora são internos ao ConversationList)
   const [modalNovaConversa, setModalNovaConversa] = useState(false);
   const [modalCriarTask, setModalCriarTask] = useState(false);
+  const [painelAnaliseIA, setPainelAnaliseIA] = useState(false);
   const [numeroNovaConversa, setNumeroNovaConversa] = useState("");
   const [verificandoNumero, setVerificandoNumero] = useState(false);
   const [sincronizandoFotos, setSincronizandoFotos] = useState(false);
@@ -2726,9 +2728,19 @@ export default function SDRZap() {
               </div>
             </div>
             
-            {/* Botão Criar Tarefa + contador de tasks da conversa */}
+            {/* Botão Analisar IA + Criar Tarefa */}
             {conversaSelecionada && (
               <div className="flex-shrink-0 flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={`h-8 gap-1.5 text-xs ${painelAnaliseIA ? 'border-mh-gold-500 bg-mh-gold-100 text-mh-gold-700' : ''}`}
+                  onClick={() => setPainelAnaliseIA(p => !p)}
+                  title="Análise inteligente da conversa (sentimento, urgência, perfil)"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  IA
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -2787,6 +2799,15 @@ export default function SDRZap() {
             )}
           </div>
         </div>
+
+        {/* Análise IA — card colapsável entre header e mensagens */}
+        {painelAnaliseIA && conversaSelecionada && (
+          <AnaliseIACard
+            conversaId={conversaSelecionada.id}
+            userId={userProfile?.id}
+            onClose={() => setPainelAnaliseIA(false)}
+          />
+        )}
 
         {/* Mensagens - ÁREA COM SCROLL (fundo estilo WhatsApp com pattern sutil) */}
         <div className="flex-1 overflow-y-auto p-4 wa-chat-wallpaper">
