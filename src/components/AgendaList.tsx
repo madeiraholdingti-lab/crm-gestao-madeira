@@ -47,7 +47,7 @@ export const AgendaList = () => {
   // Quando view=semana: [hoje 00:00, hoje+7 dias 00:00). Fetches sempre os 7
   // dias, filtra localmente pra o toggle ser instantâneo e contar "hoje"
   // sem precisar de 2 queries.
-  const { data: eventos7dias, isLoading } = useQuery({
+  const { data: eventos7dias, isLoading, error: fetchError } = useQuery({
     queryKey: ["agenda-7d", isAdminGeral ?? false],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -63,10 +63,21 @@ export const AgendaList = () => {
       if (!isAdminGeral) query = query.eq("medico_id", user.id);
 
       const { data, error } = await query;
-      if (error) throw error;
+      if (error) {
+        console.error("[AgendaList] erro ao buscar eventos:", error);
+        throw error;
+      }
+      console.log("[AgendaList]", {
+        user_id: user.id,
+        is_admin: isAdminGeral,
+        range: `${today.toISOString()} → ${em7dias.toISOString()}`,
+        eventos_retornados: data?.length ?? 0,
+      });
       return data;
     },
     enabled: isAdminGeral !== undefined,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   // Derivar as duas listas a partir do fetch único
@@ -183,6 +194,14 @@ export const AgendaList = () => {
                     ? "Sem compromissos marcados hoje."
                     : "Nenhum compromisso agendado nessa janela."}
                 </p>
+                {/* Debug info — ajuda confirmar se é admin_geral e se a query
+                    encontrou algo no backend. Visível só quando não há eventos. */}
+                <div className="text-[10px] text-mh-ink-4 mt-2 font-mono">
+                  {isAdminGeral ? "visão: admin_geral (tudo)" : "visão: próprios eventos"}
+                  {" · "}
+                  {eventos7dias?.length ?? 0} no banco (7d)
+                  {fetchError ? " · erro" : ""}
+                </div>
               </div>
             </div>
 
