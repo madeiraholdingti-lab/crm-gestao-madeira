@@ -2788,8 +2788,8 @@ export default function SDRZap() {
           </div>
         </div>
 
-        {/* Mensagens - ÁREA COM SCROLL (fundo estilo WhatsApp) */}
-        <div className="flex-1 overflow-y-auto p-4 bg-[#EFEAE2] dark:bg-[#0B141A]">
+        {/* Mensagens - ÁREA COM SCROLL (fundo estilo WhatsApp com pattern sutil) */}
+        <div className="flex-1 overflow-y-auto p-4 wa-chat-wallpaper">
           {/* Loading centralizado enquanto troca de conversa (antes das mensagens renderizarem) */}
           {conversaSelecionada && loadingMensagens && mensagens.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">

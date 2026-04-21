@@ -1,4 +1,5 @@
-import { Check, CheckCheck } from "lucide-react";
+import { Check, CheckCheck, Clock } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface MessageStatusIconProps {
   status?: string;
@@ -6,21 +7,33 @@ interface MessageStatusIconProps {
   className?: string;
 }
 
+/**
+ * Status dos ACK do WhatsApp (em ordem de progressão):
+ *   PENDING     → 🕐 relógio, mensagem ainda na fila local
+ *   SERVER_ACK  → ✓ um check cinza, servidor WA recebeu
+ *   DELIVERED  → ✓✓ dois checks cinza, entregue ao destinatário
+ *   READ        → ✓✓ dois checks azuis (#53BDEB é a cor oficial do WhatsApp)
+ *
+ * Cores tokenizadas pra respeitar light/dark. O azul é hardcoded porque é
+ * a assinatura do "lido" no WhatsApp — trocar descaracteriza.
+ */
 export function MessageStatusIcon({ status, fromMe, className = "" }: MessageStatusIconProps) {
-  // Só mostrar status para mensagens enviadas
   if (!fromMe) return null;
 
-  // Status possíveis: PENDING, SERVER_ACK, DELIVERED, READ
-  switch (status) {
-    case 'READ':
-      return <CheckCheck className={`h-3.5 w-3.5 ${className}`} style={{ color: '#34D399' }} />;
-    case 'DELIVERED':
-      return <CheckCheck className={`h-3.5 w-3.5 ${className}`} />;
-    case 'SERVER_ACK':
-      return <Check className={`h-3.5 w-3.5 ${className}`} />;
-    case 'PENDING':
-      return <Check className={`h-3.5 w-3.5 ${className} opacity-50`} />;
-    default:
-      return <Check className={`h-3.5 w-3.5 ${className} opacity-50`} />;
+  const normalized = (status || "").toUpperCase();
+
+  if (normalized === 'READ') {
+    return <CheckCheck className={cn("h-[14px] w-[14px]", className)} style={{ color: '#53BDEB' }} />;
   }
+  if (normalized === 'DELIVERED' || normalized === 'DELIVERY_ACK') {
+    return <CheckCheck className={cn("h-[14px] w-[14px]", className)} />;
+  }
+  if (normalized === 'SERVER_ACK' || normalized === 'SENT') {
+    return <Check className={cn("h-[14px] w-[14px]", className)} />;
+  }
+  if (normalized === 'PENDING') {
+    return <Clock className={cn("h-[12px] w-[12px] opacity-60", className)} />;
+  }
+  // Estado desconhecido/sem status ainda — um check fraco pra indicar "enviando"
+  return <Check className={cn("h-[14px] w-[14px] opacity-50", className)} />;
 }

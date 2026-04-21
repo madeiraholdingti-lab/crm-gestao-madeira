@@ -177,3 +177,86 @@ All colors MUST be HSL.
 .animate-blink-error {
   animation: blink-error 1s;
 }
+
+/* ===== Chat WhatsApp-style ===== */
+
+/* Wallpaper sutil no fundo do chat — padrão de pontos que imita a
+   textura do WhatsApp sem depender de asset externo. O opacity baixo
+   mantém as bolhas como protagonistas. */
+.wa-chat-wallpaper {
+  background-color: #EFEAE2;
+  background-image:
+    radial-gradient(circle at 15% 25%, rgba(6,95,70,0.04) 1px, transparent 1px),
+    radial-gradient(circle at 75% 60%, rgba(6,95,70,0.03) 1.5px, transparent 1.5px),
+    radial-gradient(circle at 40% 80%, rgba(6,95,70,0.04) 1px, transparent 1px),
+    radial-gradient(circle at 90% 15%, rgba(6,95,70,0.03) 1px, transparent 1px);
+  background-size: 80px 80px, 120px 120px, 100px 100px, 90px 90px;
+  background-position: 0 0, 20px 30px, 50px 10px, 10px 60px;
+}
+
+.dark .wa-chat-wallpaper {
+  background-color: #0B141A;
+  background-image:
+    radial-gradient(circle at 15% 25%, rgba(255,255,255,0.025) 1px, transparent 1px),
+    radial-gradient(circle at 75% 60%, rgba(255,255,255,0.02) 1.5px, transparent 1.5px),
+    radial-gradient(circle at 40% 80%, rgba(255,255,255,0.025) 1px, transparent 1px),
+    radial-gradient(circle at 90% 15%, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 80px 80px, 120px 120px, 100px 100px, 90px 90px;
+  background-position: 0 0, 20px 30px, 50px 10px, 10px 60px;
+}
+
+/* Tail das bolhas — ponta triangular characterística do WhatsApp.
+   Aplicar em ::before da bolha. */
+.wa-bubble-me,
+.wa-bubble-other {
+  position: relative;
+  border-radius: 8px;
+  padding: 6px 9px 8px 9px;
+  box-shadow: 0 1px 0.5px rgba(11,20,26,0.13);
+  font-size: 14.2px;
+  line-height: 19px;
+}
+.wa-bubble-me {
+  background: #D9FDD3;
+  color: #111B21;
+  border-top-right-radius: 0;
+}
+.wa-bubble-me::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -8px;
+  width: 0;
+  height: 0;
+  border-top: 8px solid #D9FDD3;
+  border-right: 8px solid transparent;
+}
+.wa-bubble-other {
+  background: #FFFFFF;
+  color: #111B21;
+  border-top-left-radius: 0;
+}
+.wa-bubble-other::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -8px;
+  width: 0;
+  height: 0;
+  border-top: 8px solid #FFFFFF;
+  border-left: 8px solid transparent;
+}
+.dark .wa-bubble-me {
+  background: #005C4B;
+  color: #E9EDEF;
+}
+.dark .wa-bubble-me::before {
+  border-top-color: #005C4B;
+}
+.dark .wa-bubble-other {
+  background: #202C33;
+  color: #E9EDEF;
+}
+.dark .wa-bubble-other::before {
+  border-top-color: #202C33;
+}
