@@ -2907,27 +2907,30 @@ export default function SDRZap() {
                 </div>
 
                 {mensagens.map((msg, index) => {
-                  // Detectar se é conversa interna (entre duas instâncias ativas diferentes)
+                  // Detectar se é conversa interna (o contato é outra instância da equipe)
                   const numeroContato = conversaSelecionada.numero_contato;
                   const instanciaAtualId = conversaSelecionada.current_instance_id || conversaSelecionada.orig_instance_id;
                   const instanciaDestinataria = instancias.find(
-                    inst => inst.numero_chip?.replace(/\D/g, '') === numeroContato && 
-                            inst.id !== instanciaAtualId && // Não é a mesma instância
-                            inst.ativo === true // Está ativa
+                    inst => inst.numero_chip?.replace(/\D/g, '') === numeroContato &&
+                            inst.id !== instanciaAtualId &&
+                            inst.ativo === true
                   );
                   const isConversaInterna = !!instanciaDestinataria;
-                  
-                  // Para conversas internas, inverter a perspectiva baseado na instância
+
                   const instanciaAtual = instancias.find(i => i.id === conversaSelecionada.current_instance_id);
                   const instanciaMensagem = instancias.find(i => i.id === (msg as any).instancia_whatsapp_id);
-                  
-                  // Se for interna, mensagem é "minha" se veio da instância atual
-                  const isMinhaMsg = isConversaInterna 
-                    ? (msg as any).instancia_whatsapp_id === conversaSelecionada.current_instance_id
-                    : msg.from_me;
-                  
-                  const nomeRemetente = isConversaInterna 
-                    ? instanciaMensagem?.nome_instancia || 'Instância'
+
+                  // Lado da bolha: SEMPRE respeita msg.from_me vindo do banco.
+                  // Antes tinha uma lógica de "conversa interna" que decidia o
+                  // lado por comparação de instância, mas isso fazia com que
+                  // quando ambas as partes (Isadora + Maikon) tinham instâncias
+                  // conectadas, TODAS as mensagens capturadas por uma delas
+                  // apareciam como "minhas" — bug reportado em 21/04.
+                  // O from_me já vem correto do webhook Evolution.
+                  const isMinhaMsg = !!msg.from_me;
+
+                  const nomeRemetente = isConversaInterna
+                    ? (isMinhaMsg ? (instanciaAtual?.nome_instancia || 'Você') : (instanciaDestinataria?.nome_instancia || 'Outra instância'))
                     : (conversaSelecionada?.contact?.name || conversaSelecionada?.nome_contato || conversaSelecionada?.numero_contato);
                   
                   // Identificar quem enviou baseado no sender_jid (para mensagens from_me)
