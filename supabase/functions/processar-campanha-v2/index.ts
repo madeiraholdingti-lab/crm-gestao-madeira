@@ -383,12 +383,75 @@ async function processarCampanha(supabase: any, campanha_id: string): Promise<Re
     const taxa = total > 0 ? erros / total : 0;
 
     if (total >= 10 && taxa >= 0.3) {
-      await supabase
+      // Atualiza e detecta se mudança ocorreu (pra não notificar 2x o mesmo chip)
+      const { data: atualizado } = await supabase
         .from("instancias_whatsapp")
         .update({ status: 'suspeito' })
         .eq("id", chipId)
-        .neq("status", 'suspeito');
-      console.warn(`[campanha-v2] 🚨 Chip ${chipId} auto-pausado: ${erros}/${total} erros (${Math.round(taxa*100)}%)`);
+        .neq("status", 'suspeito')
+        .select('id, nome_instancia, numero_chip')
+        .maybeSingle();
+
+      if (atualizado) {
+        console.warn(`[campanha-v2] 🚨 Chip ${chipId} auto-pausado: ${erros}/${total} erros (${Math.round(taxa*100)}%)`);
+
+        // Cria notificação in-app pros admins
+        try {
+          const { data: admins } = await supabase
+            .from('user_roles')
+            .select('user_id')
+            .eq('role', 'admin_geral');
+          if (admins && admins.length > 0) {
+            const nots = admins.map((a: { user_id: string }) => ({
+              user_id: a.user_id,
+              tipo: 'chip_pausado',
+              titulo: `⚠️ Chip ${atualizado.nome_instancia || 'sem nome'} auto-pausado`,
+              mensagem: `Taxa de erro de ${Math.round(taxa*100)}% nas últimas ${total} msgs (${erros} erros). Chip ${atualizado.numero_chip || ''} marcado como suspeito. Verifique se não foi banido.`,
+              dados: { instancia_id: atualizado.id, taxa_erro: taxa, erros, total },
+              lida: false,
+            }));
+            await supabase.from('notificacoes').insert(nots);
+          }
+        } catch (notErr) {
+          console.warn('[campanha-v2] erro notificação:', notErr);
+        }
+
+        // Alerta via WhatsApp pra quem for configurado em config_global.webhook_alerta_chip
+        try {
+          const { data: conf } = await supabase
+            .from('config_global')
+            .select('chave, valor')
+            .eq('chave', 'telefone_alerta_chip')
+            .maybeSingle();
+          const alertaPhone = conf?.valor;
+          if (alertaPhone) {
+            // Usa primeiro chip saudável (não o que caiu) pra mandar
+            const { data: chipVivo } = await supabase
+              .from('instancias_whatsapp')
+              .select('nome_instancia')
+              .in('status', ['conectada', 'ativa', 'open'])
+              .neq('id', chipId)
+              .limit(1)
+              .maybeSingle();
+            if (chipVivo?.nome_instancia) {
+              const evoUrl = Deno.env.get('EVOLUTION_API_URL') || 'https://sdsd-evolution-api.r65ocn.easypanel.host';
+              const evoKey = Deno.env.get('EVOLUTION_API_KEY');
+              if (evoKey) {
+                fetch(`${evoUrl}/message/sendText/${encodeURIComponent(chipVivo.nome_instancia)}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'apikey': evoKey },
+                  body: JSON.stringify({
+                    number: alertaPhone,
+                    text: `🚨 Chip ${atualizado.nome_instancia || 'sem nome'} (${atualizado.numero_chip || ''}) foi auto-pausado.\n\nTaxa de erro: ${Math.round(taxa*100)}% (${erros}/${total} últimas msgs).\n\nVerifica no CRM se foi banido.`
+                  })
+                }).catch(() => {});
+              }
+            }
+          }
+        } catch (waErr) {
+          console.warn('[campanha-v2] erro WA alert:', waErr);
+        }
+      }
     }
   }
 

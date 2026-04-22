@@ -1,0 +1,248 @@
+{
+  "id": "campanhaMsgDebounceV1",
+  "name": "Campanha — Debounce 10s + IA",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "campanha-msg-debounce",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "campanha-msg-debounce-webhook"
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "seconds"
+      },
+      "id": "node-wait",
+      "name": "Wait 10s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/campanha_msg_queue?phone=eq.{{ $('Webhook').item.json.body.phone }}&select=id,created_at&order=created_at.desc&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-last",
+      "name": "Buscar última msg desse phone",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Checa se eu sou o dono da fila — ou seja, se a msg que disparou esse workflow\n// ainda é a mais recente desse phone. Se sim, sigo. Se não, outra msg chegou\n// depois e o debounce dessa outra vai processar; eu saio silenciosamente.\n\nconst payload = $('Webhook').item.json.body || {};\nconst myId = payload.queue_msg_id;\nconst phone = payload.phone;\nconst campanha_envio_id = payload.campanha_envio_id;\n\nconst last = Array.isArray($json) && $json.length > 0 ? $json[0] : null;\nif (!last) {\n  // Fila foi limpa? Skip.\n  return [{ json: { skip: true, reason: 'fila vazia' } }];\n}\n\nif (last.id !== myId) {\n  // Outra msg chegou depois de mim — ela processa. Eu saio.\n  return [{ json: { skip: true, reason: 'não sou o dono', last_id: last.id, my_id: myId } }];\n}\n\nreturn [{ json: { skip: false, phone, campanha_envio_id, queue_msg_id: myId } }];\n"
+      },
+      "id": "node-owner-check",
+      "name": "Sou o dono?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-skip",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-if-owner",
+      "name": "É dono?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-n8n.r65ocn.easypanel.host/webhook/maikonect-ia-responder-v2",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ campanha_envio_id: $json.campanha_envio_id }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "node-call-ia",
+      "name": "Chamar IA Responder v2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        -80
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/campanha_msg_queue?phone=eq.{{ $('Sou o dono?').item.json.phone }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "node-clean-queue",
+      "name": "Limpar fila do phone",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        -80
+      ],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Wait 10s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 10s": {
+      "main": [
+        [
+          {
+            "node": "Buscar última msg desse phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar última msg desse phone": {
+      "main": [
+        [
+          {
+            "node": "Sou o dono?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sou o dono?": {
+      "main": [
+        [
+          {
+            "node": "É dono?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É dono?": {
+      "main": [
+        [
+          {
+            "node": "Chamar IA Responder v2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Chamar IA Responder v2": {
+      "main": [
+        [
+          {
+            "node": "Limpar fila do phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
