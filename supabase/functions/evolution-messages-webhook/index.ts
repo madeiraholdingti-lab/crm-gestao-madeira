@@ -1047,16 +1047,102 @@ Deno.serve(async (req) => {
           }
         }
 
-        // ── Callback de campanha: lead respondeu? ──
-        // Se a msg é do contato E ele tem campanha_envios com status='enviado'
-        // em campanha ativa, marca respondeu_em + flip status pra em_conversa.
-        // A IA responder (Stage 4) vai usar vw_envios_aguardando_ia pra processar.
-        if (isFromContact && contact?.id) {
+        // ── LGPD Opt-out: detecta "parar"/"remover"/etc na msg do contato ──
+        // Se detectar, marca todos campanha_envios ativos desse telefone como 'descartado',
+        // insere lead_blacklist e manda confirmação. Skip callback de flip pra em_conversa.
+        let isOptOut = false;
+        if (isFromContact && phone && messageText) {
+          const textLower = messageText.toLowerCase().trim();
+          // Regex match exato (palavra isolada ou frase curta) pra evitar falsos positivos
+          const optOutRegex = /^(parar?|pare|para de mandar|remover?|remove|saia?|sair|stop|descadastrar|desinscrever|unsubscribe|cancelar|nao.?quero.?mais|n[ãa]o.?envi(e|ar).?mais|nao.?me.?mand(e|ar))\b/i;
+          const matches = optOutRegex.test(textLower) && textLower.length < 80;
+          if (matches) {
+            isOptOut = true;
+            console.log(`[opt-out] Detectado em msg do ${phone}: "${messageText.slice(0, 60)}"`);
+            try {
+              const digitsOnly = phone.replace(/\D/g, '');
+              const variantes = [
+                digitsOnly,
+                digitsOnly.startsWith('55') ? digitsOnly.slice(2) : '55' + digitsOnly,
+              ];
+              const last10 = digitsOnly.slice(-10);
+              const last11 = digitsOnly.slice(-11);
+              if (last10) variantes.push(last10, '55' + last10);
+              if (last11) variantes.push(last11, '55' + last11);
+              const phoneVariants = [...new Set(variantes)];
+
+              // 1. Marca todos campanha_envios ativos desse telefone como descartado
+              const { data: enviosAtivos } = await supabase
+                .from('campanha_envios')
+                .select('id, lead_id')
+                .in('telefone', phoneVariants)
+                .in('status', ['pendente', 'enviado', 'em_conversa', 'qualificado']);
+
+              if (enviosAtivos && enviosAtivos.length > 0) {
+                const ids = enviosAtivos.map((e: { id: string }) => e.id);
+                await supabase.from('campanha_envios')
+                  .update({ status: 'descartado', erro: `Opt-out via WhatsApp: "${messageText.slice(0, 100)}"` })
+                  .in('id', ids);
+                console.log(`[opt-out] ${ids.length} envios marcados como descartado`);
+
+                // 2. Pega lead_ids únicos e insere em blacklist
+                const leadIds = [...new Set(enviosAtivos.map((e: { lead_id: string }) => e.lead_id).filter(Boolean))];
+                for (const leadId of leadIds) {
+                  await supabase.from('lead_blacklist')
+                    .upsert({ lead_id: leadId, motivo: `Opt-out via WhatsApp: "${messageText.slice(0, 100)}"` }, { onConflict: 'lead_id' })
+                    .select();
+                }
+                console.log(`[opt-out] ${leadIds.length} leads adicionados em lead_blacklist`);
+              }
+
+              // 3. Envia confirmação LGPD pro contato (obrigação legal)
+              if (instanceName) {
+                try {
+                  const evoUrl = Deno.env.get('EVOLUTION_API_URL') || 'https://sdsd-evolution-api.r65ocn.easypanel.host';
+                  const evoKey = Deno.env.get('EVOLUTION_API_KEY');
+                  if (evoKey) {
+                    await fetch(`${evoUrl}/message/sendText/${encodeURIComponent(instanceName)}`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'apikey': evoKey },
+                      body: JSON.stringify({
+                        number: phone,
+                        text: 'Recebido. Seu contato foi removido das nossas listas de comunicação. Não enviaremos mais mensagens. Obrigado!'
+                      })
+                    }).catch((e) => console.warn('[opt-out] erro ao enviar confirmação:', e));
+                  }
+                } catch (sendErr) {
+                  console.warn('[opt-out] erro envio confirmação:', sendErr);
+                }
+              }
+            } catch (optOutErr) {
+              console.error('[opt-out] erro ao processar:', optOutErr);
+            }
+          }
+        }
+
+        // ── Fila de debounce: evita múltiplas chamadas IA quando lead manda várias msgs ──
+        // Toda msg de contato em campanha ativa vai pra campanha_msg_queue.
+        // n8n webhook `campanha-msg-debounce` vai aguardar 10s e checar se essa é a última msg desse phone.
+        // Se for, consolida histórico + dispara IA. Se não, silenciosamente sai.
+        //
+        // Skipamos se foi opt-out (já marcamos descartado).
+        if (!isOptOut && isFromContact && contact?.id && phone) {
           try {
+            const digitsOnly = phone.replace(/\D/g, '');
+            // Variações pra match: cru, com 55 prefix, sem 9
+            const variantes = [
+              digitsOnly,
+              digitsOnly.startsWith('55') ? digitsOnly.slice(2) : '55' + digitsOnly,
+            ];
+            const last10 = digitsOnly.slice(-10);
+            const last11 = digitsOnly.slice(-11);
+            if (last10) variantes.push(last10, '55' + last10);
+            if (last11) variantes.push(last11, '55' + last11);
+
             const { data: envioAtivo } = await supabase
               .from('campanha_envios')
-              .select('id, status, respondeu_em, campanha:campanha_id(status, briefing_ia)')
-              .eq('lead_id', contact.id)
+              .select('id, status, respondeu_em, telefone, campanha:campanha_id(status, briefing_ia)')
+              .in('telefone', [...new Set(variantes)])
               .in('status', ['enviado', 'em_conversa'])
               .order('enviado_em', { ascending: false })
               .limit(1)
@@ -1076,6 +1162,113 @@ Deno.serve(async (req) => {
                 await supabase.from('campanha_envios')
                   .update(updates)
                   .eq('id', envioAtivo.id);
+
+                // ── Processa mídia (Whisper/Vision) ANTES de enfileirar ──
+                // Só pra contatos em campanha ativa, evita gastar OpenAI/Gemini com spam.
+                let processedText = messageText;
+                try {
+                  if (messageType === 'audio' && mediaBase64) {
+                    const openaiKey = Deno.env.get('OPENAI_API_KEY');
+                    if (openaiKey) {
+                      const bin = Uint8Array.from(atob(mediaBase64), c => c.charCodeAt(0));
+                      const blob = new Blob([bin], { type: mediaMimeType || 'audio/ogg' });
+                      const form = new FormData();
+                      form.append('file', blob, mediaFileName || 'audio.ogg');
+                      form.append('model', 'whisper-1');
+                      form.append('language', 'pt');
+                      const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${openaiKey}` },
+                        body: form,
+                      });
+                      if (r.ok) {
+                        const j = await r.json();
+                        if (j.text) {
+                          processedText = `[Áudio]: ${j.text}`;
+                          console.log(`[whisper] transcrição: ${j.text.slice(0, 80)}`);
+                        }
+                      } else {
+                        console.warn('[whisper] falha', r.status, await r.text().catch(() => ''));
+                      }
+                    }
+                  } else if (messageType === 'image' && mediaBase64) {
+                    const geminiKey = Deno.env.get('GEMINI_API_KEY');
+                    if (geminiKey) {
+                      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
+                        body: JSON.stringify({
+                          contents: [{
+                            role: 'user',
+                            parts: [
+                              { text: 'Descreva essa imagem em português, de forma objetiva, em 1-2 frases. Se for documento médico (CRM, RQE, diploma, exame, comprovante), extraia números e dados visíveis.' },
+                              { inline_data: { mime_type: mediaMimeType || 'image/jpeg', data: mediaBase64 } }
+                            ]
+                          }],
+                          generationConfig: { temperature: 0.2, maxOutputTokens: 300 }
+                        }),
+                      });
+                      if (r.ok) {
+                        const j = await r.json();
+                        const desc = j?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                        if (desc) {
+                          const caption = (messageText && messageText !== '📷 Imagem') ? ` (legenda: ${messageText})` : '';
+                          processedText = `[Imagem]: ${desc}${caption}`;
+                          console.log(`[vision] descrição: ${desc.slice(0, 80)}`);
+                        }
+                      } else {
+                        console.warn('[vision] falha', r.status);
+                      }
+                    }
+                  }
+                } catch (mediaErr) {
+                  console.warn('[media-process] erro ignorável:', mediaErr);
+                }
+
+                // ── Enfileira msg + dispara n8n debounce (10s) ──
+                try {
+                  const { data: queued } = await supabase
+                    .from('campanha_msg_queue')
+                    .insert({
+                      phone,
+                      contact_id: contact.id,
+                      wa_message_id: messageId,
+                      text: processedText,
+                      message_type: messageType,
+                      media_url: mediaUrl,
+                      instance_name: instanceName,
+                      instance_uuid: instanciaWhatsappId,
+                      from_me: false,
+                    })
+                    .select('id, created_at')
+                    .single();
+
+                  // Atualiza messages.text com texto processado (transcrição/descrição),
+                  // pra que o histórico que a IA consulta tenha o conteúdo real, não placeholder
+                  if (processedText !== messageText && messageId) {
+                    await supabase
+                      .from('messages')
+                      .update({ text: processedText })
+                      .eq('wa_message_id', messageId)
+                      .eq('from_me', false);
+                  }
+
+                  if (queued?.id) {
+                    // Dispara n8n webhook que vai aguardar 10s + checar owner + chamar IA
+                    fetch('https://sdsd-n8n.r65ocn.easypanel.host/webhook/campanha-msg-debounce', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        queue_msg_id: queued.id,
+                        phone,
+                        campanha_envio_id: envioAtivo.id,
+                        queued_at: queued.created_at,
+                      }),
+                    }).catch((e) => console.warn('[debounce] erro trigger n8n:', e));
+                  }
+                } catch (qErr) {
+                  console.warn('[debounce] erro enfileirar:', qErr);
+                }
               }
             }
           } catch (cbErr) {

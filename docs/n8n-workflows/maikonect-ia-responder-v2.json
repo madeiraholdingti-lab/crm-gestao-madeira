@@ -14,7 +14,10 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "maikonect-ia-responder-v2-webhook"
     },
     {
@@ -25,17 +28,26 @@
       "name": "Decidir modo",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 0]
+      "position": [
+        220,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/campanha_envios?select=id,campanha_id,lead_id,telefone,respondeu_em,primeira_msg_contato_em,status,campanha:campanha_id(nome,briefing_ia,status,mensagem)&status=eq.em_conversa&primeira_msg_contato_em=not.is.null&primeira_msg_contato_em=lt.{{ new Date(Date.now() - 15000).toISOString() }}&limit=5",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/campanha_envios?select=id,campanha_id,lead_id,telefone,respondeu_em,primeira_msg_contato_em,status,campanha:campanha_id(nome,briefing_ia,status,mensagem)&status=eq.em_conversa&primeira_msg_contato_em=not.is.null&primeira_msg_contato_em=lt.{{ new Date(Date.now() - 15000).toISOString() }}&limit=5",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
-            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
           ]
         },
         "options": {}
@@ -44,17 +56,26 @@
       "name": "Buscar envios pendentes (batch)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [440, -120]
+      "position": [
+        440,
+        -120
+      ]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/campanha_envios?id=eq.{{ $json.envio_id }}&select=id,campanha_id,lead_id,telefone,respondeu_em,primeira_msg_contato_em,status,campanha:campanha_id(nome,briefing_ia,status,mensagem)",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/campanha_envios?id=eq.{{ $json.envio_id }}&select=id,campanha_id,lead_id,telefone,respondeu_em,primeira_msg_contato_em,status,campanha:campanha_id(nome,briefing_ia,status,mensagem)",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
-            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
           ]
         },
         "options": {}
@@ -63,7 +84,10 @@
       "name": "Buscar envio específico",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [440, 120]
+      "position": [
+        440,
+        120
+      ]
     },
     {
       "parameters": {
@@ -71,9 +95,24 @@
           "values": [
             {
               "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
                 "combinator": "and",
                 "conditions": [
-                  { "leftValue": "={{ $json.modo }}", "rightValue": "single", "operator": { "type": "string", "operation": "equals" } }
+                  {
+                    "id": "cond-single",
+                    "leftValue": "={{ $json.modo }}",
+                    "rightValue": "single",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
                 ]
               },
               "renameOutput": true,
@@ -81,9 +120,24 @@
             },
             {
               "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
                 "combinator": "and",
                 "conditions": [
-                  { "leftValue": "={{ $json.modo }}", "rightValue": "batch", "operator": { "type": "string", "operation": "equals" } }
+                  {
+                    "id": "cond-batch",
+                    "leftValue": "={{ $json.modo }}",
+                    "rightValue": "batch",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
                 ]
               },
               "renameOutput": true,
@@ -97,18 +151,23 @@
       "name": "Rotear modo",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
-      "position": [320, 0]
+      "position": [
+        320,
+        0
+      ]
     },
     {
       "parameters": {
-        "batchSize": 1,
-        "options": {}
+        "jsCode": "// Quebra array em items (substituto de SplitInBatches v3)\nconst arr = Array.isArray($json) ? $json : [$json];\nreturn arr.map(e => ({ json: e }));\n"
       },
       "id": "node-split-loop",
       "name": "Loop por envio",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
-      "position": [660, 0]
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
     },
     {
       "parameters": {
@@ -118,17 +177,67 @@
       "name": "Validar IA ativa",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 0]
+      "position": [
+        880,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/messages?contact_id=eq.{{ $json.lead_id }}&select=text,from_me,wa_timestamp,created_at,message_type&order=created_at.desc&limit=30",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/contacts?phone=in.({{ (() => { const d = $json.telefone.replace(/\\D/g, \"\"); const no55 = d.startsWith(\"55\") ? d.slice(2) : d; const with55 = d.startsWith(\"55\") ? d : \"55\" + d; const last10 = d.slice(-10); const last11 = d.slice(-11); const variants = [...new Set([d, no55, with55, last10, last11, \"55\" + last10, \"55\" + last11])].filter(v => v && v.length >= 10); return variants.join(\",\"); })() }})&select=id&limit=1",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
-            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-contact",
+      "name": "Buscar contact_id",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrai contact_id do resultado\nconst envio = $('Validar IA ativa').item.json;\nconst arr = Array.isArray($json) ? $json : [$json];\nconst contact = arr[0];\n\nif (!contact?.id) {\n  return [{ json: { ...envio, skip: true, reason: 'contact não encontrado pelo telefone' } }];\n}\nreturn [{ json: { ...envio, contact_id: contact.id } }];\n"
+      },
+      "id": "node-extract-contact-id",
+      "name": "Extrair contact_id",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages?contact_id=eq.{{ $json.contact_id }}&select=text,from_me,wa_timestamp,created_at,message_type&order=created_at.desc&limit=30",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
           ]
         },
         "options": {}
@@ -137,58 +246,86 @@
       "name": "Buscar histórico msgs",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 0]
+      "position": [
+        1340,
+        0
+      ],
+      "alwaysOutputData": true
     },
     {
       "parameters": {
-        "jsCode": "// Monta prompt pra Gemini baseado no briefing + histórico\n\nconst envio = $('Validar IA ativa').item.json;\nconst msgs = ($json || []).slice().reverse(); // ordem cronológica\n\nconst b = envio.briefing || {};\nconst persona = b.persona || 'Você é um representante da GSS Saúde do Dr. Maikon Madeira (cirurgião cardíaco).';\nconst contexto = b.contexto || '';\nconst objetivo = b.objetivo || 'Qualificar interesse do lead e escalar pra humano se demonstrar interesse.';\nconst beneficios = Array.isArray(b.beneficios) && b.beneficios.length > 0\n  ? '\\n\\nBenefícios:\\n' + b.beneficios.map(x => `- ${x}`).join('\\n')\n  : '';\nconst objecoes = Array.isArray(b.objecoes) && b.objecoes.length > 0\n  ? '\\n\\nObjeções comuns:\\n' + b.objecoes.map(o => `- \"${o.pergunta}\": ${o.resposta}`).join('\\n')\n  : '';\nconst proibidas = Array.isArray(b.palavras_proibidas) && b.palavras_proibidas.length > 0\n  ? `\\n\\nNUNCA use: ${b.palavras_proibidas.join(', ')}.`\n  : '';\n\nconst kws = Array.isArray(b.handoff_keywords) ? b.handoff_keywords : ['salario','salário','valor','remuneração','remuneracao'];\nconst ultimaMsgContato = msgs.filter(m => !m.from_me).slice(-1)[0];\nconst textoUltima = (ultimaMsgContato?.text || '').toLowerCase();\nconst keywordMatch = kws.some(k => textoUltima.includes(k.toLowerCase()));\n\nconst systemPrompt = `${persona}\\n\\n${contexto}\\n\\nOBJETIVO: ${objetivo}\\n\\nMENSAGEM INICIAL QUE FOI ENVIADA:\\n\"${envio.mensagem_inicial || ''}\"${beneficios}${objecoes}${proibidas}\\n\\nREGRAS:\\n- Responda CURTO e NATURAL (1-2 frases preferencial, máx 3 msgs).\\n- NÃO use emoji auto, NÃO use markdown/bold, NÃO use bullets.\\n- Varie cumprimentos (oi/opa/e aí) - EVITE \"Olá!\".\\n- Se pedir salário/valor/remuneração → NÃO responda valor. Escale (alerta_lead=true).\\n- Se lead disser que não tem interesse → conversa_encerrada=true.\\n- Se demonstrar interesse forte → alerta_lead=true.\\n\\nSEMPRE devolva JSON no formato:\\n{ \"messages\": [\"msg1\",\"msg2\"], \"alerta_lead\": boolean, \"motivo_alerta\": \"\", \"conversa_encerrada\": boolean }`;\n\nconst transcricao = msgs.map(m => {\n  const who = m.from_me ? 'EQUIPE' : 'LEAD';\n  const tag = m.message_type && m.message_type !== 'text' ? ` [${m.message_type}]` : '';\n  return `${who}${tag}: ${m.text || '(sem texto)'}`;\n}).join('\\n');\n\nconst warn = keywordMatch ? '\\n\\n[ALERTA: detectamos palavra-chave de handoff na última msg. Considere alerta_lead=true.]' : '';\n\nconst userPrompt = `Conversa:\\n\\n${transcricao}${warn}\\n\\nResponda APENAS à última msg do lead. Devolva JSON.`;\n\nreturn [{\n  json: {\n    ...envio,\n    keywordMatch,\n    systemPrompt,\n    userPrompt,\n    gemini_body: {\n      systemInstruction: { parts: [{ text: systemPrompt }] },\n      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],\n      generationConfig: {\n        temperature: 0.7,\n        responseMimeType: 'application/json',\n        responseSchema: {\n          type: 'object',\n          properties: {\n            messages: { type: 'array', items: { type: 'string' } },\n            alerta_lead: { type: 'boolean' },\n            motivo_alerta: { type: 'string' },\n            conversa_encerrada: { type: 'boolean' }\n          },\n          required: ['messages','alerta_lead','motivo_alerta','conversa_encerrada']\n        }\n      }\n    }\n  }\n}];\n"
+        "jsCode": "// Monta prompt Gemini no estilo sigma-new: XML tags estruturais, tom humano,\n// engajamento proativo, anti-loop, anti-promessa, handoff restritivo.\n// Adaptado pro Maikonect (genérico — serve qualquer tipo de campanha).\n\nconst envio = $('Validar IA ativa').item.json;\nconst rawMsgs = Array.isArray($json) ? $json : (Array.isArray($input?.all?.()) ? $input.all().map(i => i.json).filter(x => x?.text !== undefined) : []);\nconst msgs = rawMsgs.slice().reverse();\n\nconst b = envio.briefing || {};\nconst persona = b.persona || 'Você é da equipe do Dr. Maikon Madeira — cirurgião cardíaco em Itajaí/SC. Fala direto, sem formalidade, como colega. Nunca mencione que é IA, bot ou automação.';\nconst contexto = b.contexto || '';\nconst objetivo = b.objetivo || 'Qualificar o interesse do contato e escalar pra humano quando fizer sentido.';\n\nfunction listBlock(titulo, arr, formatter) {\n  if (!Array.isArray(arr) || arr.length === 0) return '';\n  return `\\n<${titulo}>\\n${arr.map(formatter).join('\\n')}\\n</${titulo}>`;\n}\n\nconst beneficios = listBlock('beneficios', b.beneficios || [], (x) => `- ${x}`);\nconst objecoes = listBlock('objecoes', b.objecoes || [], (o) => `- \"${o.pergunta || o.objecao || ''}\": ${o.resposta || ''}`);\n\nconst proibidasDefault = ['moderno', 'moderna', 'tecnologia de ponta', 'de ponta', 'oportunidade única', 'projeto revolucionário', 'ambiente incrível'];\nconst proibidasLista = [...new Set([\n  ...(Array.isArray(b.palavras_proibidas) ? b.palavras_proibidas : []),\n  ...proibidasDefault\n])];\n\nconst fluxoPassos = Array.isArray(b.fluxo_passos) && b.fluxo_passos.length > 0\n  ? b.fluxo_passos\n  : ['Entender o contexto do contato (quem é, situação)', 'Apresentar o serviço/proposta de forma breve', 'Qualificar interesse', 'Encaminhar pra humano quando houver fit'];\n\nconst kws = Array.isArray(b.handoff_keywords) && b.handoff_keywords.length > 0\n  ? b.handoff_keywords\n  : ['salario','salário','valor','remuneração','remuneracao','quanto paga','quanto custa','preço','preco'];\n\nconst handoffNome = b.handoff_nome || 'a equipe';\nconst handoffFrase = b.handoff_frase || 'vai te passar os detalhes.';\n\nconst checklistMinimo = Number.isInteger(b.checklist_handoff_minimo) ? b.checklist_handoff_minimo : 3;\n\nconst infoExtra = typeof b.info_extra === 'string' && b.info_extra.trim() ? `\\n<info_extra>\\n${b.info_extra.trim()}\\n</info_extra>` : '';\n\nconst ultimaDoLead = msgs.filter(m => !m.from_me).slice(-1)[0];\nconst textoUltima = (ultimaDoLead?.text || '').toLowerCase();\nconst keywordMatch = kws.some(k => textoUltima.includes(k.toLowerCase()));\n\n// ------- SYSTEM PROMPT ----------\nconst systemPrompt = `<prompt versao=\"maikonect-v1\">\n<contexto>\n${persona}\n${contexto ? '\\n' + contexto : ''}\n</contexto>\n\n<objetivo>\n${objetivo}\n</objetivo>\n\n<naturalidade>\nREGRAS DE FALA HUMANA — contatos percebem robô na hora:\n- Aberturas variam: \"oi\", \"opa\", \"e aí\", \"bacana\", \"boa\". NUNCA \"Olá!\" ou \"Olá, doutor!\".\n- SEM emoji estruturado, SEM markdown (negrito, itálico), SEM listas/bullets, SEM numeração.\n- Pontuação humana e descontraída: vírgulas opcionais omitidas, abreviações naturais ok (vc, tb, pq, blz).\n- Comprimento variado: ora 1 frase curta, ora 2 frases. Evite uniformidade. Evite parágrafos longos.\n- Não cumprimente a cada mensagem. Conversa fluida não faz isso.\n- Sem \"espero ter ajudado\", \"fico à disposição\", \"qualquer dúvida estou aqui\" — clichês de bot.\n- Se contato fala curto, responde curto. Se elaborou, pode elaborar mais.\n- Pode reagir com \"show\", \"bacana\", \"legal\" — com moderação.\n</naturalidade>\n\n<engajamento_proativo>\nQuando o contato demonstrar curiosidade (\"me conta mais\", \"como funciona\", \"onde é\"), responde com FATO + PERGUNTA de aprofundamento. Não responda seco. Mas sem floreio vendedor.\n\nExemplo ruim: \"É aqui em Itajaí\"\nExemplo bom: \"É aqui em Itajaí/SC, na clínica do Dr. Maikon. Você já conhecia o trabalho dele?\"\n\nUse SEMPRE que relevante (conforme a conversa evolui): fatos concretos do briefing, nome do serviço/evento, cidade, data, etc. Entregue o que pode engajar.\n</engajamento_proativo>${beneficios}${objecoes}\n\n<fluxo>\nREGRA ABSOLUTA: Leia TODO o histórico. NUNCA repita pergunta já respondida.\n\"Sim\" = passo concluído. Avance. 1 pergunta por vez.\n\nPassos do fluxo (guia, não script fechado):\n${fluxoPassos.map((p, i) => `${i+1}. ${p}`).join('\\n')}\n</fluxo>\n\n<antes_de_handoff>\n🛑 REGRA DURA — NÃO mencione \"passar contato\", \"vou te passar pra ${handoffNome}\" ou qualquer handoff ANTES de ter explicado o suficiente na conversa.\n\nCHECKLIST mínimo de itens trocados na conversa ANTES de qualquer menção a handoff:\n  □ Contato entendeu o que você está oferecendo\n  □ Você confirmou se ele tem interesse ou fit\n  □ Pelo menos 1 pergunta/fato concreto do briefing foi trocado\n  □ Contato não demonstrou recusa\n\nSe MENOS DE ${checklistMinimo} desses itens foram trocados, NÃO ofereça handoff. Continue explicando, perguntando, engajando.\n\nEXCEÇÃO: se o contato disser literalmente \"me liga\", \"me passa pro responsável\", \"quero fechar\", \"quem cuida disso pra eu falar\" → handoff imediato é OK.\n</antes_de_handoff>\n\n<handoff>\nQUANDO fazer handoff:\n- Contato aceitou explicitamente conversar com humano\n- Contato perguntou sobre valor/remuneração/preço (NÃO responde valor você mesmo)\n- Contato demonstrou interesse forte e pediu próximos passos\n\nCOMO fazer:\n- \"Posso passar pra ${handoffNome}? ${handoffFrase}\"\n- Após confirmar: \"Show, te chamam em breve.\"\n\nNUNCA:\n- Mandar \"vou passar pra X\" duas vezes em menos de 5 msgs\n- Empurrar handoff se contato está explorando sem pedir\n- Insistir se ignorou o pedido\n</handoff>\n\n<anti_promessa>\nPALAVRAS PROIBIDAS: ${proibidasLista.map(p => `\"${p}\"`).join(', ')}\n\nSubstitua por fatos verificáveis. Se for usar adjetivo vendedor, CORTE.\nFale SÓ dos fatos do briefing: estrutura real, cidade real, dados reais.\n</anti_promessa>\n\n<anti_loop>\nAntes de responder, leia TODO o histórico. Se o contato já informou algo, NÃO pergunte de novo. Avance.\nUm \"Sim\" como resposta a pergunta sua = passo concluído. Registre e avance.\nSe o contato mandou 2+ msgs ou uma msg com resposta + pergunta: extraia TUDO antes de responder.\n</anti_loop>\n\n<contato_dirige>\nO CONTATO dirige a conversa. Seu fluxo é um guia.\n- Se ele quer saber mais: responda em profundidade antes de voltar ao fluxo.\n- Se faz pergunta técnica que você tem resposta no briefing: RESPONDA direto, não jogue pro handoff.\n- Empurrar handoff cedo OU repetidamente → contato percebe pressa → lead perdido.\n- Pressa é bot. Calma é humano.\n</contato_dirige>${infoExtra}\n\n<saida>\nRetorne APENAS JSON válido:\n{\"messages\":[\"msg1\",\"msg2\"],\"alerta_lead\":false,\"motivo_alerta\":\"\",\"conversa_encerrada\":false}\n\n- \"messages\": ARRAY de 1 a 2 mensagens curtas. Cada uma vira msg separada no WhatsApp. Se só uma resposta basta, um array com 1 elemento.\n- \"alerta_lead\"=true APENAS quando: contato aceitou handoff OU perguntou sobre valor/remuneração/preço.\n- \"motivo_alerta\": string curta descrevendo o porquê do alerta (ou vazia).\n- \"conversa_encerrada\"=true quando: contato recusou ou pediu pra parar.\n</saida>\n</prompt>`;\n\nconst transcricao = msgs.map(m => {\n  const who = m.from_me ? 'EQUIPE' : 'CONTATO';\n  const tag = m.message_type && m.message_type !== 'text' ? ` [${m.message_type}]` : '';\n  return `${who}${tag}: ${m.text || '(sem texto)'}`;\n}).join('\\n');\n\nconst warn = keywordMatch ? '\\n\\n[ALERTA: detectamos palavra-chave de handoff (valor/preço/salário) na última msg. Considere alerta_lead=true.]' : '';\n\nconst userPrompt = `## MENSAGEM INICIAL ENVIADA PELA CAMPANHA\n\"${envio.mensagem_inicial || '(não registrada)'}\"\n\n## HISTÓRICO DA CONVERSA (mais antigo primeiro)\n${transcricao || '(sem histórico — essa é a primeira resposta do contato)'}${warn}\n\nRESPONDA APENAS À ÚLTIMA MENSAGEM DO CONTATO. NÃO REPITA PERGUNTAS JÁ RESPONDIDAS. RETORNE O JSON.`;\n\nreturn [{\n  json: {\n    ...envio,\n    _prompt_system: systemPrompt,\n    _prompt_user: userPrompt,\n    _keyword_match: keywordMatch,\n    _last_lead_text: ultimaDoLead?.text || '',\n    _gemini_body: {\n      contents: [\n        { role: 'user', parts: [{ text: systemPrompt + '\\n\\n---\\n\\n' + userPrompt }] }\n      ],\n      generationConfig: {\n        temperature: 0.7,\n        topP: 0.9,\n        responseMimeType: 'application/json',\n        responseSchema: {\n          type: 'OBJECT',\n          properties: {\n            messages: { type: 'ARRAY', items: { type: 'STRING' } },\n            alerta_lead: { type: 'BOOLEAN' },\n            motivo_alerta: { type: 'STRING' },\n            conversa_encerrada: { type: 'BOOLEAN' }\n          },\n          required: ['messages','alerta_lead','motivo_alerta','conversa_encerrada']\n        }\n      }\n    }\n  }\n}];\n"
       },
       "id": "node-build-prompt",
       "name": "Montar prompt Gemini",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1320, 0]
+      "position": [
+        1320,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyAo7ClWQZnZgtLu4et55WaXWWLVgvP35aI",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.gemini_body) }}",
+        "jsonBody": "={{ JSON.stringify($json._gemini_body) }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-goog-api-key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
+            }
           ]
         },
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "node-gemini-call",
       "name": "Chamar Gemini",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1540, 0]
+      "position": [
+        1540,
+        0
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Parse resposta Gemini\nconst envio = $('Montar prompt Gemini').item.json;\nconst raw = $json;\nconst text = raw?.candidates?.[0]?.content?.parts?.[0]?.text || '';\n\nlet parsed;\ntry {\n  const clean = text.replace(/^```json\\s*/i, '').replace(/```$/, '').trim();\n  parsed = JSON.parse(clean);\n} catch (e) {\n  return [{ json: { ...envio, erro: 'JSON inválido Gemini', raw: text.slice(0, 300) } }];\n}\n\nreturn [{\n  json: {\n    ...envio,\n    ia_messages: parsed.messages || [],\n    alerta_lead: !!parsed.alerta_lead,\n    motivo_alerta: parsed.motivo_alerta || '',\n    conversa_encerrada: !!parsed.conversa_encerrada,\n    deve_fazer_handoff: !!(envio.keywordMatch || parsed.alerta_lead),\n  }\n}];\n"
+        "jsCode": "// Parse resposta Gemini (JSON estruturado via responseSchema)\nconst envio = $('Montar prompt Gemini').item.json;\nconst raw = $json;\nconst text = raw?.candidates?.[0]?.content?.parts?.[0]?.text || '';\n\nlet parsed;\ntry {\n  const clean = text.replace(/^```json\\s*/i, '').replace(/```$/, '').trim();\n  parsed = JSON.parse(clean);\n} catch (e) {\n  return [{ json: { ...envio, erro: 'JSON inválido Gemini', raw: text.slice(0, 300) } }];\n}\n\nreturn [{\n  json: {\n    ...envio,\n    ia_messages: Array.isArray(parsed.messages) && parsed.messages.length > 0 ? parsed.messages : ['Ok!'],\n    alerta_lead: !!parsed.alerta_lead,\n    motivo_alerta: parsed.motivo_alerta || '',\n    conversa_encerrada: !!parsed.conversa_encerrada,\n    deve_fazer_handoff: !!(envio._keyword_match || parsed.alerta_lead),\n  }\n}];\n"
       },
       "id": "node-parse",
       "name": "Parse resposta",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1760, 0]
+      "position": [
+        1760,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/campanha_envios?id=eq.{{ $json.envio_id }}&select=primeira_msg_contato_em",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/campanha_envios?id=eq.{{ $json.envio_id }}&select=primeira_msg_contato_em",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
-            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
           ]
         },
         "options": {}
@@ -197,7 +334,10 @@
       "name": "Re-check lock (debounce)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1980, 0]
+      "position": [
+        1980,
+        0
+      ]
     },
     {
       "parameters": {
@@ -207,7 +347,10 @@
       "name": "Lock válido?",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2200, 0]
+      "position": [
+        2200,
+        0
+      ]
     },
     {
       "parameters": {
@@ -217,17 +360,26 @@
       "name": "Preparar envio",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2420, 0]
+      "position": [
+        2420,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/instancias_whatsapp?select=id,nome_instancia&status=in.(conectada,ativa,open)&{{ $json.chip_ia_id ? 'id=eq.' + $json.chip_ia_id : 'limit=1' }}",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/instancias_whatsapp?select=id,nome_instancia&status=in.(conectada,ativa,open)&{{ $json.chip_ia_id ? 'id=eq.' + $json.chip_ia_id : 'limit=1' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
-            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
           ]
         },
         "options": {}
@@ -236,7 +388,10 @@
       "name": "Buscar instância IA",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2640, 0]
+      "position": [
+        2640,
+        0
+      ]
     },
     {
       "parameters": {
@@ -246,78 +401,37 @@
       "name": "Definir instância",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2860, 0]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "=https://sdsd-evolution-api.r65ocn.easypanel.host/chat/sendPresence/{{ encodeURIComponent($json.instancia_nome) }}",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ number: $json.phone_normalized, presence: 'composing', delay: Math.max(1500, Math.min(4000, $json.primeira_msg.length * 50)) }) }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "apikey", "value": "429683C4C977415CAAFCCE10F7D57E11" }
-          ]
-        },
-        "options": { "timeout": 10000 }
-      },
-      "id": "node-presence",
-      "name": "Digitando...",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [3080, 0]
-    },
-    {
-      "parameters": {
-        "amount": 2,
-        "unit": "seconds"
-      },
-      "id": "node-wait-presence",
-      "name": "Aguardar presence",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1,
-      "position": [3300, 0],
-      "webhookId": "wait-presence-ia"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "=https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/{{ encodeURIComponent($('Definir instância').item.json.instancia_nome) }}",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ number: $('Definir instância').item.json.phone_normalized, text: $('Definir instância').item.json.primeira_msg }) }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "apikey", "value": "429683C4C977415CAAFCCE10F7D57E11" }
-          ]
-        },
-        "options": { "timeout": 15000 }
-      },
-      "id": "node-send-msg",
-      "name": "Enviar msg IA",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [3520, 0]
+      "position": [
+        2860,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "PATCH",
-        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/campanha_envios?id=eq.{{ $('Definir instância').item.json.envio_id }}",
+        "url": "=https://yycpctrcefxemgahhxgx.supabase.co/rest/v1/campanha_envios?id=eq.{{ $json.envio_id }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ status: $('Definir instância').item.json.conversa_encerrada ? 'descartado' : $('Definir instância').item.json.deve_fazer_handoff ? 'qualificado' : 'em_conversa', primeira_msg_contato_em: null }) }}",
+        "jsonBody": "={{ JSON.stringify({ status: $json.conversa_encerrada ? 'descartado' : $json.deve_fazer_handoff ? 'qualificado' : 'em_conversa', primeira_msg_contato_em: null }) }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
-            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Y3BjdHJjZWZ4ZW1nYWhoeGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjMxMjMzMCwiZXhwIjoyMDkxODg4MzMwfQ.F5lztxPnQeBsHLx6ujKluad3EUTSmZbeglc9iseF-ZI" },
-            { "name": "Prefer", "value": "return=minimal" }
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
           ]
         },
         "options": {}
@@ -326,19 +440,25 @@
       "name": "Atualizar status envio",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3740, 0]
+      "position": [
+        3740,
+        0
+      ]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ ok: true, processado: $('Definir instância').item.json.envio_id, status_final: $('Definir instância').item.json.conversa_encerrada ? 'descartado' : $('Definir instância').item.json.deve_fazer_handoff ? 'qualificado' : 'em_conversa', handoff: $('Definir instância').item.json.deve_fazer_handoff }) }}",
+        "responseBody": "={{ JSON.stringify({ ok: true, processado: $json.envio_id, status_final: $json.conversa_encerrada ? 'descartado' : $json.deve_fazer_handoff ? 'qualificado' : 'em_conversa', msgs_enviadas: $json.total_enviadas || 0, handoff: !!$json.handoff_enviado }) }}",
         "options": {}
       },
       "id": "node-respond",
       "name": "Responder webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [3960, 0]
+      "position": [
+        3960,
+        0
+      ]
     },
     {
       "parameters": {
@@ -350,80 +470,262 @@
       "name": "ℹ️ Info",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-400, -200]
+      "position": [
+        -400,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Envia TODAS as msgs da IA com presence+delay humanizado.\n// Depois, se deve_fazer_handoff, manda alerta pro handoff_telefone configurado.\n// Usa helpers.httpRequest do n8n (mais confiável que fetch em Code node).\n\nconst envio = $json;\nif (envio.abortado) return [{ json: envio }];\n\n// Lê do env do container n8n (injetado via docker service env)\nconst evoBase = $env.EVOLUTION_API_URL;\nconst evoKey = $env.EVOLUTION_API_KEY;\nconst instancia = envio.instancia_nome;\nconst phone = envio.phone_normalized;\nconst msgs = (envio.todas_msgs && envio.todas_msgs.length > 0) ? envio.todas_msgs : [envio.primeira_msg || 'Ok'];\n\n// Captura helpers no scope de cima pra não perder contexto em nested funcs\nconst httpRequest = this.helpers.httpRequest.bind(this.helpers);\n\nfunction sleep(ms) { return new Promise(r => setTimeout(r, ms)); }\n\nasync function evoCall(path, body) {\n  try {\n    const resp = await httpRequest({\n      method: 'POST',\n      url: `${evoBase}${path}`,\n      headers: { 'Content-Type': 'application/json', 'apikey': evoKey },\n      body,\n      json: true,\n      returnFullResponse: true,\n      timeout: 15000,\n    });\n    return { ok: resp.statusCode >= 200 && resp.statusCode < 300, status: resp.statusCode, body: resp.body };\n  } catch (e) {\n    const msg = String(e && e.message || e).slice(0, 300);\n    const status = e && e.statusCode;\n    return { ok: false, err: msg, status };\n  }\n}\n\nasync function sendPresence(num, text) {\n  const delay = Math.max(1500, Math.min(4500, text.length * 60));\n  await evoCall(`/chat/sendPresence/${encodeURIComponent(instancia)}`, {\n    number: num, presence: 'composing', delay\n  });\n  await sleep(delay);\n}\n\nasync function sendText(num, text) {\n  const r = await evoCall(`/message/sendText/${encodeURIComponent(instancia)}`, {\n    number: num, text\n  });\n  return r;\n}\n\nconst resultados = [];\n\nfor (let i = 0; i < msgs.length; i++) {\n  const text = msgs[i];\n  if (!text || typeof text !== 'string') continue;\n  await sendPresence(phone, text);\n  const r = await sendText(phone, text);\n  resultados.push({ to: 'lead', text, ok: r.ok, status: r.status, err: r.err });\n  if (i < msgs.length - 1) await sleep(900 + Math.random() * 1500);\n}\n\nlet handoff_enviado = false;\nlet handoff_info = null;\nif (envio.deve_fazer_handoff) {\n  const briefing = envio.briefing || {};\n  let handoffRaw = briefing.handoff_telefone || '';\n  let d = (handoffRaw || '').replace(/\\D/g, '');\n  if (d.startsWith('55') && d.length > 11) d = d.slice(2);\n  let handoffPhone = null;\n  if (d.length === 10 || d.length === 11) {\n    if (d.length === 10) {\n      const c = parseInt(d[2], 10);\n      if (c >= 6) d = d.slice(0, 2) + '9' + d.slice(2);\n    }\n    handoffPhone = '55' + d;\n  }\n\n  if (handoffPhone && handoffPhone !== phone) {\n    const nomeCampanha = envio.campanha_nome || 'campanha';\n    const motivo = envio.motivo_alerta || 'lead precisa de atenção';\n    const txtAlerta = `🚨 *Lead pediu atenção — ${nomeCampanha}*\\n\\nTelefone: ${envio.telefone}\\nMotivo: ${motivo}\\n\\nÚltima msg do lead: \"${(envio._last_lead_text || '').slice(0, 200)}\"\\n\\nAbra a conversa no CRM pra assumir.`;\n    handoff_info = { phone: handoffPhone, text: txtAlerta };\n    const rH = await sendText(handoffPhone, txtAlerta);\n    resultados.push({ to: 'handoff', ok: rH.ok, phone: handoffPhone, status: rH.status, err: rH.err });\n    handoff_enviado = rH.ok;\n  } else {\n    resultados.push({ to: 'handoff', skipped: true, reason: 'sem handoff_telefone válido no briefing' });\n  }\n}\n\nreturn [{\n  json: {\n    ...envio,\n    envio_resultados: resultados,\n    total_enviadas: resultados.filter(r => r.to === 'lead' && r.ok).length,\n    handoff_enviado,\n    handoff_info,\n  }\n}];\n"
+      },
+      "id": "node-send-multi",
+      "name": "Enviar msgs + handoff",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2940,
+        0
+      ]
     }
   ],
   "connections": {
     "Webhook": {
-      "main": [[{ "node": "Decidir modo", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Decidir modo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Decidir modo": {
-      "main": [[{ "node": "Rotear modo", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Rotear modo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Rotear modo": {
       "main": [
-        [{ "node": "Buscar envio específico", "type": "main", "index": 0 }],
-        [{ "node": "Buscar envios pendentes (batch)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Buscar envio específico",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar envios pendentes (batch)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Buscar envios pendentes (batch)": {
-      "main": [[{ "node": "Loop por envio", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Loop por envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Buscar envio específico": {
-      "main": [[{ "node": "Loop por envio", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Loop por envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Loop por envio": {
       "main": [
-        [{ "node": "Validar IA ativa", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Validar IA ativa",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Validar IA ativa": {
-      "main": [[{ "node": "Buscar histórico msgs", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Buscar contact_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar contact_id": {
+      "main": [
+        [
+          {
+            "node": "Extrair contact_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair contact_id": {
+      "main": [
+        [
+          {
+            "node": "Buscar histórico msgs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Buscar histórico msgs": {
-      "main": [[{ "node": "Montar prompt Gemini", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Montar prompt Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Montar prompt Gemini": {
-      "main": [[{ "node": "Chamar Gemini", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Chamar Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Chamar Gemini": {
-      "main": [[{ "node": "Parse resposta", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Parse resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse resposta": {
-      "main": [[{ "node": "Re-check lock (debounce)", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Re-check lock (debounce)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Re-check lock (debounce)": {
-      "main": [[{ "node": "Lock válido?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Lock válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Lock válido?": {
-      "main": [[{ "node": "Preparar envio", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Preparar envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Preparar envio": {
-      "main": [[{ "node": "Buscar instância IA", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Buscar instância IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Buscar instância IA": {
-      "main": [[{ "node": "Definir instância", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Definir instância",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Definir instância": {
-      "main": [[{ "node": "Digitando...", "type": "main", "index": 0 }]]
-    },
-    "Digitando...": {
-      "main": [[{ "node": "Aguardar presence", "type": "main", "index": 0 }]]
-    },
-    "Aguardar presence": {
-      "main": [[{ "node": "Enviar msg IA", "type": "main", "index": 0 }]]
-    },
-    "Enviar msg IA": {
-      "main": [[{ "node": "Atualizar status envio", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Enviar msgs + handoff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Atualizar status envio": {
-      "main": [[{ "node": "Responder webhook", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Responder webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar msgs + handoff": {
+      "main": [
+        [
+          {
+            "node": "Atualizar status envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "pinData": {},
   "versionId": "mkt-ia-v2-initial",
-  "meta": { "templateCredsSetupCompleted": false },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
   "triggerCount": 1,
   "tags": []
 }

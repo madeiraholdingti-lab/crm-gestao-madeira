@@ -227,13 +227,10 @@ export default function TaskFlow() {
   const todayStart = useMemo(() => startOfDay(new Date()).toISOString(), []);
   const todayEnd = useMemo(() => endOfDay(new Date()).toISOString(), []);
 
-  // Buscar contagem de tarefas finalizadas hoje
+  // Buscar contagem de tarefas finalizadas hoje (todas, bate com o dashboard da Home)
   const { data: completedTodayCount = 0 } = useQuery({
-    queryKey: ["tasks-completed-today", selectedProfile?.id, todayStart],
+    queryKey: ["tasks-completed-today", todayStart],
     queryFn: async () => {
-      if (!selectedProfile) return 0;
-
-      // Buscar coluna "Finalizada"
       const { data: finCol } = await supabase
         .from("task_flow_columns")
         .select("id")
@@ -246,7 +243,6 @@ export default function TaskFlow() {
         .from("task_flow_tasks")
         .select("id", { count: "exact", head: true })
         .eq("column_id", finCol.id)
-        .eq("responsavel_id", selectedProfile.id)
         .is("deleted_at", null)
         .gte("updated_at", todayStart)
         .lte("updated_at", todayEnd);
@@ -255,7 +251,7 @@ export default function TaskFlow() {
       return count || 0;
     },
     enabled: !!selectedProfile,
-    refetchInterval: 120000, // 2 minutos (era 30s)
+    refetchInterval: 120000,
   });
 
   // Se um perfil está selecionado, mostra o board
