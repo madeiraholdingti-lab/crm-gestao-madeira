@@ -34,18 +34,30 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Pega TODAS as tarefas na coluna "Lembrar Dr. Maikon" (sem filtro de prazo):
-    // a intenção é que enquanto a task estiver nessa coluna, é pra lembrar o Maikon
-    // todo dia até alguém tirar de lá. Se tiver prazo, mostramos pra ele priorizar.
-    // Ordena por prazo ASC (prazos mais próximos primeiro, sem prazo no fim).
-    // Limita a 30 pra não inundar a msg (coluna tem acumulado se ficar sem gestão).
+    // Today's date in Brazil timezone
+    const now = new Date();
+    const brDate = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const todayStr = `${brDate.getFullYear()}-${String(brDate.getMonth() + 1).padStart(2, "0")}-${String(brDate.getDate()).padStart(2, "0")}`;
+
+    // Prazo armazenado como "00h BRT do dia do prazo" = "03h UTC do mesmo dia"
+    // Ex: prazo dia 23/04 -> 2026-04-23T03:00:00+00:00
+    // Filtro inclusivo nos 2 extremos pra pegar "exatamente hoje":
+    // prazo >= 2026-04-23T03:00:00Z  AND  prazo <= 2026-04-23T03:00:00Z
+    const startUTC = `${todayStr}T03:00:00+00:00`;
+    const tomorrow = new Date(brDate);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
+    // endUTC como "00h BRT do dia seguinte" (exclusivo) pra pegar prazo de hoje
+    const endUTC = `${tomorrowStr}T03:00:00+00:00`;
+
     const { data: tasks, error } = await supabase
       .from("task_flow_tasks")
-      .select("id, titulo, descricao, prazo, created_at")
+      .select("id, titulo, descricao, prazo, created_at, updated_at")
       .eq("column_id", COLUMN_ID)
       .is("deleted_at", null)
-      .order("prazo", { ascending: true, nullsFirst: false })
-      .limit(30);
+      .gte("prazo", startUTC)
+      .lt("prazo", endUTC)
+      .order("ordem", { ascending: true });
 
     if (error) {
       return new Response(JSON.stringify({ error: error.message }), {
@@ -54,37 +66,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Helper: classifica urgência do prazo relativo a hoje
-    const now = new Date();
-    const hojeBRT = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
-    hojeBRT.setHours(0, 0, 0, 0);
-    const amanhaBRT = new Date(hojeBRT); amanhaBRT.setDate(amanhaBRT.getDate() + 1);
-
-    const result = (tasks || []).map((t: { titulo: string; descricao: string | null; prazo: string | null }) => {
-      let prazo_label: string | null = null;
-      let urgencia: "atrasada" | "hoje" | "amanha" | "futura" | "sem_prazo" = "sem_prazo";
-      if (t.prazo) {
-        // Prazo é armazenado como "midnight do dia do prazo em BRT" (ex: prazo dia 23/04 vira 2026-04-23T03:00:00Z)
-        // Extrai o dia BRT diretamente via toLocaleDateString com TZ
-        const prazoDate = new Date(t.prazo);
-        // Pega ano/mes/dia em BRT
-        const prazoBRTStr = prazoDate.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); // YYYY-MM-DD
-        const [ano, mes, dia] = prazoBRTStr.split("-").map(Number);
-        const prazoDia = new Date(ano, mes - 1, dia);
-        if (prazoDia < hojeBRT) urgencia = "atrasada";
-        else if (prazoDia.getTime() === hojeBRT.getTime()) urgencia = "hoje";
-        else if (prazoDia.getTime() === amanhaBRT.getTime()) urgencia = "amanha";
-        else urgencia = "futura";
-        prazo_label = `${String(dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}`;
-      }
-      return {
-        titulo: t.titulo,
-        descricao: t.descricao || null,
-        prazo: t.prazo,
-        prazo_label,
-        urgencia,
-      };
-    });
+    const result = (tasks || []).map((t: { titulo: string; descricao: string | null; updated_at: string }) => ({
+      titulo: t.titulo,
+      descricao: t.descricao || null,
+      atualizado_em: t.updated_at,
+    }));
 
     return new Response(
       JSON.stringify({
