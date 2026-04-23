@@ -26,6 +26,7 @@ import LeadsPage from "./pages/disparos/Leads";
 import CampanhasPage from "./pages/disparos/Campanhas";
 import EnviosPage from "./pages/disparos/Envios";
 import BlacklistPage from "./pages/disparos/Blacklist";
+import RelatoriosDisparos from "./pages/disparos/Relatorios";
 import TaskFlow from "./pages/TaskFlow";
 import ContextoIA from "./pages/ContextoIA";
 import HubWhatsApp from "./pages/HubWhatsApp";
@@ -259,6 +260,14 @@ const App = () => (
                 element={
                   <AppLayout>
                     <BlacklistPage />
+                  </AppLayout>
+                }
+              />
+              <Route
+                path="/disparos-em-massa/relatorios"
+                element={
+                  <AppLayout>
+                    <RelatoriosDisparos />
                   </AppLayout>
                 }
               />

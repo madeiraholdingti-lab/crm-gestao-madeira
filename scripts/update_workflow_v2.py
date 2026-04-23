@@ -267,31 +267,44 @@ for (let i = 0; i < msgs.length; i++) {
 }
 
 let handoff_enviado = false;
-let handoff_info = null;
+let handoff_count = 0;
 if (envio.deve_fazer_handoff) {
   const briefing = envio.briefing || {};
-  let handoffRaw = briefing.handoff_telefone || '';
-  let d = (handoffRaw || '').replace(/\D/g, '');
-  if (d.startsWith('55') && d.length > 11) d = d.slice(2);
-  let handoffPhone = null;
-  if (d.length === 10 || d.length === 11) {
+  // Suporta array novo + string legada (retrocompat)
+  const rawList = Array.isArray(briefing.handoff_telefones) && briefing.handoff_telefones.length > 0
+    ? briefing.handoff_telefones
+    : (briefing.handoff_telefone ? [briefing.handoff_telefone] : []);
+
+  function normalizeHandoff(raw) {
+    let d = (raw || '').replace(/\D/g, '');
+    if (d.startsWith('55') && d.length > 11) d = d.slice(2);
+    if (d.length !== 10 && d.length !== 11) return null;
     if (d.length === 10) {
       const c = parseInt(d[2], 10);
       if (c >= 6) d = d.slice(0, 2) + '9' + d.slice(2);
     }
-    handoffPhone = '55' + d;
+    return '55' + d;
   }
 
-  if (handoffPhone && handoffPhone !== phone) {
+  const normalizados = [...new Set(
+    rawList.map(normalizeHandoff).filter(p => p && p !== phone)
+  )];
+
+  if (normalizados.length === 0) {
+    resultados.push({ to: 'handoff', skipped: true, reason: 'nenhum handoff_telefone válido' });
+  } else {
     const nomeCampanha = envio.campanha_nome || 'campanha';
     const motivo = envio.motivo_alerta || 'lead precisa de atenção';
     const txtAlerta = `🚨 *Lead pediu atenção — ${nomeCampanha}*\n\nTelefone: ${envio.telefone}\nMotivo: ${motivo}\n\nÚltima msg do lead: "${(envio._last_lead_text || '').slice(0, 200)}"\n\nAbra a conversa no CRM pra assumir.`;
-    handoff_info = { phone: handoffPhone, text: txtAlerta };
-    const rH = await sendText(handoffPhone, txtAlerta);
-    resultados.push({ to: 'handoff', ok: rH.ok, phone: handoffPhone, status: rH.status, err: rH.err });
-    handoff_enviado = rH.ok;
-  } else {
-    resultados.push({ to: 'handoff', skipped: true, reason: 'sem handoff_telefone válido no briefing' });
+
+    for (const handoffPhone of normalizados) {
+      const rH = await sendText(handoffPhone, txtAlerta);
+      resultados.push({ to: 'handoff', ok: rH.ok, phone: handoffPhone, status: rH.status, err: rH.err });
+      if (rH.ok) handoff_count++;
+      // Pequeno delay entre handoffs pra não bloquear o chip
+      await sleep(600 + Math.random() * 400);
+    }
+    handoff_enviado = handoff_count > 0;
   }
 }
 
@@ -301,7 +314,7 @@ return [{
     envio_resultados: resultados,
     total_enviadas: resultados.filter(r => r.to === 'lead' && r.ok).length,
     handoff_enviado,
-    handoff_info,
+    handoff_count,
   }
 }];
 '''
