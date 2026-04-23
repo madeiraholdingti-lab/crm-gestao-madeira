@@ -1,6 +1,6 @@
 # Guia passo-a-passo — Izadora testar Disparos em Massa
 
-Este guia é pra você (Izadora) reativar e validar a campanha de disparos, incluindo a IA que conversa com os leads. Qualquer dúvida, me chama.
+Este guia é pra você (Isadora) reativar e validar a campanha de disparos, incluindo a IA que conversa com os leads. Qualquer dúvida, me chama.
 
 ---
 

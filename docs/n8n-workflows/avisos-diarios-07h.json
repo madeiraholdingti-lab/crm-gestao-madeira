@@ -1,6 +1,6 @@
 [
   {
-    "updatedAt": "2026-04-19T00:17:30.000Z",
+    "updatedAt": "2026-04-23T17:46:03.000Z",
     "createdAt": "2026-03-15T15:49:49.418Z",
     "id": "FI8jlVFPeKC6rtiH",
     "name": "AvisosDiarios",
@@ -51,7 +51,7 @@
       },
       {
         "parameters": {
-          "jsCode": "const dados = $input.first().json;\nconst dia = Array.isArray(dados) ? dados[0] : dados;\nconst total = dia.total;\nconst tarefas = dia.tarefas || [];\n\nif (total === 0) {\n  const mensagem = `Bom dia, Dr. Maikon! ☀️\\n\\nNenhuma tarefa na coluna *Lembrar Dr. Maikon* hoje. Dia livre pra focar no que importa!`;\n  return [{ json: { mensagem } }];\n}\n\n// Agrupa por urgência\nconst grupos = { atrasada: [], hoje: [], amanha: [], futura: [], sem_prazo: [] };\nfor (const t of tarefas) grupos[t.urgencia || 'sem_prazo'].push(t);\n\nfunction bloco(titulo, emoji, lista) {\n  if (!lista.length) return '';\n  const linhas = lista.map((t, i) => {\n    const prazo = t.prazo_label ? ` (${t.prazo_label})` : '';\n    return `${i + 1}. ${t.titulo}${prazo}`;\n  }).join('\\n');\n  return `\\n${emoji} *${titulo}* (${lista.length})\\n${linhas}\\n`;\n}\n\nlet corpo = '';\ncorpo += bloco('ATRASADAS', '🔴', grupos.atrasada);\ncorpo += bloco('HOJE',      '🟡', grupos.hoje);\ncorpo += bloco('AMANHÃ',    '🟢', grupos.amanha);\ncorpo += bloco('FUTURAS',   '⏳', grupos.futura);\ncorpo += bloco('SEM PRAZO', '📝', grupos.sem_prazo);\n\nconst mensagem = `Bom dia, Dr. Maikon! ☀️\\n\\nVocê tem *${total} tarefa${total !== 1 ? 's' : ''}* para lembrar hoje (${dia.data}):\\n${corpo}`;\n\nreturn [{ json: { mensagem } }];\n"
+          "jsCode": "const dados = $input.first().json;\nconst dia = Array.isArray(dados) ? dados[0] : dados;\nconst total = dia.total;\nconst tarefas = dia.tarefas || [];\n\nconst lista = tarefas\n  .map((t, i) => `${i + 1}. ${t.titulo}`)\n  .join('\\n');\n\nconst mensagem = total === 0\n  ? `Bom dia, Dr. Maikon! ☀️\\n\\nNão há tarefas com prazo para hoje na coluna Lembrar Dr. Maikon.`\n  : `Bom dia, Dr. Maikon, Tudo bem? 😊\\nHoje você tem *${total} tarefa${total !== 1 ? 's' : ''}* para lembrar:\\n\\n📋 *Lembretes de hoje (${dia.data}):*\\n${lista}`;\n\nreturn [{ json: { mensagem } }];\n"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
@@ -140,9 +140,9 @@
       "templateCredsSetupCompleted": true
     },
     "pinData": {},
-    "versionId": "3943d8e8-86a2-4cc0-bf22-ac363e617a7c",
-    "activeVersionId": "3943d8e8-86a2-4cc0-bf22-ac363e617a7c",
-    "versionCounter": 80,
+    "versionId": "be8344a1-c697-4b9d-b8a1-b34b8215e6b7",
+    "activeVersionId": "be8344a1-c697-4b9d-b8a1-b34b8215e6b7",
+    "versionCounter": 83,
     "triggerCount": 1,
     "tags": [],
     "shared": [
