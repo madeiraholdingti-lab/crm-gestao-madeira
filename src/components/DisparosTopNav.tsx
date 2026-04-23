@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Users, Target, Send, Home, Ban } from "lucide-react";
+import { Users, Target, Send, Home, Ban, BarChart3 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ const menuItems = [
   { title: "Leads", path: "/disparos-em-massa/leads", icon: Users, exact: false, countKey: "leads" as const },
   { title: "Campanhas", path: "/disparos-em-massa/campanhas", icon: Target, exact: false, countKey: "campanhas" as const },
   { title: "Envios", path: "/disparos-em-massa/envios", icon: Send, exact: false, countKey: "envios" as const },
+  { title: "Relatórios", path: "/disparos-em-massa/relatorios", icon: BarChart3, exact: false, countKey: null },
   { title: "Blacklist", path: "/disparos-em-massa/blacklist", icon: Ban, exact: false, countKey: "blacklist" as const },
 ];
 

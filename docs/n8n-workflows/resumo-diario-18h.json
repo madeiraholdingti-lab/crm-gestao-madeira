@@ -1,0 +1,228 @@
+[
+  {
+    "updatedAt": "2026-04-19T01:35:40.000Z",
+    "createdAt": "2026-04-19T01:35:30.579Z",
+    "id": "ResumoDiario18h001",
+    "name": "ResumoDiario18h",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "triggerAtHour": 21,
+                "triggerAtMinute": 0
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          -600,
+          0
+        ],
+        "id": "sched-resumo-01",
+        "name": "18h BRT"
+      },
+      {
+        "parameters": {
+          "url": "https://yycpctrcefxemgahhxgx.supabase.co/functions/v1/resumo-conversas-pendentes",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -380,
+          0
+        ],
+        "id": "http-resumo-01",
+        "name": "getResumo",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "OPA8HBi9BNq9kmhK",
+            "name": "getTask"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Formata msg de resumo com DUAS seções:\n// 1. SDR Zap (conversas pendentes) — já existia\n// 2. Campanhas (enviados/respondidos/qualificados, chips, handoffs pendentes) — novo\n\n// --- Seção SDR Zap ---\nconst sdrData = $('getResumo').item.json;\nconst { por_responsavel = [], total_respondidas_hoje = 0, total_aguardando = 0, gerado_em } = sdrData;\nconst dataFormatada = new Date(gerado_em || Date.now()).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });\n\nlet secoesSdr = '';\nfor (const resp of por_responsavel) {\n  const items = (resp.pendentes || [])\n    .sort((a, b) => b.tempo_minutos - a.tempo_minutos)\n    .slice(0, 5)\n    .map(p => {\n      const emoji = p.urgencia === 'urgente' ? '🔴' : p.urgencia === 'atencao' ? '🟡' : '🟢';\n      const tempo = p.tempo_minutos >= 60 ? Math.floor(p.tempo_minutos/60) + 'h' : p.tempo_minutos + 'min';\n      return `  ${emoji} ${p.nome_contato} — ${tempo} sem resposta`;\n    }).join('\\n');\n  secoesSdr += `\\n👩‍💼 *${resp.nome}*: ${resp.total} pendente${resp.total !== 1 ? 's' : ''}\\n${items}\\n`;\n}\n\nconst blocoSdr = total_aguardando === 0\n  ? `✅ SDR Zap: todas conversas respondidas (${total_respondidas_hoje} hoje)`\n  : `💬 *SDR ZAP*\\n${secoesSdr}\\n✅ Respondidas hoje: ${total_respondidas_hoje}\\n⚠️ Aguardando: ${total_aguardando}`;\n\n// --- Seção Campanhas ---\nconst campData = $json || {};\nconst { totais = {}, por_campanha = [], chips_pausados = [], handoffs_pendentes = [] } = campData;\n\nlet blocoCamp = '';\nif ((totais.campanhas_ativas || 0) === 0) {\n  blocoCamp = '\\n\\n📭 *CAMPANHAS*\\nNenhuma campanha ativa.';\n} else {\n  let linhasCamp = '';\n  for (const c of por_campanha) {\n    linhasCamp += `\\n• *${c.nome}*: ${c.enviados_hoje} enviadas, ${c.respondidos_hoje} responderam (${c.taxa_resposta_pct}%), ${c.qualificados_hoje} quentes`;\n    if (c.descartados_hoje > 0) linhasCamp += `, ${c.descartados_hoje} descartadas`;\n    if (c.falhas_hoje > 0) linhasCamp += `, ${c.falhas_hoje} falhas`;\n  }\n  if (!linhasCamp) linhasCamp = '\\n(sem atividade hoje — disparo pausado ou aguardando ciclo)';\n\n  blocoCamp = `\\n\\n📊 *CAMPANHAS* (${totais.campanhas_ativas} ativa${totais.campanhas_ativas > 1 ? 's' : ''})${linhasCamp}`;\n  blocoCamp += `\\n\\n📈 Total hoje: ${totais.enviados_hoje} enviadas, ${totais.respondidos_hoje} respostas, ${totais.qualificados_hoje} quentes`;\n  if (totais.em_conversa_agora > 0) blocoCamp += `\\n💬 Em conversa agora: ${totais.em_conversa_agora}`;\n}\n\n// Chips pausados (alerta crítico)\nif (chips_pausados.length > 0) {\n  blocoCamp += `\\n\\n⚠️ *CHIPS PAUSADOS* (${chips_pausados.length}):`;\n  for (const chip of chips_pausados.slice(0, 5)) {\n    blocoCamp += `\\n• ${chip.nome || 'sem nome'} ${chip.numero ? `(${chip.numero})` : ''}`;\n  }\n  blocoCamp += `\\nAbra /zaps no CRM pra reconectar.`;\n}\n\n// Handoffs pendentes\nif (handoffs_pendentes.length > 0) {\n  blocoCamp += `\\n\\n🔥 *LEADS QUENTES AGUARDANDO* (${handoffs_pendentes.length}):`;\n  for (const h of handoffs_pendentes.slice(0, 5)) {\n    const quando = new Date(h.respondeu_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });\n    blocoCamp += `\\n• ${h.telefone} (${h.campanha_nome}) — ${quando}`;\n  }\n}\n\nconst mensagem = `📊 *RESUMO DO DIA* — ${dataFormatada}\\n\\n${blocoSdr}${blocoCamp}`;\n\nreturn [{ json: { mensagem } }];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -60,
+          0
+        ],
+        "id": "code-resumo-01",
+        "name": "formatarMsg"
+      },
+      {
+        "parameters": {
+          "resource": "messages-api",
+          "instanceName": "isadoraVolek",
+          "remoteJid": "5547992153480",
+          "messageText": "={{ $json.mensagem }}",
+          "options_message": {}
+        },
+        "type": "n8n-nodes-evolution-api.evolutionApi",
+        "typeVersion": 1,
+        "position": [
+          60,
+          -100
+        ],
+        "id": "evo-resumo-01",
+        "name": "EnviarMaikon",
+        "credentials": {
+          "evolutionApi": {
+            "id": "nZ2r3X9p3Hy1wV6t",
+            "name": "Evolution account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "resource": "messages-api",
+          "instanceName": "isadoraVolek",
+          "remoteJid": "5547996968403",
+          "messageText": "={{ $json.mensagem }}",
+          "options_message": {}
+        },
+        "type": "n8n-nodes-evolution-api.evolutionApi",
+        "typeVersion": 1,
+        "position": [
+          60,
+          100
+        ],
+        "id": "evo-resumo-02",
+        "name": "EnviarRaul",
+        "credentials": {
+          "evolutionApi": {
+            "id": "nZ2r3X9p3Hy1wV6t",
+            "name": "Evolution account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "https://yycpctrcefxemgahhxgx.supabase.co/functions/v1/resumo-campanhas-diario",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "node-get-campanhas",
+        "name": "getCampanhasResumo",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -270,
+          0
+        ],
+        "continueOnFail": true
+      }
+    ],
+    "connections": {
+      "18h BRT": {
+        "main": [
+          [
+            {
+              "node": "getResumo",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "getResumo": {
+        "main": [
+          [
+            {
+              "node": "getCampanhasResumo",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "formatarMsg": {
+        "main": [
+          [
+            {
+              "node": "EnviarMaikon",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "EnviarRaul",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "getCampanhasResumo": {
+        "main": [
+          [
+            {
+              "node": "formatarMsg",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": null,
+    "staticData": {
+      "node:18h BRT": {
+        "recurrenceRules": []
+      }
+    },
+    "meta": null,
+    "pinData": null,
+    "versionId": "941b0a5c-8afc-4d65-bbbd-f47f4475ea50",
+    "activeVersionId": "941b0a5c-8afc-4d65-bbbd-f47f4475ea50",
+    "versionCounter": 28,
+    "triggerCount": 1,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-04-19T01:35:30.584Z",
+        "createdAt": "2026-04-19T01:35:30.584Z",
+        "role": "workflow:owner",
+        "workflowId": "ResumoDiario18h001",
+        "projectId": "SxdFFgTI1TnpBH27",
+        "project": {
+          "updatedAt": "2025-11-16T10:10:31.438Z",
+          "createdAt": "2025-11-16T09:28:51.588Z",
+          "id": "SxdFFgTI1TnpBH27",
+          "name": "ewertonq rtubi <madeira.holding.ti@gmail.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "creatorId": "9993fbf2-3e9a-492f-bc43-2e0e36047f12"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": null,
+      "description": null
+    }
+  }
+]

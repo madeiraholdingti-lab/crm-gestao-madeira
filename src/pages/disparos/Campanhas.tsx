@@ -84,7 +84,9 @@ interface BriefingIA {
   contexto?: string;
   objecoes?: Array<{ pergunta: string; resposta: string }>;
   handoff_keywords?: string[];
+  /** @deprecated — use handoff_telefones (array). Mantido pra retrocompat */
   handoff_telefone?: string;
+  handoff_telefones?: string[]; // Telefones que recebem alerta quando alerta_lead=true
   handoff_numero_chip?: string;
 }
 
@@ -137,7 +139,7 @@ export default function CampanhasPage() {
       objetivo: "",
       contexto: "",
       handoff_keywords: ["salario", "salário", "valor", "remuneração"],
-      handoff_telefone: "",
+      handoff_telefones: [] as string[],
       handoff_numero_chip: "",
     } as BriefingIA,
   });
@@ -323,7 +325,7 @@ export default function CampanhasPage() {
       briefing_ia: {
         ia_ativa: false, persona: "", objetivo: "", contexto: "",
         handoff_keywords: ["salario", "salário", "valor", "remuneração"],
-        handoff_telefone: "", handoff_numero_chip: "",
+        handoff_telefones: [], handoff_numero_chip: "",
       },
     });
   };
@@ -356,6 +358,13 @@ export default function CampanhasPage() {
     const briefingRaw = (c.briefing_ia as BriefingIA | null) || null;
     const chipIdsRaw = (c.chip_ids as string[] | null) || (campanha.instancia_id ? [campanha.instancia_id] : []);
 
+    // Migração: se vier só handoff_telefone (legado), converte pra handoff_telefones[]
+    const briefingMigrado: BriefingIA | null = briefingRaw ? {
+      ...briefingRaw,
+      handoff_telefones: briefingRaw.handoff_telefones
+        ?? (briefingRaw.handoff_telefone ? [briefingRaw.handoff_telefone] : []),
+    } : null;
+
     setFormCampanha({
       nome: campanha.nome,
       descricao: campanha.descricao || "",
@@ -374,10 +383,10 @@ export default function CampanhasPage() {
       horario_fim: (c.horario_fim as string) || "18:00",
       dias_semana: (c.dias_semana as number[]) || [1, 2, 3, 4, 5],
       spintax_ativo: (c.spintax_ativo as boolean) ?? true,
-      briefing_ia: briefingRaw || {
+      briefing_ia: briefingMigrado || {
         ia_ativa: false, persona: "", objetivo: "", contexto: "",
         handoff_keywords: ["salario", "salário", "valor", "remuneração"],
-        handoff_telefone: "", handoff_numero_chip: "",
+        handoff_telefones: [], handoff_numero_chip: "",
       },
     });
     setCampanhaDialogOpen(true);
@@ -756,18 +765,24 @@ export default function CampanhasPage() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-3">
                     <div>
-                      <Label className="text-xs">Telefone do humano pra escalar</Label>
+                      <Label className="text-xs">Telefones que recebem alerta de handoff (1 ou mais)</Label>
                       <Input
-                        value={formCampanha.briefing_ia.handoff_telefone || ""}
+                        value={(formCampanha.briefing_ia.handoff_telefones || []).join(", ")}
                         onChange={(e) => setFormCampanha(prev => ({
                           ...prev,
-                          briefing_ia: { ...prev.briefing_ia, handoff_telefone: e.target.value },
+                          briefing_ia: {
+                            ...prev.briefing_ia,
+                            handoff_telefones: e.target.value.split(",").map(s => s.trim()).filter(Boolean),
+                          },
                         }))}
-                        placeholder="Ex: 5547999999999"
+                        placeholder="Ex: 5547999999999, 5547988888888"
                         className="bg-card font-mono text-xs"
                       />
+                      <p className="text-[10px] text-mh-ink-3 mt-1">
+                        Cada telefone recebe alerta quando a IA identificar lead interessado ou palavra-chave. Separe por vírgula.
+                      </p>
                     </div>
                     <div>
                       <Label className="text-xs">Palavras-chave pra escalar</Label>
