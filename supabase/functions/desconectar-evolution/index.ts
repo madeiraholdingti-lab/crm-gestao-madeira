@@ -120,24 +120,66 @@ serve(async (req) => {
 
     console.log("[LIMPEZA AGRESSIVA] Sequência de limpeza completa executada");
 
-    // Verificar se ao menos o logout foi bem-sucedido
+    // Detecta "Connection Closed" — socket zombie do Baileys. Evolution reporta 500
+    // mas a sessão WA provavelmente já está morta. Nesses casos, logout server-side
+    // não vai funcionar, mas atualizar local permite o usuário regerar QR normalmente.
+    const logoutBody = JSON.stringify(logoutData || {});
+    const socketZombie = logoutResponse.status >= 500 && /connection closed|socket|not connected/i.test(logoutBody);
+
+    if (socketZombie) {
+      console.warn(`[LOGOUT] Socket zombie detectado em ${instanceName} — Evolution retornou ${logoutResponse.status} mas sessão já está morta. Marcando como desconectada localmente.`);
+      // Atualiza status no banco pra 'desconectada' — usuário vê o estado correto
+      // e pode regerar QR Code imediatamente
+      try {
+        await supabase
+          .from('instancias_whatsapp')
+          .update({ status: 'inativa', updated_at: new Date().toISOString() })
+          .eq('nome_instancia', instanceName);
+      } catch (e) {
+        console.warn('[LOGOUT] erro atualizar status local:', e);
+      }
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Instância marcada como desconectada (o socket do WhatsApp já estava morto, precisará gerar novo QR Code)",
+          data: {
+            logout: logoutData,
+            socketZombie: true,
+            action: "regenerate_qr"
+          }
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Erros diferentes (não socket zombie): reporta
     if (!logoutResponse.ok && logoutResponse.status !== 404) {
       console.error(`[ERRO] Falha crítica no logout: ${logoutResponse.status}`);
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error: `Logout falhou com status ${logoutResponse.status}`,
           details: logoutData
         }),
-        { 
-          status: 200, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
 
+    // Sucesso normal — marca como desconectada no banco também
+    try {
+      await supabase
+        .from('instancias_whatsapp')
+        .update({ status: 'desconectada', updated_at: new Date().toISOString() })
+        .eq('nome_instancia', instanceName);
+    } catch (e) {
+      console.warn('[LOGOUT] erro atualizar status local:', e);
+    }
+
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: true,
         message: "Instância desconectada e limpa com sucesso",
         data: {
@@ -145,9 +187,9 @@ serve(async (req) => {
           cleanupCompleted: true
         }
       }),
-      { 
-        status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
 
