@@ -5,6 +5,45 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/**
+ * Gera todas as variantes plausíveis do mesmo número BR, cobrindo:
+ * - com/sem prefixo "55" (código do país)
+ * - com/sem "9" mobile (celular novo vs antigo)
+ * - últimos 10/11 dígitos pra match parcial
+ *
+ * Essencial porque o Evolution API às vezes envia o phone sem o "9" de celular
+ * (ex: 555484351512) enquanto o banco tem com (ex: 5554984351512). Sem isso,
+ * matches por telefone falham e criamos contatos duplicados.
+ */
+function gerarVariantesTelefoneBR(raw: string): string[] {
+  const digits = (raw || '').replace(/\D/g, '');
+  if (!digits) return [];
+  const set = new Set<string>([digits]);
+  const sem55 = digits.startsWith('55') ? digits.slice(2) : digits;
+  if (sem55) {
+    set.add(sem55);
+    set.add('55' + sem55);
+  }
+  // Sem 9 mobile: "AABXXXXXXXX" (11 dígitos, 3º caractere é 9)
+  if (sem55.length === 11 && sem55[2] === '9') {
+    const sem9 = sem55.slice(0, 2) + sem55.slice(3);
+    set.add(sem9);
+    set.add('55' + sem9);
+  }
+  // Com 9 mobile: "AABXXXXXXXX" (10 dígitos, sem o 9)
+  if (sem55.length === 10) {
+    const com9 = sem55.slice(0, 2) + '9' + sem55.slice(2);
+    set.add(com9);
+    set.add('55' + com9);
+  }
+  // Fallback: últimos 10/11
+  const last10 = digits.slice(-10);
+  const last11 = digits.slice(-11);
+  if (last10) { set.add(last10); set.add('55' + last10); }
+  if (last11) { set.add(last11); set.add('55' + last11); }
+  return [...set].filter(v => v.length >= 10);
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -435,18 +474,35 @@ Deno.serve(async (req) => {
     const instanceUuid = data.instanceId || payload.body?.instance || payload.instance;
     const instanceName = payload.body?.instance || payload.instance;
 
-    // 1. Buscar ou criar contato
+    // 1. Buscar ou criar contato — considera variantes com/sem 9 de celular
+    // pra evitar duplicar contatos quando Evolution envia sem o 9 mobile
+    // (Ex: 555484351512 é o mesmo contato que 5554984351512)
     let contact = null;
-    const { data: existingContact, error: selectError } = await supabase
+    const phoneVariants = gerarVariantesTelefoneBR(phone);
+    const jidVariants = phoneVariants.map(p =>
+      remoteJid.includes('@') ? `${p}@${remoteJid.split('@')[1]}` : p
+    );
+
+    // Busca por JID exato OU qualquer variante de JID OU qualquer variante de phone
+    const { data: existingContacts, error: selectError } = await supabase
       .from('contacts')
       .select('*')
-      .eq('jid', remoteJid)
-      .maybeSingle();
+      .or(
+        `jid.in.(${jidVariants.join(',')}),phone.in.(${phoneVariants.join(',')})`
+      )
+      .order('created_at', { ascending: true })
+      .limit(5);
 
     if (selectError) {
       console.error('Erro ao buscar contato:', selectError);
       throw selectError;
     }
+
+    // Se encontrou mais de 1 variante, pega o que bate exato primeiro, senão o mais antigo
+    const existingContact = (existingContacts || []).find(c => c.jid === remoteJid)
+      || (existingContacts || []).find(c => c.phone === phone)
+      || (existingContacts || [])[0]
+      || null;
 
     // Função auxiliar para buscar foto de perfil
     const fetchProfilePicture = async (phoneNumber: string, instName: string): Promise<string | null> => {
@@ -1060,16 +1116,7 @@ Deno.serve(async (req) => {
             isOptOut = true;
             console.log(`[opt-out] Detectado em msg do ${phone}: "${messageText.slice(0, 60)}"`);
             try {
-              const digitsOnly = phone.replace(/\D/g, '');
-              const variantes = [
-                digitsOnly,
-                digitsOnly.startsWith('55') ? digitsOnly.slice(2) : '55' + digitsOnly,
-              ];
-              const last10 = digitsOnly.slice(-10);
-              const last11 = digitsOnly.slice(-11);
-              if (last10) variantes.push(last10, '55' + last10);
-              if (last11) variantes.push(last11, '55' + last11);
-              const phoneVariants = [...new Set(variantes)];
+              const phoneVariants = gerarVariantesTelefoneBR(phone);
 
               // 1. Marca todos campanha_envios ativos desse telefone como descartado
               const { data: enviosAtivos } = await supabase
@@ -1128,21 +1175,10 @@ Deno.serve(async (req) => {
         // Skipamos se foi opt-out (já marcamos descartado).
         if (!isOptOut && isFromContact && contact?.id && phone) {
           try {
-            const digitsOnly = phone.replace(/\D/g, '');
-            // Variações pra match: cru, com 55 prefix, sem 9
-            const variantes = [
-              digitsOnly,
-              digitsOnly.startsWith('55') ? digitsOnly.slice(2) : '55' + digitsOnly,
-            ];
-            const last10 = digitsOnly.slice(-10);
-            const last11 = digitsOnly.slice(-11);
-            if (last10) variantes.push(last10, '55' + last10);
-            if (last11) variantes.push(last11, '55' + last11);
-
             const { data: envioAtivo } = await supabase
               .from('campanha_envios')
               .select('id, status, respondeu_em, telefone, campanha:campanha_id(status, briefing_ia)')
-              .in('telefone', [...new Set(variantes)])
+              .in('telefone', gerarVariantesTelefoneBR(phone))
               .in('status', ['enviado', 'em_conversa'])
               .order('enviado_em', { ascending: false })
               .limit(1)
