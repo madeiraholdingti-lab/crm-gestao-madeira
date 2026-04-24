@@ -193,7 +193,15 @@ export default function ConfiguracaoEvolution() {
         const instanceName = evol.name || evol.instance?.instanceName || evol.instanceName;
         const local = instanciasLocal.find(l => l.instancia_id === instanceName || l.nome_instancia === instanceName);
         const numeroConectado = evol.ownerJid ? evol.ownerJid.split('@')[0] : '';
-        
+
+        // Override local: se marcado como 'inativa' no banco, força UI como desconectado
+        // mesmo se Evolution reporta 'open'. Isso cobre o caso do "socket zombie" — Evolution
+        // API às vezes mantém connectionStatus=open depois de um logout que falhou internamente,
+        // impedindo o usuário de regerar QR. O fix em desconectar-evolution já atualiza o banco
+        // pra 'inativa' nesses casos; aqui respeitamos esse estado.
+        const forcedDisconnected = local?.status === 'inativa';
+        const statusRealEffective = forcedDisconnected ? 'close' : evol.connectionStatus;
+
         return {
           id: local?.id || instanceName,
           nome_instancia: local?.nome_instancia || instanceName,
@@ -202,12 +210,12 @@ export default function ConfiguracaoEvolution() {
           token_instancia: local?.token_instancia,
           tipo_canal: local?.tipo_canal,
           numero_chip: local?.numero_chip,
-          ativo: evol.connectionStatus === 'open',
+          ativo: !forcedDisconnected && evol.connectionStatus === 'open',
           created_at: local?.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString(),
           cor_identificacao: local?.cor_identificacao || "#3B82F6",
           evolutionData: evol,
-          statusReal: evol.connectionStatus,
+          statusReal: statusRealEffective,
           numeroConectado: numeroConectado,
         };
       });
@@ -487,13 +495,26 @@ export default function ConfiguracaoEvolution() {
             pollingRef.current = null;
           }
 
+          // Limpar flag local de 'inativa' (caso tenha sido marcada por desconexão anterior
+          // com socket zombie). Sem isso, o override em fetchInstancias continua mostrando
+          // como desconectada mesmo após QR ser escaneado.
+          try {
+            await supabase
+              .from('instancias_whatsapp')
+              .update({ status: 'ativa', updated_at: new Date().toISOString() })
+              .eq('nome_instancia', instanceName)
+              .in('status', ['inativa']);
+          } catch (e) {
+            console.warn('Erro ao limpar flag local inativa:', e);
+          }
+
           // Mostrar sucesso no modal
           setQrStatus("success");
           setQrStatusMessage("WhatsApp conectado com sucesso! Configurando webhook...");
 
           // Configurar webhook após conexão confirmada
           await configurarWebhookAposConexao(instanceName);
-          
+
           // Fechar modal e atualizar lista
           setTimeout(() => {
             setShowQrModal(false);
