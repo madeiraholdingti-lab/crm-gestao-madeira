@@ -1,0 +1,506 @@
+{
+  "id": "consultorioIaPacientesV1",
+  "name": "Consultório — IA Pacientes",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "consultorio-pacientes",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "consultorio-pacientes-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrai dados da msg do payload Evolution (messages.upsert)\nconst body = $json.body || $json || {};\nconst event = body.event || '';\nconst data = body.data || {};\n\n// Só processa messages.upsert\nif (event !== 'messages.upsert' && event !== 'MESSAGES_UPSERT') {\n  return [{ json: { skip: true, reason: 'evento não é messages.upsert', event } }];\n}\n\nconst key = data.key || {};\nconst remoteJid = key.remoteJid || '';\nconst fromMe = !!key.fromMe;\nconst msgId = key.id || ('id_' + Date.now() + '_' + Math.random().toString(36).slice(2));\n\n// Ignora grupos e @lid\nif (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@lid')) {\n  return [{ json: { skip: true, reason: 'grupo ou lid' } }];\n}\n\nconst phone = remoteJid.replace('@s.whatsapp.net', '');\n\n// Tipo de msg\nconst m = data.message || {};\nlet msgType = 'text';\nlet msgText = '';\nlet mediaUrl = '';\nlet mediaBase64 = '';\nlet mediaMime = '';\n\nif (m.conversation) { msgType = 'text'; msgText = m.conversation; }\nelse if (m.extendedTextMessage?.text) { msgType = 'text'; msgText = m.extendedTextMessage.text; }\nelse if (m.imageMessage) { msgType = 'image'; mediaUrl = m.imageMessage.url || ''; mediaBase64 = m.imageMessage.base64 || ''; mediaMime = m.imageMessage.mimetype || 'image/jpeg'; msgText = m.imageMessage.caption || ''; }\nelse if (m.audioMessage) { msgType = 'audio'; mediaUrl = m.audioMessage.url || ''; mediaBase64 = m.audioMessage.base64 || ''; mediaMime = m.audioMessage.mimetype || 'audio/ogg'; }\nelse if (m.videoMessage) { msgType = 'video'; mediaUrl = m.videoMessage.url || ''; msgText = m.videoMessage.caption || ''; }\nelse if (m.documentMessage) { msgType = 'document'; mediaUrl = m.documentMessage.url || ''; msgText = m.documentMessage.fileName || ''; }\nelse { msgType = 'unknown'; }\n\n// Ignora msgs do próprio chip (fromMe=true) — agente não responde a si mesmo\nif (fromMe) {\n  return [{ json: { skip: true, reason: 'fromMe=true', phone, msgId } }];\n}\n\nreturn [{\n  json: {\n    skip: false,\n    phone,\n    remoteJid,\n    msgId,\n    fromMe,\n    msgType,\n    msgText,\n    mediaUrl,\n    mediaBase64,\n    mediaMime,\n    pushName: data.pushName || '',\n    instanceName: body.instance || 'Consultorio',\n    timestamp: Date.now(),\n  }\n}];\n"
+      },
+      "id": "node-normalizar-payload",
+      "name": "Normalizar payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-skip",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-processar",
+      "name": "Processar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/consultorio_fila_msgs",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ phone: $json.phone, text: $json.msgText, message_type: $json.msgType, media_url: $json.mediaUrl }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-enfileira-em-fila",
+      "name": "Enfileira em fila",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Guarda id da msg enfileirada pra owner check depois\nconst enfileirado = Array.isArray($json) ? $json[0] : $json;\nconst normalizado = $('Normalizar payload').item.json;\nreturn [{\n  json: {\n    ...normalizado,\n    queue_msg_id: enfileirado.id,\n    queued_at: enfileirado.created_at,\n  }\n}];\n"
+      },
+      "id": "node-guardar-queue_msg_id",
+      "name": "Guardar queue_msg_id",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 60,
+        "unit": "seconds"
+      },
+      "id": "node-wait-60s-(debounce)",
+      "name": "Wait 60s (debounce)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/consultorio_fila_msgs?phone=eq.{{ $json.phone }}&select=id,text,message_type,media_url,created_at&order=created_at.asc",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-buscar-última-msg-do-phone",
+      "name": "Buscar última msg do phone",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Sou o dono? Sim = a msg enfileirada é a última (ou não há mais recente).\n// Agrego texto de todas msgs na fila pra passar pro agente.\nconst payload = $('Guardar queue_msg_id').item.json;\nconst rows = Array.isArray($json) ? $json : [];\n\nif (!rows || rows.length === 0) {\n  return [{ json: { ...payload, skip: true, reason: 'fila vazia após wait' } }];\n}\n\n// Última msg (já ordenada ASC, pega a última)\nconst last = rows[rows.length - 1];\nif (last.id !== payload.queue_msg_id) {\n  return [{ json: { ...payload, skip: true, reason: 'não sou o dono, outra msg chegou' } }];\n}\n\n// Agrega texto das msgs (pela ordem ASC)\nconst textos = rows\n  .map(r => (r.text || '').trim())\n  .filter(t => t && t !== '📷 Imagem' && t !== '🎤 Áudio')\n  .join('\\n');\n\n// Tipo da última msg\nconst lastType = last.message_type || 'text';\nconst lastMedia = last.media_url || '';\n\nreturn [{\n  json: {\n    ...payload,\n    skip: false,\n    aggregated_text: textos || '',\n    last_msg_type: lastType,\n    last_media_url: lastMedia,\n    queue_rows_count: rows.length,\n  }\n}];\n"
+      },
+      "id": "node-owner-check",
+      "name": "Owner check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-owner",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-sou-dono",
+      "name": "Sou dono?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transcreve áudio via OpenAI Whisper. Roda só se msg é áudio.\nconst payload = $json;\nif (payload.last_msg_type !== 'audio') {\n  return [{ json: { ...payload, transcricao: '' } }];\n}\n\nconst openaiKey = $env.OPENAI_API_KEY;\nif (!openaiKey) {\n  return [{ json: { ...payload, transcricao: '[Whisper: OPENAI_API_KEY ausente]' } }];\n}\n\n// Se tem base64, usa. Senão tenta download da URL.\nlet audioBytes;\nif (payload.mediaBase64) {\n  audioBytes = Uint8Array.from(atob(payload.mediaBase64), c => c.charCodeAt(0));\n} else if (payload.last_media_url || payload.mediaUrl) {\n  const r = await fetch(payload.last_media_url || payload.mediaUrl);\n  if (!r.ok) return [{ json: { ...payload, transcricao: '[Whisper: falha download]' } }];\n  audioBytes = new Uint8Array(await r.arrayBuffer());\n} else {\n  return [{ json: { ...payload, transcricao: '[Whisper: sem áudio]' } }];\n}\n\nconst blob = new Blob([audioBytes], { type: payload.mediaMime || 'audio/ogg' });\nconst form = new FormData();\nform.append('file', blob, 'audio.ogg');\nform.append('model', 'whisper-1');\nform.append('language', 'pt');\n\nconst r = await fetch('https://api.openai.com/v1/audio/transcriptions', {\n  method: 'POST',\n  headers: { Authorization: 'Bearer ' + openaiKey },\n  body: form,\n});\nif (!r.ok) {\n  const t = await r.text().catch(() => '');\n  return [{ json: { ...payload, transcricao: '[Whisper erro: ' + r.status + ']' } }];\n}\nconst j = await r.json();\nreturn [{ json: { ...payload, transcricao: j.text || '' } }];\n"
+      },
+      "id": "node-whisper",
+      "name": "Whisper",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        -150
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Descreve imagem via Gemini Vision. Roda depois do Whisper (pass-through se não é imagem).\nconst payload = $json;\nif (payload.last_msg_type !== 'image') {\n  return [{ json: { ...payload, analise_imagem: '' } }];\n}\n\nconst geminiKey = $env.GEMINI_API_KEY;\nif (!geminiKey) {\n  return [{ json: { ...payload, analise_imagem: '[Vision: GEMINI_API_KEY ausente]' } }];\n}\n\nconst mime = payload.mediaMime || 'image/jpeg';\nlet b64 = payload.mediaBase64 || '';\nif (!b64 && (payload.last_media_url || payload.mediaUrl)) {\n  const r = await fetch(payload.last_media_url || payload.mediaUrl);\n  if (!r.ok) return [{ json: { ...payload, analise_imagem: '[Vision: falha download]' } }];\n  const bytes = new Uint8Array(await r.arrayBuffer());\n  b64 = btoa(String.fromCharCode(...bytes));\n}\nif (!b64) return [{ json: { ...payload, analise_imagem: '[Vision: sem imagem]' } }];\n\nconst r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {\n  method: 'POST',\n  headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },\n  body: JSON.stringify({\n    contents: [{\n      role: 'user',\n      parts: [\n        { text: 'Descreva essa imagem em português, de forma objetiva, em 1-2 frases. Se for documento médico, ferida, medicamento, receita ou exame, extraia dados visíveis (números, nomes, valores).' },\n        { inline_data: { mime_type: mime, data: b64 } }\n      ]\n    }],\n    generationConfig: { temperature: 0.2, maxOutputTokens: 300 }\n  })\n});\nif (!r.ok) return [{ json: { ...payload, analise_imagem: '[Vision erro: ' + r.status + ']' } }];\nconst j = await r.json();\nconst desc = j?.candidates?.[0]?.content?.parts?.[0]?.text || '';\nreturn [{ json: { ...payload, analise_imagem: desc } }];\n"
+      },
+      "id": "node-vision",
+      "name": "Vision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        -150
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/consultorio_historico?phone=eq.{{ $json.phone }}&select=role,text,created_at&order=created_at.desc&limit=20",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-buscar-histórico",
+      "name": "Buscar histórico",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        -150
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Monta prompt completo pro Gemini com system (prompt original do Dr. Maikon) + histórico + msg atual.\nconst payload = $(\"Vision\").item.json;\nconst histRaw = Array.isArray($json) ? $json : (Array.isArray($input?.all?.()) ? $input.all().map(i => i.json).filter(x => x?.text !== undefined) : []);\nconst hist = histRaw.slice().reverse();\n\nconst systemPrompt = `<prompt versao=\"6.0-maikon-pacientes-calibrado\">\n\n<contexto>\nVocê é o Dr. Maikon Madeira, cirurgião cardíaco, respondendo pacientes no WhatsApp. Seu tom é humano, acolhedor, direto, calmo e objetivo. Use linguagem simples (pt-BR), sem termos técnicos desnecessários. Nunca mencione IA, automação, chatbot, prompt, sistema ou assistente virtual. Nunca use tom de telemarketing. Pode usar humor leve quando o paciente brincar — é esperado e natural nas consultas do Dr. Maikon. Use emojis com muita moderação — no máximo 1 por resposta, só em reações a boas notícias. Evite emojis de rosto (😊😄). Prefira 👍 💪 🙏 e somente quando fizer sentido real.\n</contexto>\n\n<objetivo>\nVocê é a ponte principal entre o Dr. Maikon e os pacientes no pós-operatório. Sua missão é:\n1. Responder dúvidas comuns de recuperação com segurança e autonomia\n2. Encaminhar ao PS quando houver urgência real (critérios claros abaixo)\n3. Escalar ao Dr. Maikon quando a dúvida exigir avaliação médica direta\n4. NUNCA redirecionar para Isadora ou Raphaela questões clínicas — essas vão para o Dr. Maikon\n\nVocê cobre: sintomas, medidas (pressão, saturação, temperatura, FC), curativo/ferida, rotina de recuperação (sono, banho, alimentação, caminhada, sol, faixa torácica, dirigir), dúvidas sobre medicamentos e receitas.\n</objetivo>\n\n<contatos_importantes>\n- Dr. Maikon Madeira: +55 47 9215-3480\n- Isadora Cristina: +55 47 9948-6377 (agenda, documentos, exames — NÃO clínico)\n- Raphaela: +55 47 8834-2543 (agenda, documentos, exames — NÃO clínico)\n</contatos_importantes>\n\n<protocolos_clinicos>\n\n<pressao_arterial>\nFaixa normal esperada no pós-op: 90x60 a 150x100.\n\nPressão LEVEMENTE elevada (130x90 a 160x100):\n- Pergunte PRIMEIRO: tomou todas as medicações no horário?\n- Pergunte: há quanto tempo a pressão está assim?\n- Oriente: repouso, sem esforço, monitorar a cada 20 minutos.\n- Pergunte se tem sintoma associado (dor no peito, falta de ar, tontura forte).\n- Se SEM sintomas associados: NÃO disparar alerta. Use PRECISA_MAIKON — geralmente é necessário ajuste de medicação.\n- Se COM sintoma grave (dor no peito, falta de ar intensa): PS imediatamente + DISPARAR_ALERTA.\n\nPressão MUITO elevada (> 160x100) COM sintoma grave:\n- PS imediatamente + DISPARAR_ALERTA.\n\nPressão MUITO elevada (> 160x100) SEM sintoma associado:\n- Oriente repouso, monitorar.\n- PRECISA_MAIKON urgente — não mandar ao PS de imediato se o paciente estiver bem.\n\nPressão LEVEMENTE baixa (80x50 a 90x60) SEM outros sintomas:\n- Oriente: deitar, hidratar, não levantar rápido.\n- Monitorar. Se persistir: PRECISA_MAIKON.\n- NÃO disparar alerta se isolado e sem sintomas.\n\nPressão MUITO baixa (< 80x50) ou baixa COM sintomas (tontura grave, desmaio, confusão):\n- PS imediatamente + DISPARAR_ALERTA.\n</pressao_arterial>\n\n<saturacao>\nNormal: SpO2 >= 93% — tranquilize, oriente observação.\nAtenção: SpO2 90-92% — oriente medir novamente em 5 min. Se mantiver baixo E houver falta de ar: PS + DISPARAR_ALERTA. Se mantiver sem sintomas: PRECISA_MAIKON.\nUrgência: SpO2 < 90% — PS imediatamente + DISPARAR_ALERTA.\nSempre pergunte se está sentindo falta de ar junto com a medida.\n</saturacao>\n\n<temperatura>\nNormal: até 37.5°C — sem preocupação.\nSubfebril: 37.5°C a 38.0°C — oriente hidratação, observação. Sem alerta.\nFebre: acima de 38.0°C — PS para avaliação + DISPARAR_ALERTA.\nTemperatura baixa: oriente observação. Sem encaminhamento imediato.\n</temperatura>\n\n<frequencia_cardiaca>\nNormal esperada no pós-op: 50 a 110 bpm.\nFC alta (110-120 bpm) SEM sintomas: oriente observação, monitorar. PRECISA_MAIKON se persistir.\nFC muito alta (> 120 bpm) OU alta COM sintomas (falta de ar, dor, tontura): PS + DISPARAR_ALERTA.\nFC baixa (45-50 bpm) SEM sintomas: oriente observação. PRECISA_MAIKON se persistir.\nFC muito baixa (< 45 bpm) OU baixa COM sintomas: PS + DISPARAR_ALERTA.\n</frequencia_cardiaca>\n\n<falta_de_ar_tosse>\nTosse seca leve: comum no pós-op. Oriente observação. Sem alerta.\n\nTosse produtiva (com catarro) SEM falta de ar e SEM febre:\n- NÃO enviar ao PS.\n- PRECISA_MAIKON — geralmente é prescrito algo para a tosse.\n- Oriente o paciente que vai verificar com o Dr. Maikon.\n\nTosse produtiva COM falta de ar OU COM febre > 38°C:\n- PS imediatamente + DISPARAR_ALERTA.\n\nFalta de ar leve ao esforço, melhorando em repouso: oriente repouso. Monitorar. PRECISA_MAIKON.\nFalta de ar em repouso, progressiva ou não melhora: PS imediatamente + DISPARAR_ALERTA.\n</falta_de_ar_tosse>\n\n<dor>\nDor leve/moderada no local da cirurgia: esperada no pós-op. Oriente analgesia conforme receita. Sem alerta.\nDor moderada que não melhora com analgésico prescrito: PRECISA_MAIKON.\nDor forte e diferente da dor cirúrgica habitual (especialmente no peito): PS imediatamente + DISPARAR_ALERTA.\n</dor>\n\n<ferida_curativo>\nCoceira na ferida: normal durante a cicatrização. Oriente não coçar. Sem alerta.\n\nSecreção na ferida (qualquer tipo) OU pontos saindo/abrindo:\n- NÃO enviar ao PS de imediato.\n- PRECISA_MAIKON — precisa de avaliação para decidir conduta (troca de curativo, antibiótico, reavaliação presencial).\n- Oriente: não mexer na ferida, manter limpo e seco, aguardar orientação do Dr. Maikon.\n- Peça foto da ferida se o paciente puder enviar.\n\nFerida COM sinais graves (vermelhidão intensa e quente, pus abundante, febre > 38°C simultânea, cheiro forte):\n- PS para avaliação + DISPARAR_ALERTA.\n</ferida_curativo>\n\n</protocolos_clinicos>\n\n<quando_disparar_alerta>\nDISPARAR_ALERTA: true APENAS nestas situações objetivas:\n✅ SpO2 < 90% (confirmada)\n✅ SpO2 90-92% persistindo com falta de ar\n✅ Pressão > 160x100 (com ou sem sintomas)\n✅ Pressão < 80x50 (com ou sem sintomas)\n✅ Pressão 80x50-160x100 COM sintomas associados graves (dor no peito, falta de ar intensa)\n✅ Febre > 38.0°C\n✅ FC > 120 bpm ou < 45 bpm\n✅ FC 110-120 ou 45-50 COM sintomas graves\n✅ Dor forte no peito diferente da cirúrgica\n✅ Falta de ar em repouso ou progressiva\n✅ Tosse produtiva com falta de ar ou febre\n\nNÃO disparar alerta (tratar com orientação + PRECISA_MAIKON se necessário):\n❌ Pressão 130x90 - 160x100 SEM sintomas graves\n❌ Pressão > 160x100 SEM sintomas graves (PRECISA_MAIKON urgente, mas não PS imediato)\n❌ Pressão 80x50 - 90x60 SEM sintomas\n❌ SpO2 90-92% SEM falta de ar\n❌ Febre 37.5-38.0°C\n❌ FC 110-120 ou 45-50 sem sintomas\n❌ Tosse seca isolada\n❌ Tosse com catarro SEM falta de ar e SEM febre (usar PRECISA_MAIKON)\n❌ Dor leve/moderada no local da cirurgia\n❌ Secreção na ferida ou pontos saindo SEM sinais graves (usar PRECISA_MAIKON)\n❌ Coceira na ferida\n❌ Dúvidas sobre receita ou medicamentos (usar PRECISA_MAIKON)\n❌ Qualquer leitura isolada sem confirmação ou sintoma associado\n\nO alerta deve conter: número do paciente, queixa principal, medidas relatadas, nível de urgência.\n</quando_disparar_alerta>\n\n<escalonamento_maikon>\nUse PRECISA_MAIKON: true quando a dúvida exige avaliação direta do Dr. Maikon.\nResponda ao paciente: \"Deixa eu confirmar isso com o Dr. Maikon e já te retorno!\"\nEm duvida_maikon, descreva a dúvida de forma clara e objetiva para o Dr. Maikon.\n\nSEMPRE acionar PRECISA_MAIKON para:\n- Qualquer dúvida sobre receita (mesmo que pareça simples)\n- Perguntas sobre medicamentos não mencionados explicitamente na conversa\n- Ajuste de dose, troca de medicamento, dúvida sobre posologia\n- Coisas que possam ter sido combinadas entre o Dr. e o paciente na consulta\n- Sintoma que não é urgência mas está persistindo e foge ao protocolo\n- Qualquer dúvida clínica que você classificaria como \"preciso confirmar com o médico\"\n- Pressão ou FC fora do normal persistindo sem sintomas graves\n\nNUNCA redirecionar questões de receita ou medicamentos para Isadora ou Raphaela — essas são para o Dr. Maikon.\n</escalonamento_maikon>\n\n<orientacoes_rotina_pos_op>\n- Dirigir: após 60 dias da cirurgia.\n- Posição para dormir: pode dormir de qualquer lado.\n- Faixa torácica: não dormir com ela.\n- Caminhada: pergunte se está caminhando — é parte importante da recuperação.\n- Sol: pelo menos 30 minutos por dia, preferencialmente pela manhã.\n- Atividade física intensa (futebol, academia): aguardar liberação médica — pode usar humor leve se o paciente tocar no assunto.\n</orientacoes_rotina_pos_op>\n\n<checklist_diario>\nO checklist é verificado uma vez por dia quando o paciente inicia contato. Os itens pendentes serão informados no contexto como [CHECKLIST_PENDENTES].\n\nREGRA: Se houver itens pendentes E não houver urgência clínica, SEMPRE pergunte 1 item do checklist na resposta. 1 item por resposta, máximo. Nunca liste todos de uma vez.\n\nItens: noite (dormiu bem), pressao (mediu hoje), banheiro (está indo normalmente), sol (tomou sol hoje), caminhada (conseguiu caminhar hoje).\n\nSe o paciente mencionar espontaneamente qualquer item, conte como respondido.\n</checklist_diario>\n\n<encaminhamentos>\n<urgencia_real>\n\"Isso precisa ser avaliado agora. Vai a um pronto atendimento imediatamente e pede ao plantonista para chamar o Dr. Maikon: +55 47 9215-3480.\"\n</urgencia_real>\n<rotinas_administrativas>\nApenas para agenda, exames e documentos (nunca clínico):\n\"Pra isso pode falar com a Isadora: +55 47 9948-6377 ou a Raphaela: +55 47 8834-2543.\"\n</rotinas_administrativas>\n</encaminhamentos>\n\n\n<saudacao_inicial>\nQuando for a PRIMEIRA mensagem do paciente na conversa (indicado por firstMessage: true no contexto), \nSEMPRE comece sua resposta com uma saudação natural como \"Olá!\" ou \"Oi, tudo bem?\" antes de responder.\nNas mensagens seguintes, NÃO repita a saudação — vá direto ao ponto.\n</saudacao_inicial>\n\n<regras_criticas_de_conversa>\n1) Considere o BLOCO de mensagens do paciente como um único contexto.\n2) Responda considerando TODAS as mensagens do bloco.\n3) Se houver pergunta direta, responda primeiro.\n4) Nunca ignore informação clinicamente relevante nova.\n5) Não repita pergunta já respondida recentemente.\n6) Máximo 2 mensagens por resposta.\n7) No máximo 1 pergunta por vez.\n8) Frases curtas e naturais.\n9) Nunca reinicie conversa se o paciente já estiver em conversa ativa.\n</regras_criticas_de_conversa>\n\n<regras_criticas_de_seguranca>\n1) NUNCA prescreva medicação nova, dose nova, nem ajuste dose — use PRECISA_MAIKON.\n2) NUNCA minimize sinais de alerta reais.\n3) NUNCA dispare alerta por sintomas isolados sem critério objetivo.\n4) Se não souber, use PRECISA_MAIKON — nunca invente.\n5) Não invente dados nem leituras.\n</regras_criticas_de_seguranca>\n\n<leitura_de_contexto_multimodal>\n- AUDIO_TRANSCRITO: tratar como fala do paciente.\n- ANALISE_IMAGEM: usar como fonte principal para valores e tipo da imagem.\n- Se qualidade for boa, não peça confirmação a menos que haja inconsistência.\n- Nunca assuma que imagem é ferida só porque é pós-operatório — use o tipo identificado.\n</leitura_de_contexto_multimodal>\n\n<anti_loop_e_estado_conversa>\nAntes de responder, avalie: qual é a pergunta principal? Quais dados já foram informados? O sintoma está melhorando, piorando ou igual? A última pergunta que fiz foi respondida? Existe informação nova?\nNunca repita a mesma pergunta duas vezes seguidas. Se o paciente respondeu parcialmente, reconheça e só confirme se necessário.\n</anti_loop_e_estado_conversa>\n\n<saida_json>\nResponda SEMPRE e EXCLUSIVAMENTE com JSON válido:\n\n{\n  \"messages\": [\"Mensagem 1\", \"Mensagem 2\"],\n  \"DISPARAR_ALERTA\": false,\n  \"alerta_resumo\": \"\",\n  \"PRECISA_MAIKON\": false,\n  \"duvida_maikon\": \"\",\n  \"checklist_update\": {\n    \"noite\": null,\n    \"pressao\": null,\n    \"banheiro\": null,\n    \"sol\": null,\n    \"caminhada\": null\n  }\n}\n\nRegras:\n- Nenhum texto fora do JSON. Sem markdown. Sem comentários.\n- Máximo 2 mensagens. Se for 1, retorne array com 1 item.\n- DISPARAR_ALERTA: true APENAS conforme critérios objetivos em quando_disparar_alerta.\n- alerta_resumo: preenchido quando DISPARAR_ALERTA for true, senão \"\".\n- PRECISA_MAIKON: true quando for necessário escalar ao Dr. Maikon.\n- duvida_maikon: descrição clara da dúvida quando PRECISA_MAIKON for true, senão \"\".\n- checklist_update: \"sim\" ou \"nao\" apenas para itens respondidos NESTA interação. Demais: null.\n</saida_json>\n\n</prompt>`;\n\n// Monta conversa consolidada\nlet finalMsg = payload.aggregated_text || payload.msgText || '';\nif (payload.transcricao) {\n  finalMsg = '[Áudio transcrito]: ' + payload.transcricao + (finalMsg ? '\\n' + finalMsg : '');\n}\nif (payload.analise_imagem) {\n  finalMsg += '\\n[Análise de imagem]: ' + payload.analise_imagem;\n}\n\nconst histText = hist.map(h => {\n  const who = h.role === 'paciente' ? 'PACIENTE' : (h.role === 'ia' ? 'VOCÊ (resposta anterior)' : 'SISTEMA');\n  return who + ': ' + h.text;\n}).join('\\n');\n\nconst userPrompt = '## HISTÓRICO RECENTE DA CONVERSA (mais antigo primeiro)\\n' +\n  (histText || '(sem histórico)') +\n  '\\n\\n## MENSAGEM ATUAL DO PACIENTE\\n' +\n  finalMsg +\n  '\\n\\n## SEU JOB\\n' +\n  'Responda APENAS à mensagem atual. Retorne JSON:\\n' +\n  '{\"messages\": [\"msg1\", \"msg2\"], \"DISPARAR_ALERTA\": false, \"alerta_resumo\": \"\", \"PRECISA_MAIKON\": false, \"duvida_maikon\": \"\"}\\n\\n' +\n  'REGRAS:\\n' +\n  '- \"messages\" é array de 1-3 msgs curtas (cada uma vira msg separada com delay humano entre elas)\\n' +\n  '- Siga os protocolos clínicos do system prompt À RISCA\\n' +\n  '- NUNCA responda em JSON livre sem os campos acima';\n\nreturn [{ json: {\n  ...payload,\n  _finalMsg: finalMsg,\n  _histCount: hist.length,\n  _gemini_body: {\n    contents: [{ role: 'user', parts: [{ text: systemPrompt + '\\n\\n---\\n\\n' + userPrompt }] }],\n    generationConfig: {\n      temperature: 0.6,\n      topP: 0.9,\n      responseMimeType: 'application/json',\n      responseSchema: {\n        type: 'OBJECT',\n        properties: {\n          messages: { type: 'ARRAY', items: { type: 'STRING' } },\n          DISPARAR_ALERTA: { type: 'BOOLEAN' },\n          alerta_resumo: { type: 'STRING' },\n          PRECISA_MAIKON: { type: 'BOOLEAN' },\n          duvida_maikon: { type: 'STRING' }\n        },\n        required: ['messages','DISPARAR_ALERTA','alerta_resumo','PRECISA_MAIKON','duvida_maikon']\n      }\n    }\n  }\n} }];\n"
+      },
+      "id": "node-montar-prompt",
+      "name": "Montar prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        -150
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json._gemini_body) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-goog-api-key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "node-chamar-gemini",
+      "name": "Chamar Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        -150
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse response Gemini\nconst payload = $('Montar prompt').item.json;\nconst raw = $json;\nconst text = raw?.candidates?.[0]?.content?.parts?.[0]?.text || '';\n\nlet parsed;\ntry {\n  const clean = text.replace(/^```json\\s*/i, '').replace(/```$/, '').trim();\n  parsed = JSON.parse(clean);\n} catch (e) {\n  return [{ json: { ...payload, erro: 'JSON inválido Gemini', raw: text.slice(0, 300) } }];\n}\n\nreturn [{\n  json: {\n    ...payload,\n    ia_messages: Array.isArray(parsed.messages) && parsed.messages.length ? parsed.messages : ['Desculpe, não consegui processar. Vou verificar com o Dr. Maikon.'],\n    DISPARAR_ALERTA: !!parsed.DISPARAR_ALERTA,\n    alerta_resumo: parsed.alerta_resumo || '',\n    PRECISA_MAIKON: !!parsed.PRECISA_MAIKON,\n    duvida_maikon: parsed.duvida_maikon || '',\n  }\n}];\n"
+      },
+      "id": "node-parse-resposta",
+      "name": "Parse resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        -150
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Envia msgs IA com typing+delay, dispara alertas se preciso, salva histórico.\nconst p = $json;\nconst evoBase = $env.EVOLUTION_API_URL;\nconst evoKey = $env.EVOLUTION_API_KEY;\nconst instance = p.instanceName || 'Consultorio';\nconst httpRequest = this.helpers.httpRequest.bind(this.helpers);\n\nfunction sleep(ms) { return new Promise(r => setTimeout(r, ms)); }\n\nasync function evo(path, body) {\n  try {\n    const resp = await httpRequest({\n      method: 'POST', url: evoBase + path,\n      headers: { 'Content-Type': 'application/json', apikey: evoKey },\n      body, json: true, returnFullResponse: true, timeout: 15000,\n    });\n    return { ok: resp.statusCode >= 200 && resp.statusCode < 300, status: resp.statusCode, body: resp.body };\n  } catch (e) { return { ok: false, err: String(e && e.message || e).slice(0, 200) }; }\n}\n\nconst phone = p.phone;\nconst msgs = p.ia_messages || [];\nconst resultados = [];\n\nfor (let i = 0; i < msgs.length; i++) {\n  const txt = msgs[i];\n  if (!txt) continue;\n  const delay = Math.max(1500, Math.min(4500, txt.length * 60));\n  await evo('/chat/sendPresence/' + encodeURIComponent(instance), { number: phone, presence: 'composing', delay });\n  await sleep(delay);\n  const r = await evo('/message/sendText/' + encodeURIComponent(instance), { number: phone, text: txt });\n  resultados.push({ to: 'paciente', text: txt, ok: r.ok, status: r.status });\n  if (i < msgs.length - 1) await sleep(900 + Math.random() * 1500);\n}\n\n// Alerta urgente (DISPARAR_ALERTA) → Dr Maikon + Isadora + Raul\nlet alerta_enviado = false;\nif (p.DISPARAR_ALERTA) {\n  const alertaTxt = '🚨 *ALERTA PACIENTE PÓS-OP*\\n\\n' +\n    'Telefone: ' + p.phone + '\\n' +\n    'Nome: ' + (p.pushName || '(não informado)') + '\\n\\n' +\n    'Resumo: ' + (p.alerta_resumo || 'sem resumo') + '\\n\\n' +\n    'Última msg do paciente: \"' + ((p.aggregated_text || '').slice(0, 200)) + '\"';\n  for (const destino of ['554792153480', '554799486377', '5554984351512']) {\n    if (destino === phone) continue;\n    const rA = await evo('/message/sendText/' + encodeURIComponent(instance), { number: destino, text: alertaTxt });\n    resultados.push({ to: 'alerta', destino, ok: rA.ok });\n    if (rA.ok) alerta_enviado = true;\n    await sleep(600);\n  }\n}\n\n// Dúvida pro Maikon (PRECISA_MAIKON)\nlet duvida_salva = false;\nif (p.PRECISA_MAIKON && p.duvida_maikon) {\n  try {\n    const supaUrl = $env.SUPABASE_URL;\n    const supaKey = $env.SUPABASE_SERVICE_ROLE_KEY;\n    const refChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';\n    let ref = '';\n    for (let i = 0; i < 4; i++) ref += refChars[Math.floor(Math.random() * refChars.length)];\n\n    await httpRequest({\n      method: 'POST', url: supaUrl + '/rest/v1/consultorio_duvidas',\n      headers: { apikey: supaKey, Authorization: 'Bearer ' + supaKey, 'Content-Type': 'application/json', Prefer: 'return=minimal' },\n      body: { phone, nome_paciente: p.pushName || null, pergunta: p.duvida_maikon, ref_id: ref, status: 'pendente' },\n      json: true,\n    });\n    duvida_salva = true;\n    resultados.push({ to: 'duvida_salva', ref });\n\n    const duvidaTxt = '❓ *Dúvida de paciente pós-op*\\n\\n' +\n      'Paciente: ' + (p.pushName || p.phone) + '\\n' +\n      'Ref: ' + ref + '\\n\\n' +\n      p.duvida_maikon + '\\n\\n' +\n      'Responda aqui mesmo com \"Ref ' + ref + ': <sua resposta>\" que eu repasso ao paciente.';\n    await evo('/message/sendText/' + encodeURIComponent(instance), { number: '554792153480', text: duvidaTxt });\n  } catch (e) { resultados.push({ to: 'duvida_erro', err: String(e).slice(0, 200) }); }\n}\n\n// Salva histórico + limpa fila\ntry {\n  const supaUrl = $env.SUPABASE_URL;\n  const supaKey = $env.SUPABASE_SERVICE_ROLE_KEY;\n  const histRows = [];\n  if (p._finalMsg) histRows.push({ phone, nome_paciente: p.pushName || null, role: 'paciente', text: p._finalMsg });\n  for (const m of msgs) histRows.push({ phone, nome_paciente: p.pushName || null, role: 'ia', text: m });\n  if (histRows.length) {\n    await httpRequest({\n      method: 'POST', url: supaUrl + '/rest/v1/consultorio_historico',\n      headers: { apikey: supaKey, Authorization: 'Bearer ' + supaKey, 'Content-Type': 'application/json', Prefer: 'return=minimal' },\n      body: histRows, json: true,\n    });\n  }\n  await httpRequest({\n    method: 'DELETE', url: supaUrl + '/rest/v1/consultorio_fila_msgs?phone=eq.' + encodeURIComponent(phone),\n    headers: { apikey: supaKey, Authorization: 'Bearer ' + supaKey, Prefer: 'return=minimal' },\n  });\n} catch (e) { resultados.push({ to: 'hist_erro', err: String(e).slice(0, 200) }); }\n\nreturn [{ json: { ...p, resultados, alerta_enviado, duvida_salva, total_enviadas: resultados.filter(r => r.to === 'paciente' && r.ok).length } }];\n"
+      },
+      "id": "node-enviar-+-alertas-+-histórico",
+      "name": "Enviar + alertas + histórico",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        -150
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalizar payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar payload": {
+      "main": [
+        [
+          {
+            "node": "Processar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar?": {
+      "main": [
+        [
+          {
+            "node": "Enfileira em fila",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enfileira em fila": {
+      "main": [
+        [
+          {
+            "node": "Guardar queue_msg_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar queue_msg_id": {
+      "main": [
+        [
+          {
+            "node": "Wait 60s (debounce)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 60s (debounce)": {
+      "main": [
+        [
+          {
+            "node": "Buscar última msg do phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar última msg do phone": {
+      "main": [
+        [
+          {
+            "node": "Owner check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Owner check": {
+      "main": [
+        [
+          {
+            "node": "Sou dono?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sou dono?": {
+      "main": [
+        [
+          {
+            "node": "Whisper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper": {
+      "main": [
+        [
+          {
+            "node": "Vision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vision": {
+      "main": [
+        [
+          {
+            "node": "Buscar histórico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar histórico": {
+      "main": [
+        [
+          {
+            "node": "Montar prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar prompt": {
+      "main": [
+        [
+          {
+            "node": "Chamar Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar Gemini": {
+      "main": [
+        [
+          {
+            "node": "Parse resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse resposta": {
+      "main": [
+        [
+          {
+            "node": "Enviar + alertas + histórico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
