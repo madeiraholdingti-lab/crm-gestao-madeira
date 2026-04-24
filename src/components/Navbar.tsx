@@ -83,13 +83,16 @@ export function Navbar() {
   const canAccessZaps = !isDisparador || true; // disparador tem acesso a zaps
 
   // Agrupado como no design: Operação (dia-a-dia) vs Inteligência & Config
+  // NOTA: "Disparos em Massa" foi substituído por "Prospecção" em 23/04/2026.
+  // Rotas /disparos-em-massa/* continuam acessíveis por URL direta (compat) mas
+  // não aparecem mais no menu — a nova UI /prospeccao consome a mesma engine.
   const menuItemsOperacao = [
     { title: "Home", url: "/home", icon: LayoutDashboard, show: true },
     { title: "SDR Zap", url: "/sdr-zap", icon: Target, show: canAccessSDR },
     { title: "Task-Flow", url: "/task-flow", icon: ClipboardList, show: canAccessSDR && !isDisparador },
     { title: "Contatos", url: "/contatos", icon: Users, show: !isDisparador },
     { title: "Hub WhatsApp", url: "/hub-whatsapp", icon: Network, show: canAccessReports },
-    { title: "Disparos em Massa", url: "/disparos-em-massa", icon: Send, show: canAccessDisparos },
+    { title: "Prospecção", url: "/prospeccao", icon: Send, show: canAccessDisparos && !isDisparador },
     { title: "Disparos Agendados", url: "/disparos-automaticos", icon: Clock, show: canAccessDisparos && !isDisparador },
     { title: "Configurações Zaps", url: "/zaps", icon: Settings, show: true },
   ];
