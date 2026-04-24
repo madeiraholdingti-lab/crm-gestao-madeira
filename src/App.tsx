@@ -27,6 +27,8 @@ import CampanhasPage from "./pages/disparos/Campanhas";
 import EnviosPage from "./pages/disparos/Envios";
 import BlacklistPage from "./pages/disparos/Blacklist";
 import RelatoriosDisparos from "./pages/disparos/Relatorios";
+import Prospeccao from "./pages/prospeccao/Prospeccao";
+import CampanhaProspeccao from "./pages/prospeccao/CampanhaProspeccao";
 import TaskFlow from "./pages/TaskFlow";
 import ContextoIA from "./pages/ContextoIA";
 import HubWhatsApp from "./pages/HubWhatsApp";
@@ -268,6 +270,26 @@ const App = () => (
                 element={
                   <AppLayout>
                     <RelatoriosDisparos />
+                  </AppLayout>
+                }
+              />
+              <Route
+                path="/prospeccao"
+                element={
+                  <AppLayout>
+                    <RoleGuard allowedRoles={NON_DISPARADOR_ROLES}>
+                      <Prospeccao />
+                    </RoleGuard>
+                  </AppLayout>
+                }
+              />
+              <Route
+                path="/prospeccao/:id"
+                element={
+                  <AppLayout>
+                    <RoleGuard allowedRoles={NON_DISPARADOR_ROLES}>
+                      <CampanhaProspeccao />
+                    </RoleGuard>
                   </AppLayout>
                 }
               />
