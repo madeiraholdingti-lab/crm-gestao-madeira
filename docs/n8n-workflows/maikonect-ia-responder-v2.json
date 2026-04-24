@@ -185,7 +185,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/contacts?phone=in.({{ (() => { const d = $json.telefone.replace(/\\D/g, \"\"); const no55 = d.startsWith(\"55\") ? d.slice(2) : d; const with55 = d.startsWith(\"55\") ? d : \"55\" + d; const last10 = d.slice(-10); const last11 = d.slice(-11); const variants = [...new Set([d, no55, with55, last10, last11, \"55\" + last10, \"55\" + last11])].filter(v => v && v.length >= 10); return variants.join(\",\"); })() }})&select=id&limit=1",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/contacts?phone=in.({{ (() => { const d = $json.telefone.replace(/\\D/g, \"\"); const set = new Set([d]); const sem55 = d.startsWith(\"55\") ? d.slice(2) : d; if (sem55) { set.add(sem55); set.add(\"55\" + sem55); } if (sem55.length === 11 && sem55[2] === \"9\") {   const sem9 = sem55.slice(0,2) + sem55.slice(3);   set.add(sem9); set.add(\"55\" + sem9); } if (sem55.length === 10) {   const com9 = sem55.slice(0,2) + \"9\" + sem55.slice(2);   set.add(com9); set.add(\"55\" + com9); } const last10 = d.slice(-10); const last11 = d.slice(-11); if (last10) { set.add(last10); set.add(\"55\" + last10); } if (last11) { set.add(last11); set.add(\"55\" + last11); } return [...set].filter(v => v && v.length >= 10).join(\",\"); })() }})&select=id&limit=1",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

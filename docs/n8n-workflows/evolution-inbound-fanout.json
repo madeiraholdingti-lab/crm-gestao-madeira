@@ -1,0 +1,74 @@
+{
+  "id": "evolutionInboundFanoutV1",
+  "name": "Evolution Inbound — Fanout",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "evolution-inbound",
+        "responseMode": "onReceived",
+        "options": { "rawBody": false }
+      },
+      "id": "node-webhook-in",
+      "name": "Webhook Evolution",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "evolution-inbound-fanout-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/functions/v1/evolution-messages-webhook",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Webhook Evolution').item.json.body || $('Webhook Evolution').item.json) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "id": "node-fwd-edge",
+      "name": "→ edge evolution-messages-webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, -120],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-n8n.r65ocn.easypanel.host/webhook/daabf698-5f45-4f40-befd-ed9178ad7d14",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Webhook Evolution').item.json.body || $('Webhook Evolution').item.json) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "id": "node-fwd-conectwhat",
+      "name": "→ conect-what (legado)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, 120],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Webhook Evolution": {
+      "main": [[
+        { "node": "→ edge evolution-messages-webhook", "type": "main", "index": 0 },
+        { "node": "→ conect-what (legado)", "type": "main", "index": 0 }
+      ]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}
