@@ -196,10 +196,12 @@ export default function CampanhasPage() {
   };
 
   const fetchInstancias = async () => {
+    // SOMENTE chips com finalidade='disparo'. Nunca mostrar atendimento (Maikon/Iza/Mariana/Consultório).
     const { data } = await supabase
       .from("instancias_whatsapp")
       .select("id, nome_instancia, numero_chip, cor_identificacao, status")
       .eq("ativo", true)
+      .eq("finalidade", "disparo")
       .in("status", ["conectada", "ativa", "open"])
       .order("nome_instancia");
     setInstancias((data || []) as InstanciaWhatsApp[]);

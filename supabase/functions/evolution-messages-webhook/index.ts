@@ -464,11 +464,34 @@ Deno.serve(async (req) => {
       );
     }
 
-    const remoteJid = (data.key.remoteJid || '').trim();
-    const phone = remoteJid.split('@')[0].replace(/\s+/g, ''); // Extrair número e remover espaços
+    const rawRemoteJid = (data.key.remoteJid || '').trim();
+    // WhatsApp moderno usa @lid (Linked Device ID) pra esconder phone real.
+    // O phone vem em key.remoteJidAlt. Se for LID, usa o Alt como JID canônico
+    // e guarda o LID em contacts.lid_jid pra correlacionar futuras msgs.
+    // Só consideramos LID quando o remoteJid CRU termina em @lid.
+    // addressingMode='lid' isolado pode aparecer em msgs já resolvidas — aí
+    // remoteJid já é @s.whatsapp.net e não temos LID válido pra guardar.
+    const isLidMessage = rawRemoteJid.endsWith('@lid');
+    const remoteJidAlt = (data.key.remoteJidAlt || '').trim();
+    const remoteJid = (isLidMessage && remoteJidAlt) ? remoteJidAlt : rawRemoteJid;
+    const lidJid = isLidMessage ? rawRemoteJid : null;
+
+    if (isLidMessage && !remoteJidAlt) {
+      console.log(`[lid] msg ${rawRemoteJid} sem remoteJidAlt — não dá pra resolver phone, ignorando`);
+      return new Response(
+        JSON.stringify({ success: true, message: 'LID sem phone resolvível ignorada' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
+
+    const phone = remoteJid.split('@')[0].replace(/\s+/g, ''); // phone real (de remoteJid ou remoteJidAlt)
     const pushName = (data.pushName || '').trim().replace(/^\n+/, ''); // Remover \n do início
     const waMessageId = data.key.id;
     const isFromMe = Boolean(data.key.fromMe); // Se a mensagem foi enviada pelo bot
+
+    if (isLidMessage) {
+      console.log(`[lid] resolvido ${rawRemoteJid} → ${remoteJid}`);
+    }
     
     // Extrair informações da instância
     const instanceUuid = data.instanceId || payload.body?.instance || payload.instance;
@@ -484,12 +507,18 @@ Deno.serve(async (req) => {
     );
 
     // Busca por JID exato OU qualquer variante de JID OU qualquer variante de phone
+    // OU pelo lid_jid (caso seja msg @lid e o contato já tenha lid armazenado)
+    const orFilters = [
+      `jid.in.(${jidVariants.join(',')})`,
+      `phone.in.(${phoneVariants.join(',')})`,
+    ];
+    if (lidJid) {
+      orFilters.push(`lid_jid.eq.${lidJid}`);
+    }
     const { data: existingContacts, error: selectError } = await supabase
       .from('contacts')
       .select('*')
-      .or(
-        `jid.in.(${jidVariants.join(',')}),phone.in.(${phoneVariants.join(',')})`
-      )
+      .or(orFilters.join(','))
       .order('created_at', { ascending: true })
       .limit(5);
 
@@ -572,6 +601,20 @@ Deno.serve(async (req) => {
           console.log('Contato atualizado com pushName (não tinha nome, mensagem recebida):', contact);
         }
       }
+
+      // Salva o lid_jid no contato existente quando msg veio via @lid e ele ainda não tinha
+      if (lidJid && !existingContact.lid_jid) {
+        const { data: updatedLid } = await supabase
+          .from('contacts')
+          .update({ lid_jid: lidJid, updated_at: new Date().toISOString() })
+          .eq('id', existingContact.id)
+          .select()
+          .single();
+        if (updatedLid) {
+          contact = updatedLid;
+          console.log(`[lid] lid_jid ${lidJid} associado ao contato ${existingContact.id}`);
+        }
+      }
       
       // Buscar foto se contato não tem foto ainda (só para mensagens recebidas — fromMe não precisa)
       if (!isFromMe && !existingContact.profile_picture_url && instanceName) {
@@ -600,6 +643,7 @@ Deno.serve(async (req) => {
         .insert({
           jid: remoteJid,
           phone: phone,
+          lid_jid: lidJid,
           name: isFromMe ? null : (pushName || null), // Só usar pushName se for mensagem recebida
         })
         .select()

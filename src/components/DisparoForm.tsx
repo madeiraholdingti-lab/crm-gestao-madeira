@@ -94,9 +94,11 @@ export function DisparoForm({ disparo, onSuccess, onCancel }: DisparoFormProps) 
   }, []);
 
   const fetchInstancias = async () => {
+    // SOMENTE chips com finalidade='disparo'. Nunca mostrar atendimento (Maikon/Iza/Mariana/Consultório).
     const { data } = await supabase
       .from("instancias_whatsapp")
       .select("id, nome_instancia, ativo, status")
+      .eq("finalidade", "disparo")
       .neq("status", "deletada")
       .order("nome_instancia");
 
