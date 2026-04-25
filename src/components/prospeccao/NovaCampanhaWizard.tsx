@@ -141,10 +141,14 @@ export default function NovaCampanhaWizard({ open, onOpenChange, editing, onSave
   useEffect(() => {
     if (!open) return;
     (async () => {
+      // SOMENTE chips com finalidade='disparo'. Chips de atendimento (Maikon,
+      // Iza, Mariana, Consultório) NUNCA aparecem aqui — proteção pra não
+      // queimar o WhatsApp pessoal/profissional do médico em campanha.
       const { data } = await supabase
         .from("instancias_whatsapp")
         .select("id, nome_instancia, numero_chip, cor_identificacao, status")
         .eq("ativo", true)
+        .eq("finalidade", "disparo")
         .in("status", ["conectada", "ativa", "open"])
         .order("nome_instancia");
       setInstancias((data || []) as Instancia[]);

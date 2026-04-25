@@ -243,10 +243,12 @@ async function processarCampanha(supabase: any, campanha_id: string): Promise<Re
     ];
 
     // Spintax + template
+    // stripDoctorPrefix evita "Olá Dr. Dr. Maikon" quando lead.nome já vem
+    // com "Dr./Dra./Dr(a)." salvo (comum em listas de cardiologistas).
     const tplRaw = camp.mensagem || "Olá, {{nome}}!";
     const tplSpintaxed = camp.spintax_ativo !== false ? resolveSpintax(tplRaw) : tplRaw;
     const msgFinal = applyTemplate(tplSpintaxed, {
-      nome: lead?.nome || "Dr(a)",
+      nome: stripDoctorPrefix(lead?.nome) || "Dr(a)",
     });
 
     const phone = normalizeBrazilianPhone(phoneRaw);
@@ -592,6 +594,16 @@ function resolveSpintax(text: string): string {
 
 function applyTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (match, key) => vars[key] ?? match);
+}
+
+// Remove "Dr.", "Dra.", "Dr(a).", "Doutor", etc no início do nome.
+// Lista de leads médicos vem com prefixo salvo no campo nome ("Dr. Maikon Madeira"),
+// e o template já costuma ter "Olá Dr. {{nome}}" — sem strip dá "Dr. Dr. Maikon".
+function stripDoctorPrefix(name: string | null | undefined): string {
+  if (!name) return "";
+  return name
+    .replace(/^\s*(dr\.?\s*\(\s*a\s*\)\.?|dra?\.?|doutor[ae]?)\s+/i, "")
+    .trim();
 }
 
 async function logDisparo(supabase: any, entry: {

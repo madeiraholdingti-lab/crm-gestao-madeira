@@ -93,6 +93,7 @@ export default function ConfiguracaoEvolution() {
     tipo_canal: "whatsapp",
     numero_chip: "",
     cor_identificacao: "#4B0080",
+    finalidade: "disparo" as "atendimento" | "disparo" | "geral",
   });
 
   useEffect(() => {
@@ -326,6 +327,7 @@ export default function ConfiguracaoEvolution() {
         numero_chip: novaInstancia.numero_chip,
         ativo: false,
         cor_identificacao: novaInstancia.cor_identificacao,
+        finalidade: novaInstancia.finalidade,
       });
 
       if (error) throw error;
@@ -355,6 +357,7 @@ export default function ConfiguracaoEvolution() {
         tipo_canal: "whatsapp",
         numero_chip: "",
         cor_identificacao: "#3B82F6",
+        finalidade: "disparo",
       });
       fetchInstancias();
     } catch (error) {
@@ -1131,6 +1134,27 @@ export default function ConfiguracaoEvolution() {
               />
               <p className="text-xs text-muted-foreground">
                 O ID técnico será gerado automaticamente pela Evolution API
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="finalidade">Finalidade *</Label>
+              <select
+                id="finalidade"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={novaInstancia.finalidade}
+                onChange={(e) =>
+                  setNovaInstancia({
+                    ...novaInstancia,
+                    finalidade: e.target.value as "atendimento" | "disparo" | "geral",
+                  })
+                }
+              >
+                <option value="disparo">Disparo (campanhas em massa)</option>
+                <option value="atendimento">Atendimento (Maikon, Iza, Mariana, Consultório)</option>
+                <option value="geral">Geral (ambos — usar com cautela)</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Chips de atendimento NUNCA aparecem na seleção de campanhas — protege contra ban do WhatsApp profissional.
               </p>
             </div>
             <div className="space-y-2">
