@@ -15,19 +15,20 @@ export const WeeklyMetrics = () => {
   // (isso causava refetch contínuo e deixava o card preso em skeleton/loading)
   const hoje = useMemo(() => startOfDay(new Date()), []);
   const inicioMes = useMemo(() => startOfMonth(hoje), [hoje]);
-  // Para os cards de "Ontem" e "30/01", precisamos buscar também dias anteriores ao mês atual
-  const tresDiasAtras = useMemo(() => subDays(hoje, 3), [hoje]);
+  // Bug anterior: tresDiasAtras como gte fazia totalMes contar só envios dos
+  // últimos 3 dias (no mês inteiro). Agora pega o mês todo e usamos mesmo data
+  // pra calcular cards diários (hoje/ontem/anteontem).
 
   const { data: enviosData, isLoading, isError } = useQuery({
-    queryKey: ["envios-dashboard", inicioMes.toISOString(), tresDiasAtras.toISOString()],
+    queryKey: ["envios-dashboard", inicioMes.toISOString()],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("campanha_envios")
         .select("id, status, enviado_em, campanha_id, campanhas_disparo(nome, tipo)")
-        .gte("enviado_em", tresDiasAtras.toISOString())
+        .gte("enviado_em", inicioMes.toISOString())
         .eq("status", "enviado")
         .not("enviado_em", "is", null);
-      
+
       if (error) throw error;
       return data || [];
     },

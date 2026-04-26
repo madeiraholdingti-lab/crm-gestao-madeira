@@ -26,6 +26,16 @@ serve(async (req) => {
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // admin_geral / medico veem TODOS os eventos da agenda + TODAS as conversas.
+    // Outros roles (secretária etc) veem só os eventos onde são donos.
+    const { data: userRole } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user_id)
+      .maybeSingle();
+    const role = userRole?.role || "secretaria_medica";
+    const isAdminOrMedico = role === "admin_geral" || role === "medico";
+
     if (!openaiKey) {
       return new Response(
         JSON.stringify({ error: "OPENAI_API_KEY não configurada" }),
@@ -38,17 +48,18 @@ serve(async (req) => {
     const agora = new Date();
     const duasHorasAtras = new Date(agora.getTime() - 2 * 60 * 60 * 1000).toISOString();
 
-    // 1. Conversas abertas por responsável (limit 100 para controle de custo)
-    //    Exclui ignoradas: Maikon pediu que conversas marcadas pra ignorar
-    //    não entrem no "sem resposta há +2h" (ex: vendedor de móveis).
+    // 1. Conversas abertas onde o cliente está esperando resposta da equipe
+    //    (last_message_from_me=false). Mesma lógica do MonitorSecretarias.
+    //    Exclui ignoradas (vendedor de móveis etc).
+    //    Inclui sem responsavel_atual — mostrar como "Sem atribuição".
     const { data: conversasAbertas } = await supabase
       .from("conversas")
-      .select("id, responsavel_atual, ultima_interacao, ultima_mensagem, nome_contato, numero_contato, status")
+      .select("id, responsavel_atual, ultima_interacao, ultima_mensagem, nome_contato, numero_contato, status, last_message_from_me")
       .in("status", ["novo", "Aguardando Contato", "Em Atendimento"])
       .is("ignorada_em", null)
-      .not("responsavel_atual", "is", null)
+      .eq("last_message_from_me", false)
       .order("ultima_interacao", { ascending: true })
-      .limit(100);
+      .limit(200);
 
     // 2. Buscar nomes dos responsáveis
     const { data: profiles } = await supabase
@@ -58,11 +69,12 @@ serve(async (req) => {
 
     const profileMap = new Map((profiles || []).map(p => [p.id, p.nome]));
 
-    // Agrupar conversas por responsável
+    // Agrupar conversas por responsável (incluindo "Sem atribuição")
     const porResponsavel = new Map<string, { total: number; semResposta2h: number; nomes: string[] }>();
     for (const conv of conversasAbertas || []) {
-      if (!conv.responsavel_atual) continue;
-      const nome = profileMap.get(conv.responsavel_atual) || "Sem nome";
+      const nome = conv.responsavel_atual
+        ? (profileMap.get(conv.responsavel_atual) || "Sem nome")
+        : "Sem atribuição";
       const grupo = porResponsavel.get(nome) || { total: 0, semResposta2h: 0, nomes: [] };
       grupo.total++;
       if (conv.ultima_interacao && conv.ultima_interacao < duasHorasAtras) {
@@ -93,12 +105,18 @@ serve(async (req) => {
     const inicioAmanha = new Date(amanha.getFullYear(), amanha.getMonth(), amanha.getDate()).toISOString();
     const fimAmanha = new Date(amanha.getFullYear(), amanha.getMonth(), amanha.getDate() + 1).toISOString();
 
-    const { data: eventosAmanha } = await supabase
+    // Para admin/medico: todos os eventos do dia (importante porque o OAuth
+    // do Google Calendar foi feito pela Iza, então medico_id dos eventos é dela,
+    // não do Maikon). Pra outros roles: só eventos onde o user é dono.
+    let eventosQuery = supabase
       .from("eventos_agenda")
       .select("titulo, data_hora_inicio, tipo_evento")
       .gte("data_hora_inicio", inicioAmanha)
-      .lt("data_hora_inicio", fimAmanha)
-      .eq("medico_id", user_id);
+      .lt("data_hora_inicio", fimAmanha);
+    if (!isAdminOrMedico) {
+      eventosQuery = eventosQuery.eq("medico_id", user_id);
+    }
+    const { data: eventosAmanha } = await eventosQuery;
 
     // ===== MONTAR CONTEXTO PARA IA =====
 
@@ -227,7 +245,7 @@ Comece com uma saudação com base no horário (Bom dia/Boa tarde/Boa noite).`
     if (nTarefas > 0) {
       highlights.push({
         severity: nTarefas >= 10 ? 'red' : 'yellow',
-        label: 'tarefas atrasadas',
+        label: 'atrasadas',
         metric: nTarefas,
         unit: nTarefas === 1 ? 'tarefa' : 'tarefas',
         href: '/task-flow',

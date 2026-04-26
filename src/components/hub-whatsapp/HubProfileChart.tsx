@@ -51,7 +51,7 @@ export const HubProfileChart = ({ data, isLoading, onPerfilClick }: Props) => {
         ) : chartData.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-12">Sem dados</p>
         ) : view === "pie" ? (
-          <ResponsiveContainer width="100%" height={280}>
+          <ResponsiveContainer width="100%" height={320}>
             <PieChart>
               <Pie
                 data={chartData}
@@ -59,7 +59,12 @@ export const HubProfileChart = ({ data, isLoading, onPerfilClick }: Props) => {
                 cy="50%"
                 outerRadius={100}
                 dataKey="value"
-                label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                // Esconde label de fatias < 5% pra evitar sobreposição.
+                // Categorias menores aparecem na Legend e no Tooltip.
+                label={({ name, percent }) =>
+                  percent >= 0.05 ? `${name} (${(percent * 100).toFixed(0)}%)` : null
+                }
+                labelLine={false}
                 onClick={(entry) => onPerfilClick?.(entry.perfil)}
                 className="cursor-pointer"
               >
@@ -67,7 +72,12 @@ export const HubProfileChart = ({ data, isLoading, onPerfilClick }: Props) => {
                   <Cell key={idx} fill={entry.fill} />
                 ))}
               </Pie>
-              <Tooltip formatter={(value: number) => value.toLocaleString("pt-BR")} />
+              <Tooltip
+                formatter={(value: number, _name, item) => [
+                  `${value.toLocaleString("pt-BR")} contatos`,
+                  item?.payload?.name,
+                ]}
+              />
             </PieChart>
           </ResponsiveContainer>
         ) : (

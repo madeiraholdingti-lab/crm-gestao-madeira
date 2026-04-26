@@ -168,13 +168,29 @@ export const TasksSummary = () => {
             ))}
           </div>
 
-          {/* Lista de tarefas próximas */}
+          {/* Lista de tarefas próximas — só não finalizadas e com prazo >= hoje
+              (atrasadas vão pro card "Atrasadas" separado, não poluem aqui) */}
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
             <h4 className="text-xs font-medium text-muted-foreground mb-2 flex-shrink-0">Próximas tarefas</h4>
-                {tasks && tasks.filter(t => t.task_flow_columns?.nome !== "Finalizada").length > 0 ? (
+                {tasks && tasks.filter(t => {
+                  if (t.task_flow_columns?.nome === "Finalizada") return false;
+                  if (!t.prazo) return true; // sem prazo conta como "próxima"
+                  const d = new Date(t.prazo);
+                  return !isPast(d) || isToday(d);
+                }).length > 0 ? (
               <div className="space-y-1.5 flex-1 overflow-y-auto min-h-0">
                 {tasks
-                  .filter(t => t.task_flow_columns?.nome !== "Finalizada")
+                  .filter(t => {
+                    if (t.task_flow_columns?.nome === "Finalizada") return false;
+                    if (!t.prazo) return true;
+                    const d = new Date(t.prazo);
+                    return !isPast(d) || isToday(d);
+                  })
+                  .sort((a, b) => {
+                    if (!a.prazo) return 1;
+                    if (!b.prazo) return -1;
+                    return new Date(a.prazo).getTime() - new Date(b.prazo).getTime();
+                  })
                   .slice(0, 5)
                   .map((task) => {
                     const isFinalizada = task.task_flow_columns?.nome === "Finalizada";

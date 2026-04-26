@@ -337,29 +337,57 @@ Deno.serve(async (req) => {
           updatedCount++;
         }
 
-        // Se status é READ, atualizar unread_count da conversa
-        if (newStatus === 'READ' || newStatus === 'read') {
-          // Buscar a mensagem para pegar o contact_id ou phone
+        // Se status é READ, zerar unread_count da conversa.
+        // Aceita string ('READ'/'read') OU número (Baileys: 4=DELIVERY_ACK, 5=READ).
+        const isRead =
+          newStatus === 'READ' || newStatus === 'read' || newStatus === 5 || newStatus === '5';
+        if (isRead) {
+          // Estratégia 1: tentar achar a msg no banco e zerar pelo contact_id
+          // (mais preciso, mas pode falhar se msg ainda não foi inserida).
           const { data: msg } = await supabase
             .from('messages')
-            .select('contact_id')
+            .select('contact_id, instance_uuid')
             .eq('wa_message_id', waMessageId)
             .maybeSingle();
 
-          if (msg?.contact_id) {
-            // Buscar contato para pegar o phone
-            const { data: contact } = await supabase
-              .from('contacts')
-              .select('phone')
-              .eq('id', msg.contact_id)
-              .maybeSingle();
+          if (msg?.contact_id && msg?.instance_uuid) {
+            await supabase
+              .from('conversas')
+              .update({ unread_count: 0 })
+              .eq('contact_id', msg.contact_id)
+              .eq('current_instance_id', msg.instance_uuid)
+              .gt('unread_count', 0);
+          } else {
+            // Estratégia 2: fallback pelo remoteJid + instance do payload.
+            // Usado quando msg.update chega antes da msg.upsert (race comum).
+            const remoteJid =
+              update.key?.remoteJid || update.remoteJid || update.chatId || '';
+            const instanceFromUpdate =
+              payload.body?.instance || payload.instance || update.instanceId;
 
-            if (contact?.phone) {
-              // Resetar unread_count da conversa
-              await supabase
-                .from('conversas')
-                .update({ unread_count: 0 })
-                .eq('numero_contato', contact.phone);
+            if (remoteJid && instanceFromUpdate) {
+              const phoneOnly = remoteJid.split('@')[0].replace(/\D/g, '');
+              if (phoneOnly) {
+                // Busca instância UUID
+                const { data: instRow } = await supabase
+                  .from('instancias_whatsapp')
+                  .select('id')
+                  .or(`nome_instancia.eq.${instanceFromUpdate},instancia_id.eq.${instanceFromUpdate}`)
+                  .maybeSingle();
+
+                if (instRow?.id) {
+                  // Zera todas variantes do phone (com/sem 9)
+                  const variantes = gerarVariantesTelefoneBR(phoneOnly);
+                  if (variantes.length > 0) {
+                    await supabase
+                      .from('conversas')
+                      .update({ unread_count: 0 })
+                      .in('numero_contato', variantes)
+                      .eq('current_instance_id', instRow.id)
+                      .gt('unread_count', 0);
+                  }
+                }
+              }
             }
           }
         }

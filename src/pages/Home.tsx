@@ -15,7 +15,14 @@ const Home = () => {
   const hora = now.getHours();
   const saudacao = hora < 12 ? "Bom dia" : hora < 18 ? "Boa tarde" : "Boa noite";
   const dataFmt = now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
-  const nomeCurto = (profile as { nome?: string } | null)?.nome?.split(" ")[0] || "Dr. Maikon";
+  // Trata nomes técnicos ("madeira.holding.ti", "user_admin") com fallback amigável.
+  // Pega 1º nome real e capitaliza.
+  const rawNome = ((profile as { nome?: string } | null)?.nome ?? "").trim();
+  const ehNomeTecnico = rawNome.length > 0 && !/\s/.test(rawNome) && /[._-]/.test(rawNome);
+  const primeiroNome = rawNome.split(/\s+/)[0] || "";
+  const nomeCurto = ehNomeTecnico || !primeiroNome
+    ? "Doutor"
+    : primeiroNome.charAt(0).toUpperCase() + primeiroNome.slice(1).toLowerCase();
 
   return (
     <div className="h-[calc(100vh-4rem)] bg-background p-4 overflow-y-auto">
