@@ -48,18 +48,33 @@ serve(async (req) => {
     const agora = new Date();
     const duasHorasAtras = new Date(agora.getTime() - 2 * 60 * 60 * 1000).toISOString();
 
-    // 1. Conversas abertas onde o cliente está esperando resposta da equipe
-    //    (last_message_from_me=false). Mesma lógica do MonitorSecretarias.
-    //    Exclui ignoradas (vendedor de móveis etc).
-    //    Inclui sem responsavel_atual — mostrar como "Sem atribuição".
-    const { data: conversasAbertas } = await supabase
-      .from("conversas")
-      .select("id, responsavel_atual, ultima_interacao, ultima_mensagem, nome_contato, numero_contato, status, last_message_from_me")
-      .in("status", ["novo", "Aguardando Contato", "Em Atendimento"])
-      .is("ignorada_em", null)
-      .eq("last_message_from_me", false)
-      .order("ultima_interacao", { ascending: true })
-      .limit(200);
+    // 1. Conversas pendentes via RPC nova `conversas_pendentes_atendimento`.
+    //    Ela calcula da TABELA messages (fonte de verdade), não do cache
+    //    last_message_from_me que pode estar desatualizado.
+    //    Filtra: chip de atendimento, status ativo, não ignorada,
+    //    msg do contato é a última E foi há >= 30min (não flagar conversas
+    //    sendo respondidas agora mesmo).
+    const { data: pendentesRaw } = await supabase
+      .rpc("conversas_pendentes_atendimento", { p_min_minutos: 30, p_lookback_dias: 14 });
+
+    // Adapta o formato pra reaproveitar o resto do código
+    const conversasAbertas = (pendentesRaw || []).map((p: {
+      conversa_id: string;
+      responsavel_atual: string | null;
+      ultima_msg_em: string | null;
+      ultima_msg_texto: string | null;
+      nome_contato: string | null;
+      numero_contato: string;
+      status: string;
+    }) => ({
+      id: p.conversa_id,
+      responsavel_atual: p.responsavel_atual,
+      ultima_interacao: p.ultima_msg_em,
+      ultima_mensagem: p.ultima_msg_texto,
+      nome_contato: p.nome_contato,
+      numero_contato: p.numero_contato,
+      status: p.status,
+    }));
 
     // 2. Buscar nomes dos responsáveis
     const { data: profiles } = await supabase
