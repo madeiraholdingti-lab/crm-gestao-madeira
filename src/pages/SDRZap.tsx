@@ -8,6 +8,7 @@ import { useTasksDaConversa } from "@/hooks/useTasksDaConversa";
 import { ConversationList } from "@/components/sdr-zap/ConversationList";
 import { CreateTaskFromConversaDialog } from "@/components/sdr-zap/CreateTaskFromConversaDialog";
 import { AnaliseIACard } from "@/components/sdr-zap/AnaliseIACard";
+import { AudioMessage } from "@/components/sdr-zap/AudioMessage";
 import { ListTodo } from "lucide-react";
 import { PERFIS_PROFISSIONAIS } from "@/utils/constants";
 import { toast } from "sonner";
@@ -3189,27 +3190,19 @@ export default function SDRZap() {
                             const docFileName = parsedPayload?.data?.message?.documentMessage?.fileName || parsedPayload?.message?.documentMessage?.fileName;
 
                             if (msg.message_type === 'audio') {
-                              return mediaSrc ? (
-                                <div className="flex flex-col gap-2">
-                                  <audio controls className="max-w-[250px] h-10" preload="metadata">
-                                    <source src={mediaSrc} type={msg.raw_payload?.message?.audioMessage?.mimetype || 'audio/ogg'} />
-                                    Seu navegador não suporta áudio.
-                                  </audio>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                    isMinhaMsg ? 'bg-primary-foreground/20' : 'bg-muted-foreground/20'
-                                  }`}>
-                                    <Mic className="h-4 w-4" />
-                                  </div>
-                                  <div className="flex-1">
-                                    <div className={`h-1 rounded-full w-24 ${
-                                      isMinhaMsg ? 'bg-primary-foreground/40' : 'bg-muted-foreground/40'
-                                    }`} />
-                                    <p className="text-xs mt-1 opacity-70">Áudio</p>
-                                  </div>
-                                </div>
+                              return (
+                                <AudioMessage
+                                  messageId={msg.id}
+                                  text={msg.text}
+                                  mediaSrc={mediaSrc}
+                                  mimetype={msg.raw_payload?.message?.audioMessage?.mimetype || msg.media_mime_type || 'audio/ogg'}
+                                  isMinhaMsg={isMinhaMsg}
+                                  onTranscribed={(newText) => {
+                                    setMensagens(prev => prev.map(m =>
+                                      m.id === msg.id ? { ...m, text: newText } : m
+                                    ));
+                                  }}
+                                />
                               );
                             }
                             
