@@ -1073,6 +1073,25 @@ Deno.serve(async (req) => {
 
     console.log('Mensagem salva com sucesso:', newMessage.id);
 
+    // 8.1 Auto-transcrição de áudio recebido (não só campanhas).
+    //     Só transcreve msgs do contato (from_me=false) — áudios enviados pelo
+    //     próprio bot/operador não precisam de transcrição.
+    //     Async/fire-and-forget: não bloqueia o webhook.
+    const isAudioRecebido =
+      messageType === 'audio' && !Boolean(data.key.fromMe) && Deno.env.get('OPENAI_API_KEY');
+    if (isAudioRecebido) {
+      const transcribeUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/transcrever-audio`;
+      const svcKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      fetch(transcribeUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${svcKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message_id: newMessage.id }),
+      }).catch((e) => console.warn('[auto-transcribe] fire-and-forget falhou:', e));
+    }
+
     // 9. Atualizar ou criar conversa vinculada ao número WhatsApp
     if (numeroWhatsappId) {
       // IMPORTANTE: filtrar por instância! Antes só filtrava por phone, o que

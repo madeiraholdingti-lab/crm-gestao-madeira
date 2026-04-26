@@ -1,10 +1,13 @@
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { FileText, Image, Video, Mic, MapPin, User, Download, Play, Pause } from "lucide-react";
+import { FileText, Image, Video, Mic, MapPin, User, Download, Play, Pause, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useRef } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface MessageBubbleProps {
+  messageId?: string;
   text: string | null;
   messageType: string;
   isFromMe: boolean;
@@ -16,11 +19,12 @@ interface MessageBubbleProps {
   mediaMimeType?: string | null;
 }
 
-export function MessageBubble({ 
-  text, 
-  messageType, 
-  isFromMe, 
-  timestamp, 
+export function MessageBubble({
+  messageId,
+  text,
+  messageType,
+  isFromMe,
+  timestamp,
   createdAt,
   senderName,
   showSenderName = false,
@@ -29,7 +33,37 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [localTranscription, setLocalTranscription] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Convenção: se text começar com '[Áudio]: ', é uma transcrição já feita
+  const transcricaoPersistida =
+    text && text.startsWith('[Áudio]:') ? text.replace(/^\[Áudio\]:\s*/, '') : null;
+  const transcricaoMostrada = localTranscription ?? transcricaoPersistida;
+
+  const handleTranscribe = async () => {
+    if (!messageId) {
+      toast.error("ID da mensagem indisponível");
+      return;
+    }
+    setTranscribing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('transcrever-audio', {
+        body: { message_id: messageId },
+      });
+      if (error) throw error;
+      const result = data as { ok?: boolean; text?: string; error?: string };
+      if (!result.ok) throw new Error(result.error || 'Falha ao transcrever');
+      setLocalTranscription((result.text || '').replace(/^\[Áudio\]:\s*/, ''));
+      toast.success("Áudio transcrito");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+      toast.error(`Não consegui transcrever: ${msg}`);
+    } finally {
+      setTranscribing(false);
+    }
+  };
 
   const toggleAudio = () => {
     if (audioRef.current) {
@@ -77,55 +111,115 @@ export function MessageBubble({
     const icon = renderMediaIcon();
     const normalizedType = messageType?.replace('Message', '').toLowerCase();
     
-    // Audio with media URL - render player
+    // Audio with media URL - render player + botão transcrever
     if ((normalizedType === 'audio' || messageType === 'audioMessage') && mediaUrl) {
       return (
-        <div className="flex items-center gap-3 min-w-[200px]">
-          <audio 
-            ref={audioRef} 
-            src={mediaUrl} 
-            onEnded={handleAudioEnded}
-            className="hidden"
-          />
-          <button
-            onClick={toggleAudio}
-            className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
-              isFromMe 
-                ? 'bg-primary-foreground/20 hover:bg-primary-foreground/30' 
-                : 'bg-muted-foreground/20 hover:bg-muted-foreground/30'
-            }`}
-          >
-            {isPlaying ? (
-              <Pause className="h-5 w-5" />
-            ) : (
-              <Play className="h-5 w-5 ml-0.5" />
-            )}
-          </button>
-          <div className="flex-1">
-            <div className={`h-1 rounded-full ${
-              isFromMe ? 'bg-primary-foreground/40' : 'bg-muted-foreground/40'
-            }`} />
-            <p className="text-xs mt-1 opacity-70">Áudio</p>
+        <div className="flex flex-col gap-2 min-w-[220px]">
+          <div className="flex items-center gap-3">
+            <audio
+              ref={audioRef}
+              src={mediaUrl}
+              onEnded={handleAudioEnded}
+              className="hidden"
+            />
+            <button
+              onClick={toggleAudio}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                isFromMe
+                  ? 'bg-primary-foreground/20 hover:bg-primary-foreground/30'
+                  : 'bg-muted-foreground/20 hover:bg-muted-foreground/30'
+              }`}
+            >
+              {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 ml-0.5" />}
+            </button>
+            <div className="flex-1">
+              <div className={`h-1 rounded-full ${
+                isFromMe ? 'bg-primary-foreground/40' : 'bg-muted-foreground/40'
+              }`} />
+              <p className="text-xs mt-1 opacity-70">Áudio</p>
+            </div>
           </div>
+
+          {transcricaoMostrada ? (
+            <div className={`text-xs italic px-2 py-1.5 rounded ${
+              isFromMe ? 'bg-primary-foreground/10' : 'bg-muted-foreground/10'
+            }`}>
+              <span className="font-semibold not-italic mr-1 opacity-70">Transcrição:</span>
+              {transcricaoMostrada}
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleTranscribe}
+              disabled={transcribing || !messageId}
+              className={`h-7 text-xs gap-1 self-start ${
+                isFromMe ? 'hover:bg-primary-foreground/15' : 'hover:bg-muted-foreground/15'
+              }`}
+            >
+              {transcribing ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Transcrevendo...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3 w-3" />
+                  Transcrever
+                </>
+              )}
+            </Button>
+          )}
         </div>
       );
     }
 
-    // Audio without media URL - placeholder
+    // Audio without media URL - placeholder (ainda permite transcrever via base64)
     if (normalizedType === 'audio' || messageType === 'audioMessage') {
       return (
-        <div className="flex items-center gap-2">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-            isFromMe ? 'bg-primary-foreground/20' : 'bg-muted-foreground/20'
-          }`}>
-            <Mic className="h-4 w-4" />
+        <div className="flex flex-col gap-2 min-w-[200px]">
+          <div className="flex items-center gap-2">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+              isFromMe ? 'bg-primary-foreground/20' : 'bg-muted-foreground/20'
+            }`}>
+              <Mic className="h-4 w-4" />
+            </div>
+            <div className="flex-1">
+              <div className={`h-1 rounded-full ${
+                isFromMe ? 'bg-primary-foreground/40' : 'bg-muted-foreground/40'
+              }`} />
+              <p className="text-xs mt-1 opacity-70">Áudio</p>
+            </div>
           </div>
-          <div className="flex-1">
-            <div className={`h-1 rounded-full ${
-              isFromMe ? 'bg-primary-foreground/40' : 'bg-muted-foreground/40'
-            }`} />
-            <p className="text-xs mt-1 opacity-70">Áudio não disponível</p>
-          </div>
+
+          {transcricaoMostrada ? (
+            <div className={`text-xs italic px-2 py-1.5 rounded ${
+              isFromMe ? 'bg-primary-foreground/10' : 'bg-muted-foreground/10'
+            }`}>
+              <span className="font-semibold not-italic mr-1 opacity-70">Transcrição:</span>
+              {transcricaoMostrada}
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleTranscribe}
+              disabled={transcribing || !messageId}
+              className="h-7 text-xs gap-1 self-start"
+            >
+              {transcribing ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Transcrevendo...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3 w-3" />
+                  Transcrever
+                </>
+              )}
+            </Button>
+          )}
         </div>
       );
     }
