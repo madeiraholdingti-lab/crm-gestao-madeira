@@ -331,6 +331,186 @@ const buscarMemoria: ToolDefinition = {
 };
 
 // ============================================================================
+// Crons gerenciáveis
+// ============================================================================
+
+const criarCron: ToolDefinition = {
+  name: 'criar_cron',
+  description: 'Cria um job recorrente. Confirma com o usuário antes de chamar! Tipos: "mensagem" (envia texto pro WhatsApp dele), "briefing" (roda prompt e manda resultado), "versiculo" (envia versículo bíblico + reflexão diária). Ex: "todo dia às 6h, manda versículo e reflexão" -> tipo=versiculo, cron=0 6 * * *',
+  input_schema: {
+    type: 'object',
+    properties: {
+      nome: { type: 'string', description: 'Nome curto identificador' },
+      tipo: { type: 'string', enum: ['mensagem', 'briefing', 'versiculo'] },
+      cron_expression: {
+        type: 'string',
+        description: 'Cron 5 campos no fuso BRT (min hora dia mês dia_semana). Ex: "0 6 * * *" = todo dia 6h',
+      },
+      payload: {
+        type: 'object',
+        description: 'Tipo=mensagem: {texto}. Tipo=briefing: {prompt}. Tipo=versiculo: {} (vazio).',
+      },
+    },
+    required: ['nome', 'tipo', 'cron_expression'],
+  },
+  async handler(args, ctx) {
+    const { data, error } = await ctx.supa
+      .from('assistente_crons')
+      .insert({
+        user_id: ctx.userId,
+        nome: args.nome,
+        tipo: args.tipo,
+        cron_expression: args.cron_expression,
+        payload: args.payload || {},
+        ativo: true,
+      })
+      .select('id, nome')
+      .single();
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, cron_id: (data as { id: string }).id, nome: (data as { nome: string }).nome };
+  },
+};
+
+const listarCrons: ToolDefinition = {
+  name: 'listar_crons',
+  description: 'Lista crons ativos do usuário. Use quando ele perguntar sobre lembretes recorrentes, "o que tu manda pra mim automaticamente?".',
+  input_schema: { type: 'object', properties: {} },
+  async handler(_args, ctx) {
+    const { data } = await ctx.supa
+      .from('assistente_crons')
+      .select('id, nome, tipo, cron_expression, ativo, ultima_execucao_em, total_execucoes')
+      .eq('user_id', ctx.userId)
+      .order('created_at', { ascending: false });
+    return { total: (data || []).length, crons: data || [] };
+  },
+};
+
+const pausarCron: ToolDefinition = {
+  name: 'pausar_cron',
+  description: 'Pausa ou reativa um cron. Use quando user quiser parar/retomar um lembrete recorrente.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cron_id: { type: 'string', description: 'UUID do cron' },
+      ativo: { type: 'boolean', description: 'true=ativo, false=pausado' },
+    },
+    required: ['cron_id', 'ativo'],
+  },
+  async handler(args, ctx) {
+    const { error } = await ctx.supa
+      .from('assistente_crons')
+      .update({ ativo: args.ativo, updated_at: new Date().toISOString() })
+      .eq('id', args.cron_id)
+      .eq('user_id', ctx.userId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  },
+};
+
+// ============================================================================
+// Aprendizado por correção
+// ============================================================================
+
+const registrarCorrecao: ToolDefinition = {
+  name: 'registrar_correcao',
+  description: 'Registra uma correção do usuário sobre algo que você fez. Use SEMPRE que ele te corrigir ("não, em vez disso...", "da próxima vez...", "isso ficou ruim, faz assim..."). Não precisa confirmar — registra direto.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      contexto: { type: 'string', description: 'O que você fez/respondeu que ficou errado' },
+      correcao: { type: 'string', description: 'O que ele pediu pra fazer diferente' },
+      categoria: {
+        type: 'string',
+        enum: ['tom', 'formato', 'conteudo', 'processo'],
+      },
+      aplicacao: {
+        type: 'string',
+        description: 'Quando aplicar essa correção (ex: "ao criar tarefa", "ao listar agenda")',
+      },
+    },
+    required: ['contexto', 'correcao'],
+  },
+  async handler(args, ctx) {
+    const { error } = await ctx.supa
+      .from('assistente_correcoes')
+      .insert({
+        user_id: ctx.userId,
+        contexto: args.contexto,
+        correcao: args.correcao,
+        categoria: args.categoria || 'processo',
+        aplicacao: args.aplicacao || null,
+      });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  },
+};
+
+// ============================================================================
+// RAG - Aulas G4 (placeholder, fase 2)
+// ============================================================================
+
+const buscarAulasG4: ToolDefinition = {
+  name: 'buscar_aulas_g4',
+  description: 'Busca semântica nas transcrições das aulas G4 do Maikon. Use quando ele perguntar sobre conteúdo dos cursos: "como o G4 ensina X", "lembra daquela aula sobre Y", "o que aprendi sobre captação". Retorna trechos relevantes com nome da aula e timestamp.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      pergunta: { type: 'string', description: 'A pergunta natural do user' },
+      top_k: { type: 'integer', default: 5, minimum: 1, maximum: 10 },
+    },
+    required: ['pergunta'],
+  },
+  async handler(args, ctx) {
+    const openaiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!openaiKey) return { ok: false, error: 'OpenAI key não configurada' };
+
+    // 1. Embedding da pergunta
+    const embR = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'text-embedding-3-small',
+        input: args.pergunta,
+      }),
+    });
+    if (!embR.ok) {
+      return { ok: false, error: `embedding ${embR.status}` };
+    }
+    const embJ = await embR.json();
+    const queryEmb = embJ.data?.[0]?.embedding;
+    if (!queryEmb) return { ok: false, error: 'embedding vazio' };
+
+    // 2. Busca cosine similarity em pgvector
+    const topK = (args.top_k as number) || 5;
+    const { data, error } = await ctx.supa.rpc('buscar_aulas_g4_similar', {
+      query_emb: queryEmb,
+      top_k: topK,
+    });
+
+    if (error) {
+      // RPC pode ainda não existir se ninguém indexou aulas — fallback amigável
+      if (error.message.includes('does not exist') || error.message.includes('schema cache')) {
+        return {
+          ok: false,
+          error: 'Nenhuma aula G4 indexada ainda. Maikon precisa subir transcrições primeiro.',
+          status: 'sem_indice',
+        };
+      }
+      return { ok: false, error: error.message };
+    }
+
+    return {
+      ok: true,
+      pergunta: args.pergunta,
+      trechos: data,
+    };
+  },
+};
+
+// ============================================================================
 // Export
 // ============================================================================
 
@@ -342,6 +522,11 @@ export const ALL_TOOLS: ToolDefinition[] = [
   listarCampanhas,
   salvarMemoria,
   buscarMemoria,
+  criarCron,
+  listarCrons,
+  pausarCron,
+  registrarCorrecao,
+  buscarAulasG4,
 ];
 
 // Schemas pra enviar ao Anthropic API
