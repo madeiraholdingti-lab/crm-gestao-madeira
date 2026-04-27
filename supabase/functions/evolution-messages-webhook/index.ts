@@ -1195,15 +1195,66 @@ Deno.serve(async (req) => {
         }
 
         // ── LGPD Opt-out: detecta "parar"/"remover"/etc na msg do contato ──
-        // Se detectar, marca todos campanha_envios ativos desse telefone como 'descartado',
-        // insere lead_blacklist e manda confirmação. Skip callback de flip pra em_conversa.
+        // CUIDADOS contra falso positivo:
+        //   1. Regex MUITO restritiva — só comandos claros, não preposição "para".
+        //      Bug histórico (27/04): "Para o Wilson..." disparava opt-out porque
+        //      o regex tinha `parar?` que aceitava "para" sem o "r" final.
+        //   2. Whitelist da equipe: msgs trocadas entre membros (Maikon, Iza,
+        //      Mariana, Raul) NUNCA disparam opt-out. Detecta via:
+        //      - phone do remetente bate com numero_chip de instância 'atendimento'
+        //      - phone do remetente bate com numero_chip de outras instâncias
+        //        (admin_phones do bot, etc).
+        //   3. Mensagem precisa ser CURTA (<60 chars) e o match precisa ocupar
+        //      proporção significativa do texto — comando isolado, não preposição.
         let isOptOut = false;
         if (isFromContact && phone && messageText) {
           const textLower = messageText.toLowerCase().trim();
-          // Regex match exato (palavra isolada ou frase curta) pra evitar falsos positivos
-          const optOutRegex = /^(parar?|pare|para de mandar|remover?|remove|saia?|sair|stop|descadastrar|desinscrever|unsubscribe|cancelar|nao.?quero.?mais|n[ãa]o.?envi(e|ar).?mais|nao.?me.?mand(e|ar))\b/i;
-          const matches = optOutRegex.test(textLower) && textLower.length < 80;
+          // ⚠️ Regex apertada: só palavras inequívocas. Sem `para` (preposição),
+          // sem `sai` (3ª pessoa), sem `remove` solto.
+          // Aceita: PARAR, PARE, STOP, DESCADASTRAR, UNSUBSCRIBE, frases claras.
+          const optOutRegex =
+            /^(parar|pare\b|para\s+de\s+(mandar|enviar)|remover\s+(meu|meus)|stop\b|descadastrar|desinscrever|unsubscribe|cancelar\s+(inscri|cadastr)|n[ãa]o\s+quero\s+mais\s+(receber|mensagens|contat)|n[ãa]o\s+envi(e|ar|em)\s+mais|n[ãa]o\s+me\s+mand(e|ar|em)\s+mais)\b/i;
+          const matches = optOutRegex.test(textLower) && textLower.length < 60;
+
+          // Whitelist da equipe: se phone do remetente é número de instância
+          // (atendimento ou disparo) ou bot_admin_phones do config_global,
+          // NÃO dispara opt-out. Msg interna entre Maikon/Iza/Mariana/Raul.
+          let isInternalTeam = false;
           if (matches) {
+            const phoneOnlyDigits = phone.replace(/\D/g, '');
+            const last10 = phoneOnlyDigits.slice(-10);
+            const variants = gerarVariantesTelefoneBR(phone);
+
+            const { data: instRows } = await supabase
+              .from('instancias_whatsapp')
+              .select('numero_chip, finalidade')
+              .neq('status', 'deletada');
+            const instPhones = (instRows || [])
+              .map((r: { numero_chip?: string }) => (r.numero_chip || '').replace(/\D/g, ''))
+              .filter(Boolean);
+
+            const { data: cfgBot } = await supabase
+              .from('config_global')
+              .select('bot_admin_phones')
+              .limit(1)
+              .single();
+            const adminPhones: string[] = Array.isArray((cfgBot as { bot_admin_phones?: string[] } | null)?.bot_admin_phones)
+              ? ((cfgBot as { bot_admin_phones: string[] }).bot_admin_phones).map(p => p.replace(/\D/g, ''))
+              : [];
+
+            const allTeam = [...instPhones, ...adminPhones];
+            isInternalTeam = allTeam.some(t => {
+              if (!t) return false;
+              const tLast10 = t.slice(-10);
+              return tLast10 === last10 || variants.some(v => v === t || v.endsWith(tLast10));
+            });
+
+            if (isInternalTeam) {
+              console.log(`[opt-out] SKIP — phone ${phone} é da equipe interna (msg entre Maikon/Iza/Mariana/Raul)`);
+            }
+          }
+
+          if (matches && !isInternalTeam) {
             isOptOut = true;
             console.log(`[opt-out] Detectado em msg do ${phone}: "${messageText.slice(0, 60)}"`);
             try {
