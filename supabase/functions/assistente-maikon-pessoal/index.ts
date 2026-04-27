@@ -139,6 +139,14 @@ Deno.serve(async (req: Request) => {
       return jsonRes(500, { error: 'ANTHROPIC_API_KEY não configurada' });
     }
 
+    // Carrega contexto compactado (sumários + correções + memórias + últimos turns)
+    // via RPC. Isso evita explodir tokens em conversas longas.
+    const { data: ctxData } = await supa.rpc('contexto_assistente', {
+      p_user_id: userId,
+      p_turnos_recentes: 6,
+    });
+    const contextoCompactado = montarContextoExtra(ctxData);
+
     const messages: AnthropicMessage[] = [{ role: 'user', content: inputText }];
     const toolCallsLog: Array<Record<string, unknown>> = [];
     let respostaFinal = '';
@@ -157,8 +165,12 @@ Deno.serve(async (req: Request) => {
           model: MODEL,
           max_tokens: MAX_TOKENS,
           system: [
-            // prompt caching: system prompt fixo é cacheado, economiza ~80% em re-uso
+            // Bloco 1 (fixo): cacheado — system prompt da persona. Economiza ~80% em re-uso.
             { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+            // Bloco 2 (variável): contexto compactado (memórias, correções, sumários, turnos
+            // recentes). Não cacheado porque muda a cada turno, mas como o chunk anterior
+            // está cacheado, só este pequeno bloco é processado fresh.
+            { type: 'text', text: contextoCompactado },
           ],
           tools: TOOL_SCHEMAS,
           messages,
@@ -304,4 +316,55 @@ function jsonRes(status: number, body: Record<string, unknown>): Response {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+// Monta o segundo bloco do system prompt (variável) com contexto compactado:
+// memórias top + correções ativas + sumários + últimos turnos. Mantém pequeno
+// pra não estourar tokens — o histórico longo já tá resumido.
+function montarContextoExtra(ctxData: unknown): string {
+  type CtxRow = {
+    resumo_longo?: string | null;
+    resumo_mes?: string | null;
+    resumo_semana?: string | null;
+    correcoes_ativas?: Array<{ aplicacao?: string; correcao?: string }>;
+    memorias_top?: Array<{ chave: string; valor: string; categoria?: string }>;
+    turnos_recentes?: Array<{ q: string; a: string; em: string }>;
+  };
+  const arr = (Array.isArray(ctxData) ? ctxData : []) as CtxRow[];
+  const c = arr[0] || {};
+
+  const partes: string[] = [];
+
+  if (c.resumo_longo) partes.push(`<historico_longo>\n${c.resumo_longo}\n</historico_longo>`);
+  if (c.resumo_mes) partes.push(`<historico_mes>\n${c.resumo_mes}\n</historico_mes>`);
+  if (c.resumo_semana) partes.push(`<historico_semana>\n${c.resumo_semana}\n</historico_semana>`);
+
+  if (c.memorias_top && c.memorias_top.length > 0) {
+    const linhas = c.memorias_top
+      .map(m => `- ${m.chave}: ${m.valor}${m.categoria ? ` [${m.categoria}]` : ''}`)
+      .join('\n');
+    partes.push(`<memorias>\n${linhas}\n</memorias>`);
+  }
+
+  if (c.correcoes_ativas && c.correcoes_ativas.length > 0) {
+    const linhas = c.correcoes_ativas
+      .map(co => `- ${co.aplicacao ? `[${co.aplicacao}] ` : ''}${co.correcao}`)
+      .join('\n');
+    partes.push(
+      `<correcoes_aprendidas>\nO Maikon te corrigiu antes nessas situações — siga essas regras:\n${linhas}\n</correcoes_aprendidas>`
+    );
+  }
+
+  if (c.turnos_recentes && c.turnos_recentes.length > 0) {
+    const linhas = c.turnos_recentes
+      .slice(-6)
+      .map(t => `Maikon: ${(t.q || '').slice(0, 200)}\nVocê: ${(t.a || '').slice(0, 200)}`)
+      .join('\n---\n');
+    partes.push(`<turnos_recentes>\n${linhas}\n</turnos_recentes>`);
+  }
+
+  if (partes.length === 0) {
+    return '<contexto>\nPrimeira interação — sem histórico prévio.\n</contexto>';
+  }
+  return partes.join('\n\n');
 }
