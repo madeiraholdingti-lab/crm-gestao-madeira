@@ -83,13 +83,25 @@ if (event !== 'messages.upsert' && event !== 'MESSAGES_UPSERT') {
 }
 
 const key = data.key || {};
-const remoteJid = key.remoteJid || '';
+const rawRemoteJid = key.remoteJid || '';
 const fromMe = !!key.fromMe;
 const msgId = key.id || ('id_' + Date.now() + '_' + Math.random().toString(36).slice(2));
 
-// Ignora grupos e @lid
-if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@lid')) {
-  return [{ json: { skip: true, reason: 'grupo ou lid' } }];
+// Ignora grupos
+if (!rawRemoteJid || rawRemoteJid.includes('@g.us')) {
+  return [{ json: { skip: true, reason: 'grupo' } }];
+}
+
+// Suporte a @lid (Linked Device IDs do WhatsApp moderno):
+// Se remoteJid é @lid, resolve via key.remoteJidAlt (que tem o phone real
+// como @s.whatsapp.net). Sem isso, msgs novas ficam ignoradas porque o
+// WhatsApp passou a usar @lid em maioria dos pacientes.
+const isLid = rawRemoteJid.endsWith('@lid');
+const remoteJidAlt = (key.remoteJidAlt || '').trim();
+const remoteJid = (isLid && remoteJidAlt) ? remoteJidAlt : rawRemoteJid;
+
+if (isLid && !remoteJidAlt) {
+  return [{ json: { skip: true, reason: 'lid sem remoteJidAlt' } }];
 }
 
 const phone = remoteJid.replace('@s.whatsapp.net', '');

@@ -1,6 +1,8 @@
 {
   "id": "consultorioIaPacientesV1",
   "name": "Consultório — IA Pacientes",
+  "description": null,
+  "active": true,
   "nodes": [
     {
       "parameters": {
@@ -21,7 +23,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extrai dados da msg do payload Evolution (messages.upsert)\nconst body = $json.body || $json || {};\nconst event = body.event || '';\nconst data = body.data || {};\n\n// Só processa messages.upsert\nif (event !== 'messages.upsert' && event !== 'MESSAGES_UPSERT') {\n  return [{ json: { skip: true, reason: 'evento não é messages.upsert', event } }];\n}\n\nconst key = data.key || {};\nconst remoteJid = key.remoteJid || '';\nconst fromMe = !!key.fromMe;\nconst msgId = key.id || ('id_' + Date.now() + '_' + Math.random().toString(36).slice(2));\n\n// Ignora grupos e @lid\nif (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@lid')) {\n  return [{ json: { skip: true, reason: 'grupo ou lid' } }];\n}\n\nconst phone = remoteJid.replace('@s.whatsapp.net', '');\n\n// Tipo de msg\nconst m = data.message || {};\nlet msgType = 'text';\nlet msgText = '';\nlet mediaUrl = '';\nlet mediaBase64 = '';\nlet mediaMime = '';\n\nif (m.conversation) { msgType = 'text'; msgText = m.conversation; }\nelse if (m.extendedTextMessage?.text) { msgType = 'text'; msgText = m.extendedTextMessage.text; }\nelse if (m.imageMessage) { msgType = 'image'; mediaUrl = m.imageMessage.url || ''; mediaBase64 = m.imageMessage.base64 || ''; mediaMime = m.imageMessage.mimetype || 'image/jpeg'; msgText = m.imageMessage.caption || ''; }\nelse if (m.audioMessage) { msgType = 'audio'; mediaUrl = m.audioMessage.url || ''; mediaBase64 = m.audioMessage.base64 || ''; mediaMime = m.audioMessage.mimetype || 'audio/ogg'; }\nelse if (m.videoMessage) { msgType = 'video'; mediaUrl = m.videoMessage.url || ''; msgText = m.videoMessage.caption || ''; }\nelse if (m.documentMessage) { msgType = 'document'; mediaUrl = m.documentMessage.url || ''; msgText = m.documentMessage.fileName || ''; }\nelse { msgType = 'unknown'; }\n\n// Ignora msgs do próprio chip (fromMe=true) — agente não responde a si mesmo\nif (fromMe) {\n  return [{ json: { skip: true, reason: 'fromMe=true', phone, msgId } }];\n}\n\nreturn [{\n  json: {\n    skip: false,\n    phone,\n    remoteJid,\n    msgId,\n    fromMe,\n    msgType,\n    msgText,\n    mediaUrl,\n    mediaBase64,\n    mediaMime,\n    pushName: data.pushName || '',\n    instanceName: body.instance || 'Consultorio',\n    timestamp: Date.now(),\n  }\n}];\n"
+        "jsCode": "// Extrai dados da msg do payload Evolution (messages.upsert)\nconst body = $json.body || $json || {};\nconst event = body.event || '';\nconst data = body.data || {};\n\n// Só processa messages.upsert\nif (event !== 'messages.upsert' && event !== 'MESSAGES_UPSERT') {\n  return [{ json: { skip: true, reason: 'evento não é messages.upsert', event } }];\n}\n\nconst key = data.key || {};\nconst rawRemoteJid = key.remoteJid || '';\nconst fromMe = !!key.fromMe;\nconst msgId = key.id || ('id_' + Date.now() + '_' + Math.random().toString(36).slice(2));\n\n// Ignora grupos\nif (!rawRemoteJid || rawRemoteJid.includes('@g.us')) {\n  return [{ json: { skip: true, reason: 'grupo' } }];\n}\n\n// Suporte a @lid (Linked Device IDs do WhatsApp moderno):\n// Se remoteJid é @lid, resolve via key.remoteJidAlt (que tem o phone real\n// como @s.whatsapp.net). Sem isso, todas msgs novas ficam ignoradas porque\n// o WhatsApp passou a usar @lid em maioria dos pacientes.\nconst isLid = rawRemoteJid.endsWith('@lid');\nconst remoteJidAlt = (key.remoteJidAlt || '').trim();\nconst remoteJid = (isLid && remoteJidAlt) ? remoteJidAlt : rawRemoteJid;\n\nif (isLid && !remoteJidAlt) {\n  return [{ json: { skip: true, reason: 'lid sem remoteJidAlt' } }];\n}\n\nconst phone = remoteJid.replace('@s.whatsapp.net', '');\n\n// Tipo de msg\nconst m = data.message || {};\nlet msgType = 'text';\nlet msgText = '';\nlet mediaUrl = '';\nlet mediaBase64 = '';\nlet mediaMime = '';\n\nif (m.conversation) { msgType = 'text'; msgText = m.conversation; }\nelse if (m.extendedTextMessage?.text) { msgType = 'text'; msgText = m.extendedTextMessage.text; }\nelse if (m.imageMessage) { msgType = 'image'; mediaUrl = m.imageMessage.url || ''; mediaBase64 = m.imageMessage.base64 || ''; mediaMime = m.imageMessage.mimetype || 'image/jpeg'; msgText = m.imageMessage.caption || ''; }\nelse if (m.audioMessage) { msgType = 'audio'; mediaUrl = m.audioMessage.url || ''; mediaBase64 = m.audioMessage.base64 || ''; mediaMime = m.audioMessage.mimetype || 'audio/ogg'; }\nelse if (m.videoMessage) { msgType = 'video'; mediaUrl = m.videoMessage.url || ''; msgText = m.videoMessage.caption || ''; }\nelse if (m.documentMessage) { msgType = 'document'; mediaUrl = m.documentMessage.url || ''; msgText = m.documentMessage.fileName || ''; }\nelse { msgType = 'unknown'; }\n\n// Ignora msgs do próprio chip (fromMe=true) — agente não responde a si mesmo\nif (fromMe) {\n  return [{ json: { skip: true, reason: 'fromMe=true', phone, msgId } }];\n}\n\nreturn [{\n  json: {\n    skip: false,\n    phone,\n    remoteJid,\n    rawRemoteJid,\n    isLid,\n    msgId,\n    fromMe,\n    msgType,\n    msgText,\n    mediaUrl,\n    mediaBase64,\n    mediaMime,\n    pushName: data.pushName || '',\n    instanceName: body.instance || 'Consultorio',\n    timestamp: Date.now(),\n  }\n}];\n"
       },
       "id": "node-normalizar-payload",
       "name": "Normalizar payload",
@@ -502,5 +504,33 @@
   },
   "settings": {
     "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": null,
+  "activeVersionId": "ee4fec68-36e2-4b69-94ca-45300df4ea46",
+  "versionCounter": 10,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-04-24T13:08:56.692Z",
+      "createdAt": "2026-04-24T13:08:56.692Z",
+      "role": "workflow:owner",
+      "workflowId": "consultorioIaPacientesV1",
+      "projectId": "SxdFFgTI1TnpBH27",
+      "project": {
+        "updatedAt": "2025-11-16T10:10:31.438Z",
+        "createdAt": "2025-11-16T09:28:51.588Z",
+        "id": "SxdFFgTI1TnpBH27",
+        "name": "ewertonq rtubi <madeira.holding.ti@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "9993fbf2-3e9a-492f-bc43-2e0e36047f12"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
   }
 }
