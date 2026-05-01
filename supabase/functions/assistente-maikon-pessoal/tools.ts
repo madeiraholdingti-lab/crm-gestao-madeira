@@ -31,6 +31,49 @@ function normalizarFone(s: string): string {
   return s.replace(/\D/g, '');
 }
 
+// Cotas diárias por tool destrutiva. Conta usos com sucesso nas últimas 24h.
+// Retorna {ok: true} se permite, {ok: false, error} se atingiu cota.
+const DAILY_LIMITS: Record<string, number> = {
+  enviar_email: 20,
+  enviar_mensagem_avulsa: 10,
+  criar_campanha: 3,
+  cancelar_evento: 5,
+  criar_evento: 10,
+  adicionar_leads_campanha: 5,  // max 5 invocações; cada uma pode adicionar até 2k leads
+  controlar_campanha: 10,
+  indexar_aula_g4_atual: 8,
+  indexar_aula_drive: 8,
+};
+
+async function checarCota(
+  ctx: ToolContext,
+  toolName: string,
+): Promise<{ ok: true } | { ok: false; error: string; cota_atingida: true }> {
+  const limite = DAILY_LIMITS[toolName];
+  if (!limite) return { ok: true };
+  const dia = new Date(); dia.setHours(0, 0, 0, 0);
+  const { data, error } = await ctx.supa
+    .from('assistente_audit_log')
+    .select('tool_calls')
+    .eq('user_id', ctx.userId)
+    .gte('created_at', dia.toISOString());
+  if (error) return { ok: true }; // se DB falhar, deixa passar (não bloqueia trabalho)
+  let usos = 0;
+  for (const r of (data || []) as Array<{ tool_calls: Array<{ name?: string; error?: boolean }> }>) {
+    for (const tc of (r.tool_calls || [])) {
+      if (tc.name === toolName && !tc.error) usos++;
+    }
+  }
+  if (usos >= limite) {
+    return {
+      ok: false,
+      error: `Cota diária atingida pra ${toolName}: ${usos}/${limite} hoje. Reseta à meia-noite.`,
+      cota_atingida: true,
+    };
+  }
+  return { ok: true };
+}
+
 // Pega access_token do Google p/ user atual. Refresh automático via OAuth.
 // Retorna { ok: true, token } ou { ok: false, error }.
 async function googleAccessToken(
@@ -891,6 +934,8 @@ const enviarMensagemAvulsa: ToolDefinition = {
     required: ['texto'],
   },
   async handler(args, ctx) {
+    const cota = await checarCota(ctx, 'enviar_mensagem_avulsa');
+    if (!cota.ok) return cota;
     if (!args.contato_id && !args.telefone) return { ok: false, error: 'precisa contato_id ou telefone' };
 
     let phone = '';
@@ -977,6 +1022,8 @@ const criarCampanha: ToolDefinition = {
     required: ['nome', 'mensagem_inicial', 'chip_disparo_id'],
   },
   async handler(args, ctx) {
+    const cota = await checarCota(ctx, 'criar_campanha');
+    if (!cota.ok) return cota;
     // Valida chip
     const { data: chip } = await ctx.supa
       .from('instancias_whatsapp')
@@ -1035,6 +1082,8 @@ const controlarCampanha: ToolDefinition = {
     };
     const novo = mapaStatus[args.acao as string];
     if (!novo) return { ok: false, error: 'ação inválida' };
+    const cota = await checarCota(ctx, 'controlar_campanha');
+    if (!cota.ok) return cota;
 
     const update: Record<string, unknown> = {
       status: novo.status,
@@ -1072,6 +1121,8 @@ const adicionarLeadsCampanha: ToolDefinition = {
     required: ['campanha_id'],
   },
   async handler(args, ctx) {
+    const cota = await checarCota(ctx, 'adicionar_leads_campanha');
+    if (!cota.ok) return cota;
     let leadsQ = ctx.supa.from('leads').select('id, telefone, nome', { count: 'exact' }).eq('ativo', true);
     if (args.lead_ids && Array.isArray(args.lead_ids) && args.lead_ids.length > 0) {
       leadsQ = leadsQ.in('id', args.lead_ids as string[]);
@@ -1142,6 +1193,8 @@ const criarEvento: ToolDefinition = {
     required: ['titulo', 'inicio_iso', 'fim_iso'],
   },
   async handler(args, ctx) {
+    const cota = await checarCota(ctx, 'criar_evento');
+    if (!cota.ok) return cota;
     const tk = await googleAccessToken(ctx);
     if (!tk.ok) return tk;
     const body = {
@@ -1225,6 +1278,8 @@ const cancelarEvento: ToolDefinition = {
     required: ['google_event_id'],
   },
   async handler(args, ctx) {
+    const cota = await checarCota(ctx, 'cancelar_evento');
+    if (!cota.ok) return cota;
     const tk = await googleAccessToken(ctx);
     if (!tk.ok) return tk;
     const r = await fetch(`${GCAL_BASE}/calendars/primary/events/${args.google_event_id}?sendUpdates=all`, {
@@ -1405,6 +1460,8 @@ const enviarEmail: ToolDefinition = {
     required: ['para', 'assunto', 'corpo'],
   },
   async handler(args, ctx) {
+    const cota = await checarCota(ctx, 'enviar_email');
+    if (!cota.ok) return cota;
     const tk = await googleAccessToken(ctx);
     if (!tk.ok) return tk;
 
@@ -1896,6 +1953,8 @@ const indexarAulaG4Atual: ToolDefinition = {
     required: ['titulo'],
   },
   async handler(args, ctx) {
+    const cota = await checarCota(ctx, 'indexar_aula_g4_atual');
+    if (!cota.ok) return cota;
     if (!ctx.currentAudioBase64) {
       return {
         ok: false,
@@ -1946,6 +2005,8 @@ const indexarAulaDrive: ToolDefinition = {
     required: ['drive_file_id'],
   },
   async handler(args, ctx) {
+    const cota = await checarCota(ctx, 'indexar_aula_drive');
+    if (!cota.ok) return cota;
     const url = `${Deno.env.get('SUPABASE_URL')}/functions/v1/indexar-aula-g4`;
     const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     fetch(url, {
