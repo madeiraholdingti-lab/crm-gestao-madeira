@@ -51,7 +51,16 @@ REGRAS DE COMUNICAÇÃO:
 - Em dúvidas, pergunte. Nunca chute.
 
 TOOLS DISPONÍVEIS:
-Você tem acesso ao CRM dele. Pode listar conversas pendentes da equipe, ver tarefas atrasadas, criar tarefas, ver agenda do dia/semana, listar campanhas de prospecção, e guardar/recuperar memórias sobre o Maikon.
+Você tem acesso ao CRM dele. Pode buscar/criar/atualizar contatos, buscar e resumir conversas dele com qualquer pessoa, listar conversas pendentes da equipe, ver tarefas atrasadas, criar tarefas, ver agenda do dia/semana, listar campanhas de prospecção, e guardar/recuperar memórias sobre o Maikon. Também consegue indexar e buscar nas aulas G4 dele.
+
+QUANDO O MAIKON CITA UMA PESSOA POR NOME:
+Antes de tomar ação relacionada (resumir conversa, criar tarefa "ligar pra X", etc), use buscar_contato({termo}) pra resolver pro contato real. Se houver mais de um match, pergunte qual.
+
+AULAS G4 (RAG):
+- Quando ele mandar áudio LONGO (>3min) — você verá [ÁUDIO LONGO recebido: Nmin] no início do input — NÃO trate como pergunta. Pergunte uma vez: "É aula do G4? Quer que eu indexe pra buscar depois?". Se ele confirmar, chame indexar_aula_g4_atual com um título que faça sentido (peça se não souber).
+- Quando ele citar "aula do G4 X" ou pedir indexar conteúdo de uma pasta do Drive dele, use indexar_aula_drive.
+- Quando ele perguntar sobre conteúdo das aulas ("o que o G4 ensina sobre captação", "lembra daquela aula sobre cultura"), use buscar_aulas_g4.
+- Pra listar o que está indexado, use listar_aulas_g4.
 
 LIMITAÇÕES:
 - Você NÃO pode enviar WhatsApp em nome dele ainda (fase posterior).
@@ -79,6 +88,10 @@ Deno.serve(async (req: Request) => {
     let inputText: string;
     let waMessageId: string | null = null;
     let inputType = 'text';
+    // Mídia atual capturada do webhook — disponível pra tools que indexam aula G4.
+    let currentAudioBase64: string | null = null;
+    let currentAudioMime: string | null = null;
+    let currentAudioDuracaoSeg = 0;
 
     if (directText) {
       // Modo direto (testes ou outras integrações)
@@ -110,7 +123,16 @@ Deno.serve(async (req: Request) => {
         inputType = 'audio';
         const b64 = data.message.audioMessage?.base64 || data.message.pttMessage?.base64;
         const mime = data.message.audioMessage?.mimetype || data.message.pttMessage?.mimetype || 'audio/ogg';
+        const duracaoSeg = data.message.audioMessage?.seconds || data.message.pttMessage?.seconds || 0;
         inputText = await transcribeWhisper(b64, mime);
+        // Áudio longo (>3min) — guarda base64 pra tool indexar_aula_g4_atual usar.
+        // Concat info de duração no inputText pra Claude considerar se é aula G4.
+        if (duracaoSeg > 180) {
+          currentAudioBase64 = b64;
+          currentAudioMime = mime;
+          currentAudioDuracaoSeg = duracaoSeg;
+          inputText = `[ÁUDIO LONGO recebido: ${Math.round(duracaoSeg / 60)}min — pode ser aula G4]\n\nTranscrição:\n${inputText}`;
+        }
       } else {
         return jsonRes(200, { skipped: true, reason: 'sem texto/áudio' });
       }
@@ -131,7 +153,15 @@ Deno.serve(async (req: Request) => {
     }
 
     const userPhone = Deno.env.get('ASSISTENTE_USER_PHONE') || '';
-    const ctx = { supa, userId, userPhone };
+    const ctx = {
+      supa,
+      userId,
+      userPhone,
+      currentAudioBase64,
+      currentAudioMime,
+      currentAudioDuracaoSeg,
+      currentWaMessageId: waMessageId,
+    };
 
     // Loop de tool use
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY');

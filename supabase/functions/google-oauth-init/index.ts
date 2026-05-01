@@ -75,12 +75,23 @@ serve(async (req) => {
       key,
     );
 
-    // Montar URL de consentimento do Google
+    // Montar URL de consentimento do Google.
+    // Scopes:
+    //   - calendar:           leitura+escrita (criar/editar/cancelar eventos via WhatsApp)
+    //   - drive.readonly:     indexar aulas G4 que o Maikon mantém numa pasta do Drive
+    //   - gmail.modify:       agente lê emails (não lidos, busca), resume, envia em nome dele,
+    //                         marca como lido. NÃO permite delete (gmail.modify exclui esse poder).
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
-      scope: 'openid email https://www.googleapis.com/auth/calendar.readonly',
+      scope: [
+        'openid',
+        'email',
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/gmail.modify',
+      ].join(' '),
       access_type: 'offline',
       prompt: 'consent',
       state,
