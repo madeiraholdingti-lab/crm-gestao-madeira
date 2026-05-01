@@ -108,7 +108,7 @@ Mais de 25 melhorias e correções entregues. Organizadas pelas três frentes qu
 
 ---
 
-## Próximos passos (não inclusos nessa NF)
+## Próximos passos 
 
 - Reativação da campanha "Pediatria Chapecó" (aguardando reconectar chip de disparo) — passo a passo já entregue à Iza
 - Estruturação do **Agente Pessoal pelo seu WhatsApp** — código já está pronto e deployado, aguardando seu OK pra comprar chip dedicado e ativar

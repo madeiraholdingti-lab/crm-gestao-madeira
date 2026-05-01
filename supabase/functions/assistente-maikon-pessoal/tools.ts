@@ -43,6 +43,7 @@ const DAILY_LIMITS: Record<string, number> = {
   controlar_campanha: 10,
   indexar_aula_g4_atual: 8,
   indexar_aula_drive: 8,
+  pesquisar_web: 50,  // Tavily free tier dá 1k/mês — 50/dia segura cota e custo
 };
 
 async function checarCota(
@@ -1531,6 +1532,84 @@ const marcarEmailLido: ToolDefinition = {
 };
 
 // ============================================================================
+// Web Search (Tavily) — Fase 8
+// ============================================================================
+
+const pesquisarWeb: ToolDefinition = {
+  name: 'pesquisar_web',
+  description: 'Pesquisa na internet via Tavily (otimizado pra agentes IA). Use quando Maikon perguntar algo que requer info atual e que não está no CRM nem nas memórias: preço de produto, notícia recente, info sobre pessoa/empresa, processo jurídico, dúvida médica genérica. Retorna resposta sintetizada + 5 fontes. NÃO use pra perguntas sobre o CRM próprio (use as tools do CRM).',
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Pergunta natural ou termos de busca em PT-BR ou EN.' },
+      profundidade: {
+        type: 'string',
+        enum: ['rapida', 'completa'],
+        default: 'rapida',
+        description: 'rapida = básica/rápida (default), completa = mais profunda (custa mais créditos Tavily)',
+      },
+      incluir_dominios: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Restringir a domínios específicos (ex: ["scielo.org", "tjsc.jus.br"])',
+      },
+      excluir_dominios: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Filtrar fora domínios (ex: ["pinterest.com"])',
+      },
+    },
+    required: ['query'],
+  },
+  async handler(args, ctx) {
+    const cota = await checarCota(ctx, 'pesquisar_web');
+    if (!cota.ok) return cota;
+    const apiKey = Deno.env.get('TAVILY_API_KEY');
+    if (!apiKey) return { ok: false, error: 'TAVILY_API_KEY não configurada' };
+
+    const body: Record<string, unknown> = {
+      api_key: apiKey,
+      query: args.query,
+      search_depth: args.profundidade === 'completa' ? 'advanced' : 'basic',
+      include_answer: true,
+      max_results: 5,
+    };
+    if (Array.isArray(args.incluir_dominios) && (args.incluir_dominios as string[]).length > 0) {
+      body.include_domains = args.incluir_dominios;
+    }
+    if (Array.isArray(args.excluir_dominios) && (args.excluir_dominios as string[]).length > 0) {
+      body.exclude_domains = args.excluir_dominios;
+    }
+
+    const r = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      return { ok: false, error: `Tavily ${r.status}: ${txt.slice(0, 200)}` };
+    }
+    const j = await r.json() as {
+      answer?: string;
+      results?: Array<{ title: string; url: string; content: string; score: number }>;
+    };
+
+    return {
+      ok: true,
+      query: args.query,
+      resposta_sintetizada: j.answer || null,
+      fontes: (j.results || []).map(rs => ({
+        titulo: rs.title,
+        url: rs.url,
+        trecho: (rs.content || '').slice(0, 500),
+        relevancia: Math.round(rs.score * 100) / 100,
+      })),
+    };
+  },
+};
+
+// ============================================================================
 // Briefings inteligentes (Fase 7) — agente monta status do dia/semana
 // ============================================================================
 
@@ -2105,6 +2184,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   adicionarLeadsCampanha,
   // Briefings (Fase 7)
   gerarBriefing,
+  // Web search (Fase 8)
+  pesquisarWeb,
   // Memória / Crons
   salvarMemoria,
   buscarMemoria,
