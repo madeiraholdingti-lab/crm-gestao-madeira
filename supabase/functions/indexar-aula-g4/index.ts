@@ -53,18 +53,25 @@ type SupabaseClient = ReturnType<typeof createClient>;
 
 interface IndexarRequest {
   user_id: string;
-  fonte: 'audio_whatsapp' | 'drive_video';
+  fonte: 'audio_whatsapp' | 'drive_video' | 'vimeo_captions';
   audio_base64?: string;
   mime?: string;
   drive_file_id?: string;
   titulo?: string;
   wa_message_id?: string;
+  // Para fonte=vimeo_captions: transcrição já pronta (extraída do player Vimeo)
+  transcricao_completa?: string;
+  vimeo_id?: string;
+  duracao_seg?: number;
+  // Em batch (várias aulas indexadas em sequência) suprime notificação WhatsApp
+  silent?: boolean;
 }
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   let aulaId: string | null = null;
+  let bodySilent = false;
   const supa = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -72,29 +79,34 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = (await req.json()) as IndexarRequest;
+    bodySilent = !!body.silent;
     if (!body.user_id) throw new Error('user_id obrigatório');
     if (!body.fonte) throw new Error('fonte obrigatória');
 
     // 1. Cria registro com status pendente (idempotente via UNIQUE)
+    // Pra vimeo_captions: usamos vimeo_id como identificador único (via drive_file_id pra reusar UNIQUE)
+    const externalId = body.fonte === 'vimeo_captions'
+      ? `vimeo:${body.vimeo_id}`
+      : body.drive_file_id || null;
+    const waMsgId = body.fonte === 'vimeo_captions' ? null : (body.wa_message_id || null);
+
     const aulaRow = {
       user_id: body.user_id,
       titulo: body.titulo || `Aula ${new Date().toISOString().slice(0, 10)}`,
       fonte: body.fonte,
-      drive_file_id: body.drive_file_id || null,
-      wa_message_id: body.wa_message_id || null,
+      drive_file_id: externalId,
+      wa_message_id: waMsgId,
       status: 'pendente',
     };
 
-    const { data: existente } = await supa
+    let existQ = supa
       .from('assistente_g4_aulas')
       .select('id, status')
-      .eq('user_id', body.user_id)
-      .or(
-        body.drive_file_id
-          ? `drive_file_id.eq.${body.drive_file_id}`
-          : `wa_message_id.eq.${body.wa_message_id}`,
-      )
-      .maybeSingle();
+      .eq('user_id', body.user_id);
+    if (externalId) existQ = existQ.eq('drive_file_id', externalId);
+    else if (waMsgId) existQ = existQ.eq('wa_message_id', waMsgId);
+    else existQ = existQ.eq('titulo', aulaRow.titulo);
+    const { data: existente } = await existQ.maybeSingle();
 
     if (existente && (existente as { status: string }).status === 'concluida') {
       return jsonRes(200, {
@@ -117,48 +129,65 @@ Deno.serve(async (req: Request) => {
       aulaId = (nova as { id: string }).id;
     }
 
-    // 2. Marca como transcrevendo
-    await supa.from('assistente_g4_aulas').update({ status: 'transcrevendo' }).eq('id', aulaId);
+    // 2-4. Obter texto da transcrição: ou via Whisper (audio_whatsapp/drive_video)
+    //      ou direto do body (vimeo_captions — Vimeo já gerou captions auto).
+    let transcricaoTexto: string;
+    let duracaoSeg: number | null;
 
-    // 3. Obtém o áudio (bytes) conforme a fonte
-    let audioBytes: Uint8Array;
-    let audioMime: string;
-    if (body.fonte === 'audio_whatsapp') {
-      if (!body.audio_base64) throw new Error('audio_base64 obrigatório pra fonte=audio_whatsapp');
-      audioBytes = Uint8Array.from(atob(body.audio_base64), c => c.charCodeAt(0));
-      audioMime = body.mime || 'audio/ogg';
-    } else if (body.fonte === 'drive_video') {
-      if (!body.drive_file_id) throw new Error('drive_file_id obrigatório pra fonte=drive_video');
-      const drive = await downloadDoDrive(supa, body.user_id, body.drive_file_id);
-      audioBytes = drive.bytes;
-      audioMime = drive.mime;
+    if (body.fonte === 'vimeo_captions') {
+      if (!body.transcricao_completa || body.transcricao_completa.length < 50) {
+        throw new Error('transcricao_completa obrigatória e ≥50 chars pra fonte=vimeo_captions');
+      }
+      transcricaoTexto = body.transcricao_completa;
+      duracaoSeg = body.duracao_seg ?? null;
+      await supa.from('assistente_g4_aulas').update({ status: 'indexando' }).eq('id', aulaId);
     } else {
-      throw new Error(`fonte inválida: ${body.fonte}`);
+      await supa.from('assistente_g4_aulas').update({ status: 'transcrevendo' }).eq('id', aulaId);
+      let audioBytes: Uint8Array;
+      let audioMime: string;
+      if (body.fonte === 'audio_whatsapp') {
+        if (!body.audio_base64) throw new Error('audio_base64 obrigatório pra fonte=audio_whatsapp');
+        audioBytes = Uint8Array.from(atob(body.audio_base64), c => c.charCodeAt(0));
+        audioMime = body.mime || 'audio/ogg';
+      } else if (body.fonte === 'drive_video') {
+        if (!body.drive_file_id) throw new Error('drive_file_id obrigatório pra fonte=drive_video');
+        const drive = await downloadDoDrive(supa, body.user_id, body.drive_file_id);
+        audioBytes = drive.bytes;
+        audioMime = drive.mime;
+      } else {
+        throw new Error(`fonte inválida: ${body.fonte}`);
+      }
+
+      if (audioBytes.length > MAX_AUDIO_BYTES) {
+        throw new Error(
+          `arquivo ${(audioBytes.length / 1024 / 1024).toFixed(1)}MB excede limite de 25MB do Whisper.`,
+        );
+      }
+
+      const transcricao = await transcreverWhisper(audioBytes, audioMime);
+      duracaoSeg = transcricao.duration ? Math.round(transcricao.duration) : null;
+      if (!transcricao.text || transcricao.text.length < 50) {
+        throw new Error('Whisper retornou transcrição vazia ou muito curta');
+      }
+      transcricaoTexto = transcricao.text;
+
+      await supa.from('assistente_g4_aulas').update({
+        status: 'indexando',
+        transcricao_completa: transcricaoTexto,
+        duracao_seg: duracaoSeg,
+      }).eq('id', aulaId);
     }
 
-    if (audioBytes.length > MAX_AUDIO_BYTES) {
-      throw new Error(
-        `arquivo ${(audioBytes.length / 1024 / 1024).toFixed(1)}MB excede limite de 25MB do Whisper. Manda só o áudio (mp3/m4a/ogg) ou parte da aula.`,
-      );
+    // Pra vimeo_captions, salva transcrição agora (não foi salva acima)
+    if (body.fonte === 'vimeo_captions') {
+      await supa.from('assistente_g4_aulas').update({
+        transcricao_completa: transcricaoTexto,
+        duracao_seg: duracaoSeg,
+      }).eq('id', aulaId);
     }
-
-    // 4. Whisper
-    const transcricao = await transcreverWhisper(audioBytes, audioMime);
-    const duracaoSeg = transcricao.duration ? Math.round(transcricao.duration) : null;
-
-    if (!transcricao.text || transcricao.text.length < 50) {
-      throw new Error('Whisper retornou transcrição vazia ou muito curta');
-    }
-
-    // 5. Marca como indexando
-    await supa.from('assistente_g4_aulas').update({
-      status: 'indexando',
-      transcricao_completa: transcricao.text,
-      duracao_seg: duracaoSeg,
-    }).eq('id', aulaId);
 
     // 6. Chunking
-    const chunks = chunkText(transcricao.text, CHUNK_CHARS, CHUNK_OVERLAP_CHARS);
+    const chunks = chunkText(transcricaoTexto, CHUNK_CHARS, CHUNK_OVERLAP_CHARS);
     if (chunks.length === 0) throw new Error('chunking produziu 0 chunks');
 
     // 7. Embeddings em batches
@@ -199,10 +228,11 @@ Deno.serve(async (req: Request) => {
       if (errIns) throw new Error(`insert chunks (batch ${i}): ${errIns.message}`);
     }
 
-    // 10. Custo estimado
+    // 10. Custo estimado (vimeo_captions = só embedding, sem Whisper)
     const totalTokensEmbed = chunks.reduce((acc, c) => acc + Math.ceil(c.length / 4), 0);
+    const usaWhisper = body.fonte !== 'vimeo_captions';
     const custoUsd =
-      (duracaoSeg ? (duracaoSeg / 60) * WHISPER_USD_POR_MIN : 0) +
+      (usaWhisper && duracaoSeg ? (duracaoSeg / 60) * WHISPER_USD_POR_MIN : 0) +
       (totalTokensEmbed / 1_000_000) * EMBEDDING_USD_POR_MTOKEN;
     const custoBrl = +(custoUsd * USD_BRL).toFixed(4);
 
@@ -214,11 +244,13 @@ Deno.serve(async (req: Request) => {
       custo_estimado_brl: custoBrl,
     }).eq('id', aulaId);
 
-    // 12. Notifica Maikon via WhatsApp (assina como Madeira)
-    await notificarMaikon(
-      supa,
-      `Madeira aqui — aula "${aulaTitulo}" indexada. ${totalChunks} trechos${duracaoSeg ? `, ${Math.round(duracaoSeg / 60)}min` : ''}. Pode me perguntar sobre.`,
-    );
+    // 12. Notifica Maikon via WhatsApp (suprime em batch via silent=true)
+    if (!body.silent) {
+      await notificarMaikon(
+        supa,
+        `Madeira aqui — aula "${aulaTitulo}" indexada. ${totalChunks} trechos${duracaoSeg ? `, ${Math.round(duracaoSeg / 60)}min` : ''}. Pode me perguntar sobre.`,
+      );
+    }
 
     return jsonRes(200, {
       ok: true,
@@ -237,7 +269,10 @@ Deno.serve(async (req: Request) => {
         .update({ status: 'erro', erro: msg.slice(0, 500) })
         .eq('id', aulaId);
     }
-    await notificarMaikon(supa, `Madeira aqui — falhei ao indexar aula: ${msg.slice(0, 200)}`).catch(() => {});
+    // Avisa só se não for batch
+    if (!bodySilent) {
+      await notificarMaikon(supa, `Madeira aqui — falhei ao indexar aula: ${msg.slice(0, 200)}`).catch(() => {});
+    }
     return jsonRes(500, { ok: false, error: msg, aula_id: aulaId });
   }
 });

@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.indexar-aula-g4]
 verify_jwt = false
+
+[functions.processar-aula-vimeo]
+verify_jwt = false
