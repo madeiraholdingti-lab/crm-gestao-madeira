@@ -214,10 +214,10 @@ Deno.serve(async (req: Request) => {
       custo_estimado_brl: custoBrl,
     }).eq('id', aulaId);
 
-    // 12. Notifica Maikon via WhatsApp
+    // 12. Notifica Maikon via WhatsApp (assina como Madeira)
     await notificarMaikon(
       supa,
-      `Aula "${aulaTitulo}" indexada. ${totalChunks} trechos${duracaoSeg ? `, ${Math.round(duracaoSeg / 60)}min` : ''}. Pode me perguntar sobre.`,
+      `Madeira aqui — aula "${aulaTitulo}" indexada. ${totalChunks} trechos${duracaoSeg ? `, ${Math.round(duracaoSeg / 60)}min` : ''}. Pode me perguntar sobre.`,
     );
 
     return jsonRes(200, {
@@ -237,7 +237,7 @@ Deno.serve(async (req: Request) => {
         .update({ status: 'erro', erro: msg.slice(0, 500) })
         .eq('id', aulaId);
     }
-    await notificarMaikon(supa, `Falhei ao indexar aula: ${msg.slice(0, 200)}`).catch(() => {});
+    await notificarMaikon(supa, `Madeira aqui — falhei ao indexar aula: ${msg.slice(0, 200)}`).catch(() => {});
     return jsonRes(500, { ok: false, error: msg, aula_id: aulaId });
   }
 });

@@ -102,7 +102,9 @@ async function dispararVersiculo(
     : 'Sem contexto pessoal ainda.';
   const semana = c?.resumo_semana || 'Sem resumo da semana.';
 
-  const prompt = `Hoje é ${new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })} — escolha um versículo bíblico INSPIRADOR pra começar o dia do Dr. Maikon Madeira (cirurgião cardiovascular, empresário, gestor da GSS, desenvolvendo Maikonect CRM, pai/marido).
+  const prompt = `Você é o **Madeira** — extensão digital do Dr. Maikon Madeira (cirurgião cardiovascular, empresário, gestor da GSS, desenvolvendo Maikonect CRM, pai/marido). Hoje é ${new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}.
+
+Escolha um versículo bíblico INSPIRADOR pra começar o dia dele.
 
 CONTEXTO RECENTE DO MAIKON:
 ${semana}
@@ -120,6 +122,7 @@ REGRAS:
 - Tom: amigo cristão, não pastor formal. Sem clichê.
 - Sem hashtag, sem emoji estruturado, no máximo 1 emoji discreto.
 - Português BR.
+- NÃO se identifica como "Madeira" no texto (a saudação é em primeira pessoa direta — sem assinatura).
 - NÃO repita versículo do dia anterior se possível (varia entre Antigo/Novo Testamento, Salmos, Provérbios, Mateus, etc).
 - Total: máximo 12 linhas.`;
 

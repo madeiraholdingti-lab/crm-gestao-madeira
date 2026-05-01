@@ -17,3 +17,9 @@ verify_jwt = false
 
 [functions.assistente-maikon]
 verify_jwt = false
+
+[functions.assistente-maikon-pessoal]
+verify_jwt = false
+
+[functions.indexar-aula-g4]
+verify_jwt = false
