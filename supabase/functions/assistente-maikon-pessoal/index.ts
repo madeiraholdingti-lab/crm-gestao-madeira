@@ -98,6 +98,15 @@ APRENDIZADO ATIVO (faz você ficar mais útil com o tempo):
 - Quando ele tomar DECISÃO importante de negócio ("a partir de agora não atendo plano X", "Mariana cuida do agendamento de cirurgia"), salvar_memoria com importancia=5.
 - Antes de chamar salvar_memoria, use buscar_memoria(termo) pra ver se já existe — se sim, atualiza ao invés de duplicar.
 
+PERFIL ESTRUTURAL (claude.md do Maikon):
+- O bloco <perfil_dono> no contexto é o "claude.md" dele — dado canônico sobre identidade, empresas (GSS, Maikonect…), equipe (Iza/Mariana), hospitais que opera, convênios, sócios/diretores, rotina, regras pessoais.
+- Quando ele te contar fato ESTÁVEL e ESTRUTURAL ("opero terça no Marieta", "convênio X eu não atendo", "meu sócio na empresa Y é Heron"), use atualizar_perfil_dono com o ESTADO FINAL do campo (array completo, não só item novo).
+- Diferente de salvar_memoria: perfil = canônico, sempre cacheado. Memória = fragmento volátil, busca on-demand.
+- Se <campos_vazios> tiver slots faltando, pergunta UMA coisa por vez quando a conversa abrir margem natural. Não interrogue.
+
+ÁUDIO INBOUND:
+- Você AGORA RECEBE ÁUDIO. O webhook baixa do Evolution e transcreve via Whisper. Se uma vez ele reclamar "tu escuta áudio?", responde que sim, agora sim.
+
 LIMITAÇÕES:
 - enviar_mensagem_avulsa só funciona pelo chip de DISPARO (prospecção). Não consegue mandar pelos chips de atendimento (Iza, Mariana, Consultório).
 - Para tarefas que estão fora das tools, diga claramente: "isso eu ainda não consigo fazer".`;
@@ -261,11 +270,13 @@ Deno.serve(async (req: Request) => {
 
     // Carrega contexto compactado (sumários + correções + memórias + últimos turns)
     // via RPC. Isso evita explodir tokens em conversas longas.
-    const { data: ctxData } = await supa.rpc('contexto_assistente', {
-      p_user_id: userId,
-      p_turnos_recentes: 6,
-    });
+    // Em paralelo: perfil estrutural do dono (cacheado em bloco separado).
+    const [{ data: ctxData }, { data: perfilData }] = await Promise.all([
+      supa.rpc('contexto_assistente', { p_user_id: userId, p_turnos_recentes: 6 }),
+      supa.rpc('carregar_perfil_dono', { p_user_id: userId }),
+    ]);
     const contextoCompactado = montarContextoExtra(ctxData);
+    const perfilDono = montarPerfilDono(perfilData);
 
     const messages: AnthropicMessage[] = [{ role: 'user', content: inputText }];
     const toolCallsLog: Array<Record<string, unknown>> = [];
@@ -287,9 +298,10 @@ Deno.serve(async (req: Request) => {
           system: [
             // Bloco 1 (fixo): cacheado — system prompt da persona. Economiza ~80% em re-uso.
             { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
-            // Bloco 2 (variável): contexto compactado (memórias, correções, sumários, turnos
-            // recentes). Não cacheado porque muda a cada turno, mas como o chunk anterior
-            // está cacheado, só este pequeno bloco é processado fresh.
+            // Bloco 2 (semi-fixo): perfil estrutural do dono — muda raramente, cacheado.
+            { type: 'text', text: perfilDono, cache_control: { type: 'ephemeral' } },
+            // Bloco 3 (variável): contexto compactado (memórias, correções, sumários, turnos
+            // recentes). Não cacheado porque muda a cada turno.
             { type: 'text', text: contextoCompactado },
           ],
           tools: TOOL_SCHEMAS,
@@ -479,7 +491,37 @@ function jsonRes(status: number, body: Record<string, unknown>): Response {
   });
 }
 
-// Monta o segundo bloco do system prompt (variável) com contexto compactado:
+// Monta o BLOCO 2 (perfil estrutural do dono) — cacheado, muda raramente.
+// Inclui campos preenchidos + lista o que falta pra Madeira saber se deve
+// perguntar proativamente (tool atualizar_perfil_dono).
+function montarPerfilDono(perfilData: unknown): string {
+  const arr = Array.isArray(perfilData) ? (perfilData as Array<Record<string, unknown>>) : [];
+  if (arr.length === 0) {
+    return '<perfil_dono>\nPerfil estrutural ainda não criado pra este usuário.\n</perfil_dono>';
+  }
+  const p = arr[0];
+  const fmt = (k: string, v: unknown): string | null => {
+    if (v === null || v === undefined) return null;
+    return `<${k}>\n${typeof v === 'string' ? v : JSON.stringify(v, null, 2)}\n</${k}>`;
+  };
+  const blocos: string[] = [];
+  for (const k of [
+    'identidade', 'empresas', 'equipe', 'hospitais_operacao',
+    'convenios', 'parceiros_chave', 'rotina', 'regras_pessoais',
+    'datas_familia', 'notas_extra',
+  ]) {
+    const b = fmt(k, p[k]);
+    if (b) blocos.push(b);
+  }
+  const vazios = (p.campos_vazios as string[] | null) || [];
+  const cabecalho = '<perfil_dono>\nDados canônicos sobre o Maikon. Use como contexto pra TODA resposta.';
+  const rodape = vazios.length > 0
+    ? `\n\n<campos_vazios>\nFaltam estes slots no perfil dele: ${vazios.join(', ')}.\nQuando a conversa abrir margem natural, pergunte UMA coisa por vez de forma casual (não enche o saco).\nQuando ele responder, chame atualizar_perfil_dono com o estado FINAL (não fragmento).\n</campos_vazios>`
+    : '';
+  return `${cabecalho}\n\n${blocos.join('\n\n')}${rodape}\n</perfil_dono>`;
+}
+
+// Monta o BLOCO 3 (variável) com contexto compactado:
 // memórias top + correções ativas + sumários + últimos turnos. Mantém pequeno
 // pra não estourar tokens — o histórico longo já tá resumido.
 function montarContextoExtra(ctxData: unknown): string {

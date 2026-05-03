@@ -2147,6 +2147,367 @@ const listarAulasG4: ToolDefinition = {
 };
 
 // ============================================================================
+// Estatísticas / agregações rápidas
+// ============================================================================
+
+// Helper: monta filtros comuns em queries Supabase pra contacts/leads
+function aplicarFiltros<T extends { ilike: (col: string, v: string) => T; eq: (col: string, v: unknown) => T }>(
+  q: T,
+  filtros: { perfil?: string; especialidade?: string; instituicao?: string; cidade?: string },
+  campos: { perfil: string; especialidade: string; instituicao: string; cidade: string },
+): T {
+  if (filtros.perfil) q = q.eq(campos.perfil, filtros.perfil);
+  if (filtros.especialidade) q = q.ilike(campos.especialidade, `%${filtros.especialidade}%`);
+  if (filtros.instituicao) q = q.ilike(campos.instituicao, `%${filtros.instituicao}%`);
+  if (filtros.cidade) q = q.ilike(campos.cidade, `%${filtros.cidade}%`);
+  return q;
+}
+
+const contarContatos: ToolDefinition = {
+  name: 'contar_contatos',
+  description: 'Conta contatos do CRM com filtros (perfil profissional, especialidade, instituição, cidade). Retorna total + breakdown por perfil pra dar visão. Use quando Maikon perguntar "quantos X eu tenho?", "quantos cardiologistas em SC?", "tenho gestor de hospital?" etc. Base: contacts (11k+ contatos do WhatsApp/cadastro). Pra base de prospecção (47k leads), use contar_leads.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      perfil: { type: 'string', description: 'Ex: medico, gestor_saude, cirurgiao_cardiaco, anestesista, paciente, administrativo_saude, fornecedor' },
+      especialidade: { type: 'string', description: 'Busca substring (ex: "cardio" pega cardiologia, cirurgia cardíaca)' },
+      instituicao: { type: 'string', description: 'Busca substring' },
+      cidade: { type: 'string', description: 'Busca substring' },
+    },
+  },
+  async handler(args, ctx) {
+    const filtros = {
+      perfil: args.perfil as string | undefined,
+      especialidade: args.especialidade as string | undefined,
+      instituicao: args.instituicao as string | undefined,
+      cidade: args.cidade as string | undefined,
+    };
+    const campos = { perfil: 'perfil_profissional', especialidade: 'especialidade', instituicao: 'instituicao', cidade: 'cidade' };
+
+    let q1 = ctx.supa.from('contacts').select('id', { count: 'exact', head: true });
+    q1 = aplicarFiltros(q1 as never, filtros, campos);
+    const { count: total, error: e1 } = await q1;
+    if (e1) return { ok: false, error: e1.message };
+
+    // Breakdown por perfil (se nenhum filtro de perfil)
+    let breakdown: Record<string, number> = {};
+    if (!filtros.perfil) {
+      let q2 = ctx.supa.from('contacts').select('perfil_profissional');
+      q2 = aplicarFiltros(q2 as never, filtros, campos);
+      const { data } = await q2.limit(20000);
+      for (const r of (data || []) as Array<{ perfil_profissional: string | null }>) {
+        const k = r.perfil_profissional || '(sem perfil)';
+        breakdown[k] = (breakdown[k] || 0) + 1;
+      }
+    }
+    return { ok: true, total: total || 0, filtros_aplicados: filtros, breakdown_por_perfil: breakdown };
+  },
+};
+
+const listarContatosPorFiltro: ToolDefinition = {
+  name: 'listar_contatos_por_filtro',
+  description: 'Lista contatos do CRM (até 50) com filtros (perfil, especialidade, instituição, cidade). Use depois de contar_contatos quando Maikon quiser ver os nomes ("me lista esses 41 gestores"). Retorna nome, telefone, perfil, especialidade, instituição, cidade.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      perfil: { type: 'string' },
+      especialidade: { type: 'string' },
+      instituicao: { type: 'string' },
+      cidade: { type: 'string' },
+      limite: { type: 'integer', default: 30, minimum: 1, maximum: 50 },
+    },
+  },
+  async handler(args, ctx) {
+    const filtros = {
+      perfil: args.perfil as string | undefined,
+      especialidade: args.especialidade as string | undefined,
+      instituicao: args.instituicao as string | undefined,
+      cidade: args.cidade as string | undefined,
+    };
+    const campos = { perfil: 'perfil_profissional', especialidade: 'especialidade', instituicao: 'instituicao', cidade: 'cidade' };
+    let q = ctx.supa
+      .from('contacts')
+      .select('id, name, phone, perfil_profissional, especialidade, instituicao, cidade')
+      .order('updated_at', { ascending: false })
+      .limit(Math.min((args.limite as number) || 30, 50));
+    q = aplicarFiltros(q as never, filtros, campos);
+    const { data, error } = await q;
+    if (error) return { ok: false, error: error.message };
+    return {
+      ok: true,
+      total_retornado: (data || []).length,
+      contatos: (data || []).map((c: { id: string; name: string | null; phone: string; perfil_profissional: string | null; especialidade: string | null; instituicao: string | null; cidade: string | null }) => ({
+        id: c.id,
+        nome: c.name || '(sem nome)',
+        telefone: c.phone,
+        perfil: c.perfil_profissional,
+        especialidade: c.especialidade,
+        instituicao: c.instituicao,
+        cidade: c.cidade,
+      })),
+    };
+  },
+};
+
+const contarLeads: ToolDefinition = {
+  name: 'contar_leads',
+  description: 'Conta leads da base de prospecção (47k+ registros, separada de contacts). Use quando Maikon perguntar sobre tamanho de base pra disparo: "quantos médicos tenho na base?", "quantos leads do tipo X?". Filtros: tipo_lead, tag, origem.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      tipo_lead: { type: 'string', description: 'Ex: medico, novo, paciente, secretaria, hospital, empresario, fornecedor' },
+      tag: { type: 'string', description: 'Tag específica dentro do array tags (ex: "cardiologia", "SC")' },
+      origem: { type: 'string', description: 'Substring na origem' },
+      apenas_ativos: { type: 'boolean', default: true },
+    },
+  },
+  async handler(args, ctx) {
+    let q = ctx.supa.from('leads').select('id', { count: 'exact', head: true });
+    if (args.apenas_ativos !== false) q = q.eq('ativo', true);
+    if (args.tipo_lead) q = q.eq('tipo_lead', args.tipo_lead);
+    if (args.tag) q = q.contains('tags', [args.tag]);
+    if (args.origem) q = q.ilike('origem', `%${args.origem}%`);
+    const { count: total, error } = await q;
+    if (error) return { ok: false, error: error.message };
+
+    // Breakdown por tipo (se sem filtro de tipo)
+    let breakdown: Record<string, number> = {};
+    if (!args.tipo_lead) {
+      let q2 = ctx.supa.from('leads').select('tipo_lead');
+      if (args.apenas_ativos !== false) q2 = q2.eq('ativo', true);
+      if (args.origem) q2 = q2.ilike('origem', `%${args.origem}%`);
+      const { data } = await q2.limit(50000);
+      for (const r of (data || []) as Array<{ tipo_lead: string | null }>) {
+        const k = r.tipo_lead || '(sem tipo)';
+        breakdown[k] = (breakdown[k] || 0) + 1;
+      }
+    }
+    return { ok: true, total: total || 0, breakdown_por_tipo: breakdown };
+  },
+};
+
+const buscarLead: ToolDefinition = {
+  name: 'buscar_lead',
+  description: 'Busca lead na base de prospecção (47k+) por nome ou telefone. Diferente de buscar_contato (essa busca em contacts). Use quando Maikon perguntar "tenho lead do Dr. X na base de disparos?".',
+  input_schema: {
+    type: 'object',
+    properties: {
+      termo: { type: 'string', description: 'Nome (parcial) ou telefone (com/sem DDD)' },
+    },
+    required: ['termo'],
+  },
+  async handler(args, ctx) {
+    const termo = (args.termo as string).trim();
+    if (!termo) return { ok: false, error: 'termo vazio' };
+    const digitos = normalizarFone(termo);
+    let q = ctx.supa
+      .from('leads')
+      .select('id, nome, telefone, email, tipo_lead, tags, origem, anotacoes, ativo')
+      .eq('ativo', true)
+      .limit(10);
+    if (digitos.length >= 5) {
+      const sufixo = digitos.slice(-8);
+      q = q.ilike('telefone', `%${sufixo}%`);
+    } else {
+      q = q.ilike('nome', `%${termo}%`);
+    }
+    const { data, error } = await q;
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, total: (data || []).length, leads: data };
+  },
+};
+
+const detalharContato: ToolDefinition = {
+  name: 'detalhar_contato',
+  description: 'Ficha 360 de UM contato: dados + última conversa + tarefas relacionadas + campanhas em que está. Use quando Maikon pedir contexto completo de alguém ("me dá tudo sobre Dr. Pedro", "ficha do Hospital Marieta"). Use buscar_contato antes pra obter o contato_id.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      contato_id: { type: 'string', description: 'UUID do contato (obtido por buscar_contato)' },
+    },
+    required: ['contato_id'],
+  },
+  async handler(args, ctx) {
+    const id = args.contato_id as string;
+
+    const { data: contato, error: e1 } = await ctx.supa
+      .from('contacts')
+      .select('id, name, phone, jid, perfil_profissional, especialidade, instituicao, cidade, observacoes, created_at, updated_at')
+      .eq('id', id)
+      .maybeSingle();
+    if (e1 || !contato) return { ok: false, error: 'contato não encontrado' };
+
+    const c = contato as { id: string; name: string | null; phone: string; jid: string; perfil_profissional: string | null; especialidade: string | null; instituicao: string | null; cidade: string | null; observacoes: string | null; created_at: string; updated_at: string };
+
+    // Última conversa
+    const { data: convs } = await ctx.supa
+      .from('conversas')
+      .select('id, status, qualificacao, ultima_mensagem_em, instancia_id')
+      .eq('contact_id', id)
+      .order('ultima_mensagem_em', { ascending: false })
+      .limit(3);
+
+    // Tarefas vinculadas (busca por nome ou telefone na descrição/título — heurística)
+    const { data: tarefas } = await ctx.supa
+      .from('task_flow_tasks')
+      .select('id, titulo, status, prazo, created_at')
+      .or(`titulo.ilike.%${c.name || c.phone}%,descricao.ilike.%${c.name || c.phone}%`)
+      .neq('status', 'concluida')
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    return {
+      ok: true,
+      contato: {
+        id: c.id,
+        nome: c.name || '(sem nome)',
+        telefone: c.phone,
+        perfil: c.perfil_profissional,
+        especialidade: c.especialidade,
+        instituicao: c.instituicao,
+        cidade: c.cidade,
+        observacoes: c.observacoes,
+        cadastrado_em: c.created_at,
+        atualizado_em: c.updated_at,
+      },
+      conversas_recentes: (convs || []).map((cv: { id: string; status: string; qualificacao: string | null; ultima_mensagem_em: string | null }) => ({
+        id: cv.id,
+        status: cv.status,
+        qualificacao: cv.qualificacao,
+        ultima_mensagem: cv.ultima_mensagem_em,
+      })),
+      tarefas_abertas: (tarefas || []).map((t: { id: string; titulo: string; status: string; prazo: string | null }) => ({
+        id: t.id,
+        titulo: t.titulo,
+        status: t.status,
+        prazo: t.prazo,
+      })),
+    };
+  },
+};
+
+const estatisticasGerais: ToolDefinition = {
+  name: 'estatisticas_gerais',
+  description: 'Snapshot rápido do CRM: total contatos/leads, conversas ativas, tarefas em aberto, campanhas ativas. Use quando Maikon perguntar visão geral: "como tá o CRM?", "me dá um número geral", "quantos contatos eu tenho ao todo?".',
+  input_schema: { type: 'object', properties: {} },
+  async handler(_args, ctx) {
+    const [c1, c2, c3, c4, c5] = await Promise.all([
+      ctx.supa.from('contacts').select('id', { count: 'exact', head: true }),
+      ctx.supa.from('leads').select('id', { count: 'exact', head: true }).eq('ativo', true),
+      ctx.supa.from('conversas').select('id', { count: 'exact', head: true }).neq('status', 'finalizada'),
+      ctx.supa.from('task_flow_tasks').select('id', { count: 'exact', head: true }).neq('status', 'concluida'),
+      ctx.supa.from('campanhas_disparo').select('id', { count: 'exact', head: true }).eq('status', 'ativa'),
+    ]);
+    return {
+      ok: true,
+      contatos_total: c1.count || 0,
+      leads_ativos: c2.count || 0,
+      conversas_em_aberto: c3.count || 0,
+      tarefas_pendentes: c4.count || 0,
+      campanhas_ativas: c5.count || 0,
+    };
+  },
+};
+
+const estatisticasDisparos: ToolDefinition = {
+  name: 'estatisticas_disparos',
+  description: 'KPIs gerais de campanhas/disparos: total ativas, total enviado/sucesso/falha hoje (todas campanhas somadas), top 5 campanhas mais ativas. Use quando Maikon perguntar "como tão os disparos no geral?", "quanto saiu hoje?".',
+  input_schema: { type: 'object', properties: {} },
+  async handler(_args, ctx) {
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+    const { data: ativas } = await ctx.supa
+      .from('campanhas_disparo')
+      .select('id, nome, total_leads, enviados, sucesso, falhas, status')
+      .eq('status', 'ativa')
+      .order('enviados', { ascending: false })
+      .limit(5);
+    const { count: enviadosHoje } = await ctx.supa
+      .from('campanha_envios')
+      .select('id', { count: 'exact', head: true })
+      .gte('enviado_em', hoje.toISOString())
+      .eq('status', 'enviado');
+    const { count: falhaHoje } = await ctx.supa
+      .from('campanha_envios')
+      .select('id', { count: 'exact', head: true })
+      .gte('atualizado_em', hoje.toISOString())
+      .eq('status', 'falha');
+    return {
+      ok: true,
+      enviados_hoje: enviadosHoje || 0,
+      falhas_hoje: falhaHoje || 0,
+      campanhas_ativas: (ativas || []).length,
+      top_ativas: (ativas || []).map((c: { id: string; nome: string; total_leads: number; enviados: number; sucesso: number; falhas: number }) => ({
+        nome: c.nome,
+        total: c.total_leads,
+        enviados: c.enviados,
+        sucesso: c.sucesso,
+        falhas: c.falhas,
+        progresso_pct: c.total_leads > 0 ? Math.round((c.enviados / c.total_leads) * 100) : 0,
+      })),
+    };
+  },
+};
+
+const tarefasPorResponsavel: ToolDefinition = {
+  name: 'tarefas_por_responsavel',
+  description: 'Quantas tarefas em aberto cada responsável tem (Iza, Mariana, Maikon, etc). Separa por status (em aberto, atrasadas). Use quando Maikon perguntar "como tá a Iza?", "quanto a Mariana tem?", "quem tá mais carregado?".',
+  input_schema: { type: 'object', properties: {} },
+  async handler(_args, ctx) {
+    const agora = new Date().toISOString();
+    const { data: tarefas } = await ctx.supa
+      .from('task_flow_tasks')
+      .select('id, titulo, status, prazo, responsavel_id, task_flow_profiles!inner(nome)')
+      .neq('status', 'concluida')
+      .limit(2000);
+    const porResp: Record<string, { total: number; atrasadas: number }> = {};
+    for (const t of (tarefas || []) as Array<{ status: string; prazo: string | null; task_flow_profiles?: { nome?: string } | { nome?: string }[] }>) {
+      const profile = Array.isArray(t.task_flow_profiles) ? t.task_flow_profiles[0] : t.task_flow_profiles;
+      const nome = profile?.nome || '(sem responsável)';
+      if (!porResp[nome]) porResp[nome] = { total: 0, atrasadas: 0 };
+      porResp[nome].total++;
+      if (t.prazo && t.prazo < agora) porResp[nome].atrasadas++;
+    }
+    return { ok: true, por_responsavel: porResp };
+  },
+};
+
+// ============================================================================
+// Perfil estrutural do dono (Madeira "claude.md" do Maikon)
+// ============================================================================
+
+const atualizarPerfilDono: ToolDefinition = {
+  name: 'atualizar_perfil_dono',
+  description: 'Atualiza um campo do PERFIL ESTRUTURAL do Maikon (dado canônico, sempre cacheado no contexto). Use quando ele te contar fato estável: identidade, empresas, equipe, hospitais onde opera, convênios, parceiros-chave, rotina, regras pessoais, datas familiares. Diferente de salvar_memoria — perfil é o "claude.md" dele, salvar_memoria é fragmento volátil. Sempre busque o valor atual antes (passe o array completo atualizado, não apenas o item novo).',
+  input_schema: {
+    type: 'object',
+    properties: {
+      campo: {
+        type: 'string',
+        enum: [
+          'identidade', 'empresas', 'equipe', 'hospitais_operacao',
+          'convenios', 'parceiros_chave', 'rotina', 'regras_pessoais',
+          'datas_familia', 'notas_extra',
+        ],
+        description: 'Qual slot do perfil atualizar.',
+      },
+      valor: {
+        description: 'Conteúdo completo (objeto ou array). Substitui o valor anterior — passe sempre o estado FINAL desejado.',
+      },
+    },
+    required: ['campo', 'valor'],
+  },
+  async handler(args, ctx) {
+    const { error } = await ctx.supa.rpc('atualizar_perfil_dono', {
+      p_user_id: ctx.userId,
+      p_campo: args.campo,
+      p_valor: args.valor,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true, campo: args.campo };
+  },
+};
+
+// ============================================================================
 // Export
 // ============================================================================
 
@@ -2186,6 +2547,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   gerarBriefing,
   // Web search (Fase 8)
   pesquisarWeb,
+  // Perfil estrutural (Fase 10)
+  atualizarPerfilDono,
   // Memória / Crons
   salvarMemoria,
   buscarMemoria,
@@ -2198,6 +2561,15 @@ export const ALL_TOOLS: ToolDefinition[] = [
   indexarAulaG4Atual,
   indexarAulaDrive,
   listarAulasG4,
+  // Estatísticas / classificação (Fase 9)
+  contarContatos,
+  listarContatosPorFiltro,
+  contarLeads,
+  buscarLead,
+  detalharContato,
+  estatisticasGerais,
+  estatisticasDisparos,
+  tarefasPorResponsavel,
 ];
 
 // Schemas pra enviar ao Anthropic API
