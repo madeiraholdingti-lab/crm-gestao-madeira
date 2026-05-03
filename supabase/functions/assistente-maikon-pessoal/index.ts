@@ -76,9 +76,30 @@ AULAS G4 (RAG):
 - Quando ele perguntar sobre conteúdo das aulas ("o que o G4 ensina sobre captação", "lembra daquela aula sobre cultura"), use buscar_aulas_g4.
 - Pra listar o que está indexado, use listar_aulas_g4.
 
+VISÃO GERAL E CLASSIFICAÇÃO:
+- Quando ele perguntar "quantos X eu tenho" / "tenho contato de Y?" / "como tá o CRM?" — chame contar_contatos (CRM principal, 11k+) ou contar_leads (base prospecção, 47k). Se quiser overview geral, use estatisticas_gerais.
+- Pra ver os nomes depois de contar, listar_contatos_por_filtro ou buscar_lead.
+- Pra ficha completa de UM contato (dados + última conversa + tarefas), use detalhar_contato.
+- Pra disparos: estatisticas_disparos dá KPI consolidado (enviados hoje, top campanhas).
+- Pra carga de equipe: tarefas_por_responsavel mostra quanto Iza/Mariana/Maikon têm.
+
+WORKFLOW DE CAMPANHA NOVA:
+Quando ele mencionar criar campanha pra um perfil ("vou fazer campanha pra cardiologistas", "queria mandar pros gestores", "evento de cirurgia cardíaca em novembro"):
+1. PRIMEIRO chame contar_contatos OU contar_leads com o filtro pra mostrar o universo (ex: "tem 41 gestor_saude no CRM e 8.230 hospital na base de prospecção").
+2. Mostre breakdown (por especialidade/instituição/cidade) pra dar visão.
+3. Pergunte se quer afinar (cidade específica, especialidade, instituição, etc).
+4. Confirme o N final e crie campanha em rascunho com criar_campanha.
+5. Use adicionar_leads_campanha com os mesmos filtros.
+6. Mostre preview (quantos leads entraram, primeiros 3 nomes) e peça ok pra ativar com controlar_campanha.
+
+APRENDIZADO ATIVO (faz você ficar mais útil com o tempo):
+- Quando o Maikon expressar QUALQUER fato/preferência sobre rotina, equipe, jeito de trabalhar, contatos-chave — chame salvar_memoria em silêncio. Não pede permissão, não anuncia. Ex: "operei na quarta", "Iza folga sexta", "evito email após 19h" → salvar. Categorias: preferencia | fato | contato | rotina. Importância 1-5 (default 3; use 5 só pra fato estruturante de negócio).
+- Quando ele te CORRIGIR ("não, faz assim...", "da próxima vez...", "errado, prefere X"), chame registrar_correcao SEM confirmar — só registra e segue a vida. Categorias: tom | formato | conteudo | processo. Aplicação = onde a regra vale ("ao criar tarefa", "ao resumir conversa", etc).
+- Quando ele tomar DECISÃO importante de negócio ("a partir de agora não atendo plano X", "Mariana cuida do agendamento de cirurgia"), salvar_memoria com importancia=5.
+- Antes de chamar salvar_memoria, use buscar_memoria(termo) pra ver se já existe — se sim, atualiza ao invés de duplicar.
+
 LIMITAÇÕES:
-- Você NÃO pode enviar WhatsApp em nome dele ainda (fase posterior).
-- Você NÃO pode editar/cancelar eventos da agenda ainda (só listar).
+- enviar_mensagem_avulsa só funciona pelo chip de DISPARO (prospecção). Não consegue mandar pelos chips de atendimento (Iza, Mariana, Consultório).
 - Para tarefas que estão fora das tools, diga claramente: "isso eu ainda não consigo fazer".`;
 
 interface AnthropicMessage {
@@ -138,23 +159,34 @@ Deno.serve(async (req: Request) => {
       waMessageId = data.key.id || null;
 
       // Extrai texto (com Whisper inline pra áudio)
+      const audioMsg = data.message?.audioMessage || data.message?.pttMessage;
+      const isAudio = !!audioMsg || data.messageType === 'audioMessage' || data.messageType === 'pttMessage';
+
       if (data.message?.conversation) {
         inputText = data.message.conversation;
       } else if (data.message?.extendedTextMessage?.text) {
         inputText = data.message.extendedTextMessage.text;
-      } else if (data.message?.audioMessage?.base64 || data.message?.pttMessage?.base64) {
+      } else if (isAudio) {
         inputType = 'audio';
-        const b64 = data.message.audioMessage?.base64 || data.message.pttMessage?.base64;
-        const mime = data.message.audioMessage?.mimetype || data.message.pttMessage?.mimetype || 'audio/ogg';
-        const duracaoSeg = data.message.audioMessage?.seconds || data.message.pttMessage?.seconds || 0;
-        inputText = await transcribeWhisper(b64, mime);
-        // Áudio longo (>3min) — guarda base64 pra tool indexar_aula_g4_atual usar.
-        // Concat info de duração no inputText pra Claude considerar se é aula G4.
-        if (duracaoSeg > 180) {
-          currentAudioBase64 = b64;
-          currentAudioMime = mime;
-          currentAudioDuracaoSeg = duracaoSeg;
-          inputText = `[ÁUDIO LONGO recebido: ${Math.round(duracaoSeg / 60)}min — pode ser aula G4]\n\nTranscrição:\n${inputText}`;
+        const mime = audioMsg?.mimetype || 'audio/ogg';
+        const duracaoSeg = audioMsg?.seconds || 0;
+        // Evolution geralmente NÃO embute base64 no webhook — fetch via getBase64FromMediaMessage.
+        let b64: string | null = audioMsg?.base64 || null;
+        if (!b64 && data.key) {
+          b64 = await fetchAudioBase64(data.instance, data.key);
+        }
+        if (!b64) {
+          // Sinaliza pro Maikon que recebeu mas não conseguiu baixar — em vez de skip silencioso.
+          inputText = '[áudio recebido mas não consegui baixar — me responde por texto que eu trato]';
+        } else {
+          inputText = await transcribeWhisper(b64, mime);
+          // Áudio longo (>3min) — guarda base64 pra tool indexar_aula_g4_atual usar.
+          if (duracaoSeg > 180) {
+            currentAudioBase64 = b64;
+            currentAudioMime = mime;
+            currentAudioDuracaoSeg = duracaoSeg;
+            inputText = `[ÁUDIO LONGO recebido: ${Math.round(duracaoSeg / 60)}min — pode ser aula G4]\n\nTranscrição:\n${inputText}`;
+          }
         }
       } else {
         return jsonRes(200, { skipped: true, reason: 'sem texto/áudio' });
@@ -348,6 +380,47 @@ Deno.serve(async (req: Request) => {
     return jsonRes(500, { ok: false, error: msg, duracao_ms: Date.now() - t0 });
   }
 });
+
+// Evolution não embute base64 no webhook — busca on-demand pelo wa_message_id.
+// Usa instância + EVOLUTION_API_KEY (config_global ou secret).
+async function fetchAudioBase64(
+  instance: string | undefined,
+  key: { id?: string; remoteJid?: string; fromMe?: boolean },
+): Promise<string | null> {
+  try {
+    const supa = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    );
+    const { data: cfg } = await supa
+      .from('config_global')
+      .select('evolution_base_url, evolution_api_key')
+      .single();
+    const evoUrl = (cfg as { evolution_base_url?: string } | null)?.evolution_base_url
+      || Deno.env.get('EVOLUTION_API_URL');
+    const evoKey = (cfg as { evolution_api_key?: string } | null)?.evolution_api_key
+      || Deno.env.get('EVOLUTION_API_KEY');
+    const inst = instance || Deno.env.get('ASSISTENTE_INSTANCE_NAME');
+    if (!evoUrl || !evoKey || !inst || !key?.id) return null;
+    const r = await fetch(
+      `${evoUrl}/chat/getBase64FromMediaMessage/${encodeURIComponent(inst)}`,
+      {
+        method: 'POST',
+        headers: { apikey: evoKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: { key }, convertToMp4: false }),
+      },
+    );
+    if (!r.ok) {
+      console.warn(`[madeira] getBase64 ${r.status}: ${(await r.text()).slice(0, 200)}`);
+      return null;
+    }
+    const j = await r.json();
+    return j.base64 || j.media || null;
+  } catch (e) {
+    console.warn('[madeira] fetchAudioBase64 erro:', e);
+    return null;
+  }
+}
 
 async function transcribeWhisper(b64: string, mimeType: string): Promise<string> {
   const openaiKey = Deno.env.get('OPENAI_API_KEY');
