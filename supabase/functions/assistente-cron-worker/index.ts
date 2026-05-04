@@ -28,7 +28,7 @@ Deno.serve(async (req: Request) => {
     // 1. Carrega crons ativos
     const { data: crons } = await supa
       .from('assistente_crons')
-      .select('id, user_id, nome, tipo, cron_expression, payload, ultima_execucao_em')
+      .select('id, user_id, nome, tipo, cron_expression, payload, ultima_execucao_em, apenas_uma_vez')
       .eq('ativo', true);
 
     const agora = new Date();
@@ -39,13 +39,20 @@ Deno.serve(async (req: Request) => {
         id: string; user_id: string; nome: string; tipo: string;
         cron_expression: string; payload: Record<string, unknown>;
         ultima_execucao_em: string | null;
+        apenas_uma_vez: boolean;
       };
 
       if (!cronShouldFire(c.cron_expression, agora, c.ultima_execucao_em)) continue;
 
       try {
         if (c.tipo === 'versiculo') await dispararVersiculo(supa, c.user_id);
-        else if (c.tipo === 'mensagem') await dispararMensagem(supa, c.user_id, (c.payload.texto as string) || '');
+        else if (c.tipo === 'mensagem') {
+          // Cabeçalho explícito pra Maikon distinguir lembrete agendado de mensagem do agente.
+          const horaBR = agora.toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+          const corpo = (c.payload.texto as string) || '';
+          const texto = `🔔 Lembrete (${horaBR})\n\n${corpo}`;
+          await dispararMensagem(supa, c.user_id, texto);
+        }
         else if (c.tipo === 'briefing') await dispararBriefing(supa, c.user_id, (c.payload.prompt as string) || '');
 
         await supa.from('assistente_crons').update({
@@ -53,6 +60,8 @@ Deno.serve(async (req: Request) => {
           total_execucoes: 0, // bumped via SQL below
           ultima_falha: null,
           updated_at: agora.toISOString(),
+          // One-shot: desativa após 1ª execução. Evita lembrete pontual virando spam diário.
+          ...(c.apenas_uma_vez ? { ativo: false } : {}),
         }).eq('id', c.id);
         // Increment total via raw SQL
         await supa.rpc('increment_cron_execucoes', { p_id: c.id }).then(

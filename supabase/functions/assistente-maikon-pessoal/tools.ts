@@ -1819,7 +1819,7 @@ const buscarMemoria: ToolDefinition = {
 
 const criarCron: ToolDefinition = {
   name: 'criar_cron',
-  description: 'Cria um job recorrente. Confirma com o usuário antes de chamar! Tipos: "mensagem" (envia texto pro WhatsApp dele), "briefing" (roda prompt e manda resultado), "versiculo" (envia versículo bíblico + reflexão diária). Ex: "todo dia às 6h, manda versículo e reflexão" -> tipo=versiculo, cron=0 6 * * *',
+  description: 'Cria um lembrete agendado. SEMPRE confirme 2 coisas com o Maikon antes de chamar: (1) o HORÁRIO exato (repita "às HH:MM, certo?") e (2) se é DIÁRIO ou SÓ UMA VEZ (apenas_uma_vez). Whisper às vezes confunde "sete e meia" com "18h30" — confirme. Tipos: "mensagem" (texto pro WhatsApp), "briefing" (roda prompt e manda resultado), "versiculo" (versículo + reflexão).',
   input_schema: {
     type: 'object',
     properties: {
@@ -1827,14 +1827,19 @@ const criarCron: ToolDefinition = {
       tipo: { type: 'string', enum: ['mensagem', 'briefing', 'versiculo'] },
       cron_expression: {
         type: 'string',
-        description: 'Cron 5 campos no fuso BRT (min hora dia mês dia_semana). Ex: "0 6 * * *" = todo dia 6h',
+        description: 'Cron 5 campos no fuso BRT (min hora dia mês dia_semana). Ex: "0 6 * * *" = todo dia 6h. Pra one-shot ("hoje 18h30"), use o horário no padrão diário e marque apenas_uma_vez=true (worker desativa após disparar).',
+      },
+      apenas_uma_vez: {
+        type: 'boolean',
+        description: 'true = lembrete pontual, desativa após 1ª execução. false = recorrente. PERGUNTE ao Maikon antes de definir.',
+        default: false,
       },
       payload: {
         type: 'object',
         description: 'Tipo=mensagem: {texto}. Tipo=briefing: {prompt}. Tipo=versiculo: {} (vazio).',
       },
     },
-    required: ['nome', 'tipo', 'cron_expression'],
+    required: ['nome', 'tipo', 'cron_expression', 'apenas_uma_vez'],
   },
   async handler(args, ctx) {
     const { data, error } = await ctx.supa
@@ -1845,6 +1850,7 @@ const criarCron: ToolDefinition = {
         tipo: args.tipo,
         cron_expression: args.cron_expression,
         payload: args.payload || {},
+        apenas_uma_vez: args.apenas_uma_vez === true,
         ativo: true,
       })
       .select('id, nome')
