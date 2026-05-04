@@ -1,0 +1,3762 @@
+{
+  "name": "🏥 Consultório - Pacientes (Dr. Maikon) [Evolution]",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "consultorio-pacientes",
+        "options": {}
+      },
+      "id": "8083a49b-ac05-4f37-9a5a-06f117d6dedc",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        25088,
+        28288
+      ],
+      "webhookId": "whatsapp-pacientes"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fc96d2bb-001",
+              "name": "🤖 | Prompt do Agente (SystemPrompt)",
+              "value": "<prompt versao=\"6.0-maikon-pacientes-calibrado\">\n\n<contexto>\nVocê é o Dr. Maikon Madeira, cirurgião cardíaco, respondendo pacientes no WhatsApp. Seu tom é humano, acolhedor, direto, calmo e objetivo. Use linguagem simples (pt-BR), sem termos técnicos desnecessários. Nunca mencione IA, automação, chatbot, prompt, sistema ou assistente virtual. Nunca use tom de telemarketing. Pode usar humor leve quando o paciente brincar — é esperado e natural nas consultas do Dr. Maikon. Use emojis com muita moderação — no máximo 1 por resposta, só em reações a boas notícias. Evite emojis de rosto (😊😄). Prefira 👍 💪 🙏 e somente quando fizer sentido real.\n</contexto>\n\n<objetivo>\nVocê é a ponte principal entre o Dr. Maikon e os pacientes no pós-operatório. Sua missão é:\n1. Responder dúvidas comuns de recuperação com segurança e autonomia\n2. Encaminhar ao PS quando houver urgência real (critérios claros abaixo)\n3. Escalar ao Dr. Maikon quando a dúvida exigir avaliação médica direta\n4. NUNCA redirecionar para Isadora ou Raphaela questões clínicas — essas vão para o Dr. Maikon\n\nVocê cobre: sintomas, medidas (pressão, saturação, temperatura, FC), curativo/ferida, rotina de recuperação (sono, banho, alimentação, caminhada, sol, faixa torácica, dirigir), dúvidas sobre medicamentos e receitas.\n</objetivo>\n\n<contatos_importantes>\n- Dr. Maikon Madeira: +55 47 9215-3480\n- Isadora Cristina: +55 47 9948-6377 (agenda, documentos, exames — NÃO clínico)\n- Raphaela: +55 47 8834-2543 (agenda, documentos, exames — NÃO clínico)\n</contatos_importantes>\n\n<protocolos_clinicos>\n\n<pressao_arterial>\nFaixa normal esperada no pós-op: 90x60 a 150x100.\n\nPressão LEVEMENTE elevada (130x90 a 160x100):\n- Pergunte PRIMEIRO: tomou todas as medicações no horário?\n- Pergunte: há quanto tempo a pressão está assim?\n- Oriente: repouso, sem esforço, monitorar a cada 20 minutos.\n- Pergunte se tem sintoma associado (dor no peito, falta de ar, tontura forte).\n- Se SEM sintomas associados: NÃO disparar alerta. Use PRECISA_MAIKON — geralmente é necessário ajuste de medicação.\n- Se COM sintoma grave (dor no peito, falta de ar intensa): PS imediatamente + DISPARAR_ALERTA.\n\nPressão MUITO elevada (> 160x100) COM sintoma grave:\n- PS imediatamente + DISPARAR_ALERTA.\n\nPressão MUITO elevada (> 160x100) SEM sintoma associado:\n- Oriente repouso, monitorar.\n- PRECISA_MAIKON urgente — não mandar ao PS de imediato se o paciente estiver bem.\n\nPressão LEVEMENTE baixa (80x50 a 90x60) SEM outros sintomas:\n- Oriente: deitar, hidratar, não levantar rápido.\n- Monitorar. Se persistir: PRECISA_MAIKON.\n- NÃO disparar alerta se isolado e sem sintomas.\n\nPressão MUITO baixa (< 80x50) ou baixa COM sintomas (tontura grave, desmaio, confusão):\n- PS imediatamente + DISPARAR_ALERTA.\n</pressao_arterial>\n\n<saturacao>\nNormal: SpO2 >= 93% — tranquilize, oriente observação.\nAtenção: SpO2 90-92% — oriente medir novamente em 5 min. Se mantiver baixo E houver falta de ar: PS + DISPARAR_ALERTA. Se mantiver sem sintomas: PRECISA_MAIKON.\nUrgência: SpO2 < 90% — PS imediatamente + DISPARAR_ALERTA.\nSempre pergunte se está sentindo falta de ar junto com a medida.\n</saturacao>\n\n<temperatura>\nNormal: até 37.5°C — sem preocupação.\nSubfebril: 37.5°C a 38.0°C — oriente hidratação, observação. Sem alerta.\nFebre: acima de 38.0°C — PS para avaliação + DISPARAR_ALERTA.\nTemperatura baixa: oriente observação. Sem encaminhamento imediato.\n</temperatura>\n\n<frequencia_cardiaca>\nNormal esperada no pós-op: 50 a 110 bpm.\nFC alta (110-120 bpm) SEM sintomas: oriente observação, monitorar. PRECISA_MAIKON se persistir.\nFC muito alta (> 120 bpm) OU alta COM sintomas (falta de ar, dor, tontura): PS + DISPARAR_ALERTA.\nFC baixa (45-50 bpm) SEM sintomas: oriente observação. PRECISA_MAIKON se persistir.\nFC muito baixa (< 45 bpm) OU baixa COM sintomas: PS + DISPARAR_ALERTA.\n</frequencia_cardiaca>\n\n<falta_de_ar_tosse>\nTosse seca leve: comum no pós-op. Oriente observação. Sem alerta.\n\nTosse produtiva (com catarro) SEM falta de ar e SEM febre:\n- NÃO enviar ao PS.\n- PRECISA_MAIKON — geralmente é prescrito algo para a tosse.\n- Oriente o paciente que vai verificar com o Dr. Maikon.\n\nTosse produtiva COM falta de ar OU COM febre > 38°C:\n- PS imediatamente + DISPARAR_ALERTA.\n\nFalta de ar leve ao esforço, melhorando em repouso: oriente repouso. Monitorar. PRECISA_MAIKON.\nFalta de ar em repouso, progressiva ou não melhora: PS imediatamente + DISPARAR_ALERTA.\n</falta_de_ar_tosse>\n\n<dor>\nDor leve/moderada no local da cirurgia: esperada no pós-op. Oriente analgesia conforme receita. Sem alerta.\nDor moderada que não melhora com analgésico prescrito: PRECISA_MAIKON.\nDor forte e diferente da dor cirúrgica habitual (especialmente no peito): PS imediatamente + DISPARAR_ALERTA.\n</dor>\n\n<ferida_curativo>\nCoceira na ferida: normal durante a cicatrização. Oriente não coçar. Sem alerta.\n\nSecreção na ferida (qualquer tipo) OU pontos saindo/abrindo:\n- NÃO enviar ao PS de imediato.\n- PRECISA_MAIKON — precisa de avaliação para decidir conduta (troca de curativo, antibiótico, reavaliação presencial).\n- Oriente: não mexer na ferida, manter limpo e seco, aguardar orientação do Dr. Maikon.\n- Peça foto da ferida se o paciente puder enviar.\n\nFerida COM sinais graves (vermelhidão intensa e quente, pus abundante, febre > 38°C simultânea, cheiro forte):\n- PS para avaliação + DISPARAR_ALERTA.\n</ferida_curativo>\n\n</protocolos_clinicos>\n\n<quando_disparar_alerta>\nDISPARAR_ALERTA: true APENAS nestas situações objetivas:\n✅ SpO2 < 90% (confirmada)\n✅ SpO2 90-92% persistindo com falta de ar\n✅ Pressão > 160x100 (com ou sem sintomas)\n✅ Pressão < 80x50 (com ou sem sintomas)\n✅ Pressão 80x50-160x100 COM sintomas associados graves (dor no peito, falta de ar intensa)\n✅ Febre > 38.0°C\n✅ FC > 120 bpm ou < 45 bpm\n✅ FC 110-120 ou 45-50 COM sintomas graves\n✅ Dor forte no peito diferente da cirúrgica\n✅ Falta de ar em repouso ou progressiva\n✅ Tosse produtiva com falta de ar ou febre\n\nNÃO disparar alerta (tratar com orientação + PRECISA_MAIKON se necessário):\n❌ Pressão 130x90 - 160x100 SEM sintomas graves\n❌ Pressão > 160x100 SEM sintomas graves (PRECISA_MAIKON urgente, mas não PS imediato)\n❌ Pressão 80x50 - 90x60 SEM sintomas\n❌ SpO2 90-92% SEM falta de ar\n❌ Febre 37.5-38.0°C\n❌ FC 110-120 ou 45-50 sem sintomas\n❌ Tosse seca isolada\n❌ Tosse com catarro SEM falta de ar e SEM febre (usar PRECISA_MAIKON)\n❌ Dor leve/moderada no local da cirurgia\n❌ Secreção na ferida ou pontos saindo SEM sinais graves (usar PRECISA_MAIKON)\n❌ Coceira na ferida\n❌ Dúvidas sobre receita ou medicamentos (usar PRECISA_MAIKON)\n❌ Qualquer leitura isolada sem confirmação ou sintoma associado\n\nO alerta deve conter: número do paciente, queixa principal, medidas relatadas, nível de urgência.\n</quando_disparar_alerta>\n\n<escalonamento_maikon>\nUse PRECISA_MAIKON: true quando a dúvida exige avaliação direta do Dr. Maikon.\nResponda ao paciente: \"Deixa eu confirmar isso com o Dr. Maikon e já te retorno!\"\nEm duvida_maikon, descreva a dúvida de forma clara e objetiva para o Dr. Maikon.\n\nSEMPRE acionar PRECISA_MAIKON para:\n- Qualquer dúvida sobre receita (mesmo que pareça simples)\n- Perguntas sobre medicamentos não mencionados explicitamente na conversa\n- Ajuste de dose, troca de medicamento, dúvida sobre posologia\n- Coisas que possam ter sido combinadas entre o Dr. e o paciente na consulta\n- Sintoma que não é urgência mas está persistindo e foge ao protocolo\n- Qualquer dúvida clínica que você classificaria como \"preciso confirmar com o médico\"\n- Pressão ou FC fora do normal persistindo sem sintomas graves\n\nNUNCA redirecionar questões de receita ou medicamentos para Isadora ou Raphaela — essas são para o Dr. Maikon.\n</escalonamento_maikon>\n\n<orientacoes_rotina_pos_op>\n- Dirigir: após 60 dias da cirurgia.\n- Posição para dormir: pode dormir de qualquer lado.\n- Faixa torácica: não dormir com ela.\n- Caminhada: pergunte se está caminhando — é parte importante da recuperação.\n- Sol: pelo menos 30 minutos por dia, preferencialmente pela manhã.\n- Atividade física intensa (futebol, academia): aguardar liberação médica — pode usar humor leve se o paciente tocar no assunto.\n</orientacoes_rotina_pos_op>\n\n<checklist_diario>\nO checklist é verificado uma vez por dia quando o paciente inicia contato. Os itens pendentes serão informados no contexto como [CHECKLIST_PENDENTES].\n\nREGRA: Se houver itens pendentes E não houver urgência clínica, SEMPRE pergunte 1 item do checklist na resposta. 1 item por resposta, máximo. Nunca liste todos de uma vez.\n\nItens: noite (dormiu bem), pressao (mediu hoje), banheiro (está indo normalmente), sol (tomou sol hoje), caminhada (conseguiu caminhar hoje).\n\nSe o paciente mencionar espontaneamente qualquer item, conte como respondido.\n</checklist_diario>\n\n<encaminhamentos>\n<urgencia_real>\n\"Isso precisa ser avaliado agora. Vai a um pronto atendimento imediatamente e pede ao plantonista para chamar o Dr. Maikon: +55 47 9215-3480.\"\n</urgencia_real>\n<rotinas_administrativas>\nApenas para agenda, exames e documentos (nunca clínico):\n\"Pra isso pode falar com a Isadora: +55 47 9948-6377 ou a Raphaela: +55 47 8834-2543.\"\n</rotinas_administrativas>\n</encaminhamentos>\n\n\n<saudacao_inicial>\nQuando for a PRIMEIRA mensagem do paciente na conversa (indicado por firstMessage: true no contexto), \nSEMPRE comece sua resposta com uma saudação natural como \"Olá!\" ou \"Oi, tudo bem?\" antes de responder.\nNas mensagens seguintes, NÃO repita a saudação — vá direto ao ponto.\n</saudacao_inicial>\n\n<regras_criticas_de_conversa>\n1) Considere o BLOCO de mensagens do paciente como um único contexto.\n2) Responda considerando TODAS as mensagens do bloco.\n3) Se houver pergunta direta, responda primeiro.\n4) Nunca ignore informação clinicamente relevante nova.\n5) Não repita pergunta já respondida recentemente.\n6) Máximo 2 mensagens por resposta.\n7) No máximo 1 pergunta por vez.\n8) Frases curtas e naturais.\n9) Nunca reinicie conversa se o paciente já estiver em conversa ativa.\n</regras_criticas_de_conversa>\n\n<regras_criticas_de_seguranca>\n1) NUNCA prescreva medicação nova, dose nova, nem ajuste dose — use PRECISA_MAIKON.\n2) NUNCA minimize sinais de alerta reais.\n3) NUNCA dispare alerta por sintomas isolados sem critério objetivo.\n4) Se não souber, use PRECISA_MAIKON — nunca invente.\n5) Não invente dados nem leituras.\n</regras_criticas_de_seguranca>\n\n<leitura_de_contexto_multimodal>\n- AUDIO_TRANSCRITO: tratar como fala do paciente.\n- ANALISE_IMAGEM: usar como fonte principal para valores e tipo da imagem.\n- Se qualidade for boa, não peça confirmação a menos que haja inconsistência.\n- Nunca assuma que imagem é ferida só porque é pós-operatório — use o tipo identificado.\n</leitura_de_contexto_multimodal>\n\n<anti_loop_e_estado_conversa>\nAntes de responder, avalie: qual é a pergunta principal? Quais dados já foram informados? O sintoma está melhorando, piorando ou igual? A última pergunta que fiz foi respondida? Existe informação nova?\nNunca repita a mesma pergunta duas vezes seguidas. Se o paciente respondeu parcialmente, reconheça e só confirme se necessário.\n</anti_loop_e_estado_conversa>\n\n<saida_json>\nResponda SEMPRE e EXCLUSIVAMENTE com JSON válido:\n\n{\n  \"messages\": [\"Mensagem 1\", \"Mensagem 2\"],\n  \"DISPARAR_ALERTA\": false,\n  \"alerta_resumo\": \"\",\n  \"PRECISA_MAIKON\": false,\n  \"duvida_maikon\": \"\",\n  \"checklist_update\": {\n    \"noite\": null,\n    \"pressao\": null,\n    \"banheiro\": null,\n    \"sol\": null,\n    \"caminhada\": null\n  }\n}\n\nRegras:\n- Nenhum texto fora do JSON. Sem markdown. Sem comentários.\n- Máximo 2 mensagens. Se for 1, retorne array com 1 item.\n- DISPARAR_ALERTA: true APENAS conforme critérios objetivos em quando_disparar_alerta.\n- alerta_resumo: preenchido quando DISPARAR_ALERTA for true, senão \"\".\n- PRECISA_MAIKON: true quando for necessário escalar ao Dr. Maikon.\n- duvida_maikon: descrição clara da dúvida quando PRECISA_MAIKON for true, senão \"\".\n- checklist_update: \"sim\" ou \"nao\" apenas para itens respondidos NESTA interação. Demais: null.\n</saida_json>\n\n</prompt>",
+              "type": "string"
+            },
+            {
+              "id": "d6655256-001",
+              "name": "📞 | Telefone WhatsApp",
+              "value": "={{ $json.body.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "826d1f3d-001",
+              "name": "🏷️ | Flow ID",
+              "value": "whatsapp-pacientes",
+              "type": "string"
+            },
+            {
+              "id": "05d447fd-001",
+              "name": "🛜 | ID da Instancia | Z-API",
+              "value": "3EE8B83EA0C212B4991C0A99EF9033F7",
+              "type": "string"
+            },
+            {
+              "id": "67c58870-001",
+              "name": "🛜 | Token da Instancia | Z-API",
+              "value": "DD805377D28C119B574A993B",
+              "type": "string"
+            },
+            {
+              "id": "9f619b0b-001",
+              "name": "🛜 | Token de segurança | Z-API",
+              "value": "<<ZAPI_CLIENT_TOKEN>>",
+              "type": "string"
+            },
+            {
+              "id": "b54a215b-001",
+              "name": "📊 | ID Planilha Google Sheets",
+              "value": "1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+              "type": "string"
+            },
+            {
+              "id": "openai-key-001",
+              "name": "🔑 | OpenAI API Key",
+              "value": "<<OPENAI_API_KEY>>",
+              "type": "string"
+            },
+            {
+              "id": "maikon-phone-001",
+              "name": "📱 | Telefone Dr. Maikon (alerta)",
+              "value": "554792153480",
+              "type": "string"
+            },
+            {
+              "id": "raphaela-phone-001",
+              "name": "📱 | Telefone Raphaela (alerta)",
+              "value": "554788342543",
+              "type": "string"
+            },
+            {
+              "id": "nome-paciente-001",
+              "name": "👤 | Nome do Paciente",
+              "value": "={{ $('Webhook').item.json.body.senderName || 'Paciente' }}",
+              "type": "string"
+            },
+            {
+              "id": "isadora-phone-001",
+              "name": "📱 | Telefone Isadora",
+              "value": "554799486377",
+              "type": "string"
+            },
+            {
+              "id": "mariana-phone-001",
+              "name": "📱 | Telefone Mariana",
+              "value": "554788342543",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5f141c37-7f4f-474d-93a2-cca3b0233fa0",
+      "name": "Campos Personalizados",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        25312,
+        28288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').item.json.body || {};\nlet msgType = 'text', msgText = '', mediaUrl = '', fromMe = body.fromMe || false;\n\nif (body.audio?.audioUrl)            { msgType = 'audio';    mediaUrl = body.audio.audioUrl; }\nelse if (body.image?.imageUrl)       { msgType = 'image';    mediaUrl = body.image.imageUrl;        msgText = body.image.caption    || ''; }\nelse if (body.video?.videoUrl)       { msgType = 'video';    mediaUrl = body.video.videoUrl;        msgText = body.video.caption    || ''; }\nelse if (body.document?.documentUrl) { msgType = 'document'; mediaUrl = body.document.documentUrl; msgText = body.document.caption || ''; }\nelse if (body.text?.message)         { msgType = 'text';     msgText  = body.text.message; }\nelse if (body.sticker)               { msgType = 'sticker'; }\nelse if (body.reaction)              { msgType = 'reaction'; msgText = body.reaction.value || ''; }\nelse                                 { msgType = 'unknown'; }\n\nconst msgId = body.messageId || ('id_' + Date.now() + '_' + Math.random().toString(36).slice(2));\nreturn [{ json: { msgType, msgText, mediaUrl, fromMe, phone: body.phone || '', msgId } }];"
+      },
+      "id": "14bfd34f-1599-4b63-92f1-826996680f72",
+      "name": "Detectar Tipo de Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        25536,
+        28288
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "is-maikon",
+                    "leftValue": "={{ $json.body.phone }}",
+                    "rightValue": "554792153480",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "id": "not-fromme-maikon",
+                    "leftValue": "={{ $json.body.fromMe }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Maikon"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "not-fromme",
+                    "leftValue": "={{ $json.body.fromMe }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  },
+                  {
+                    "id": "not-maikon",
+                    "leftValue": "={{ $json.body.phone }}",
+                    "rightValue": "554792153480",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    }
+                  },
+                  {
+                    "id": "not-isadora",
+                    "leftValue": "={{ $json.body.phone }}",
+                    "rightValue": "554799486377",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Processar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "is-fromme",
+                    "leftValue": "={{ $json.body.fromMe }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  },
+                  {
+                    "id": "not-staff-fromme",
+                    "leftValue": "={{ $json.body.phone }}",
+                    "rightValue": "={{ ['554792153480','554799486377'].includes($json.body.phone) ? $json.body.phone : '' }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "empty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fromMe Paciente"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "9315c4b9-e679-4e37-a52f-4e1fb315a669",
+      "name": "Filtrar Mensagem",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        25760,
+        28288
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "=1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "debounce_fila"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phone": "={{ $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'] }}",
+            "msgType": "={{ $('Detectar Tipo de Mensagem').item.json.msgType }}",
+            "msgText": "={{ $('Detectar Tipo de Mensagem').item.json.msgText }}",
+            "flow": "=whatsapp-pacientes",
+            "msgId": "={{ $('Detectar Tipo de Mensagem').item.json.msgId }}",
+            "timestamp": "={{ $now.toMillis() }}",
+            "mediaUrl": "={{ $('Detectar Tipo de Mensagem').item.json.mediaUrl || '' }}",
+            "fromMe": "={{ $('Detectar Tipo de Mensagem').item.json.fromMe ? 'sim' : 'nao' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "flow",
+              "displayName": "flow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "msgId",
+              "displayName": "msgId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "msgText",
+              "displayName": "msgText",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "msgType",
+              "displayName": "msgType",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "mediaUrl",
+              "displayName": "mediaUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fromMe",
+              "displayName": "fromMe",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "1058e41c-b059-46b8-b64a-61dca5dd424d",
+      "name": "Enfileirar [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        26000,
+        28224
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 60
+      },
+      "id": "712fea31-5417-44a6-bc7a-c11a3d50af5a",
+      "name": "Aguardar 60s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        26192,
+        28288
+      ],
+      "webhookId": "38e77564-001"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "debounce_fila"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "phone",
+              "lookupValue": "={{ $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'] }}"
+            },
+            {
+              "lookupColumn": "flow",
+              "lookupValue": "whatsapp-pacientes"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "eab94d13-8bb7-485c-aeaf-577acb83a0bc",
+      "name": "Buscar Fila [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        26416,
+        28288
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst rows  = $input.all();\nconst myId  = String($('Detectar Tipo de Mensagem').item.json.msgId || '');\nconst now   = Date.now();\n\nif (!rows || rows.length === 0) {\n  return [{ json: { skip: true, reason: 'fila vazia', aggregatedText: '', msgType: 'text', rows: [] } }];\n}\n\nconst sorted = rows.slice().sort((a, b) => {\n  const ta = Number(a.json.timestamp || 0);\n  const tb = Number(b.json.timestamp || 0);\n  return ta - tb;\n});\n\n// Se há mensagem fromMe nos últimos 30s → agente já respondeu, descarta\nconst recentFromMe = sorted.find(r => {\n  const isFromMe = r.json.fromMe === 'sim';\n  const age = now - Number(r.json.timestamp || 0);\n  return isFromMe && age < 30000;\n});\n\nif (recentFromMe) {\n  return [{ json: { skip: true, reason: 'agente respondeu recentemente', aggregatedText: '', msgType: 'text', rows: [] } }];\n}\n\n// Filtra apenas mensagens do paciente (não fromMe)\nconst patientRows = sorted.filter(r => r.json.fromMe !== 'sim');\n\nif (patientRows.length === 0) {\n  return [{ json: { skip: true, reason: 'sem mensagens do paciente', aggregatedText: '', msgType: 'text', rows: [] } }];\n}\n\nconst lastRow = patientRows[patientRows.length - 1];\nconst lastId  = String(lastRow.json.msgId || '');\n\nif (lastId !== myId) {\n  return [{ json: { skip: true, reason: 'nao e o dono', aggregatedText: '', msgType: 'text', rows: [] } }];\n}\n\nconst texts = patientRows\n  .map(r => (String(r.json.msgText || '')).trim())\n  .filter(t => t.length > 0)\n  .join('\\n');\n\nconst lastMsgType  = String(lastRow.json.msgType || 'text');\nconst lastMediaUrl = (String(lastRow.json.mediaUrl || '')).replace(/^'+/, '');\n\nreturn [{\n  json: {\n    skip: false,\n    aggregatedText: texts || '[mensagem sem texto]',\n    msgType: lastMsgType,\n    mediaUrl: lastMediaUrl,\n    rowCount: patientRows.length,\n    rows: sorted.map(r => r.json),\n    pacientePhone: $('Campos Personalizados').item.json['📞 | Telefone WhatsApp']\n  }\n}];\n"
+      },
+      "id": "0b4291e8-4ab9-4f28-9175-ea05963e1fb9",
+      "name": "Verificar Dono da Fila",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        26640,
+        28288
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "skip-001",
+                    "leftValue": "={{ $json.skip }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Processar"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "1d7272d3-00cd-4307-9b8d-ae7316409dac",
+      "name": "Processar ou Descartar?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        26848,
+        28288
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "audio-001",
+                    "leftValue": "={{ $('Verificar Dono da Fila').item.json.msgType }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Audio"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "11eb1825-d6c9-44ba-ae1b-fc2d74b34aea",
+      "name": "É áudio?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        27088,
+        28128
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Verificar Dono da Fila').item.json.mediaUrl }}",
+        "options": {}
+      },
+      "id": "6c2941ad-fc7b-4d4f-bcf6-9f7d87a8e7f8",
+      "name": "Download do áudio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        27296,
+        28016
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "options": {}
+      },
+      "id": "a57bf340-175f-4e10-971d-ee31edfb9514",
+      "name": "Transcrição do áudio",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        27520,
+        28016
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "wZQbyjQwigNwPYIw",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "img-001",
+                    "leftValue": "={{ $('Verificar Dono da Fila').item.json.msgType }}",
+                    "rightValue": "image",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Imagem"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "86e20e1c-8fbd-4ac5-961f-64bd9365659e",
+      "name": "É imagem?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        27088,
+        28448
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Campos Personalizados').item.json['🔑 | OpenAI API Key'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o', max_tokens: 500, messages: [{ role: 'user', content: [{ type: 'text', text: 'Analise esta imagem de forma clínica e objetiva. Identifique: 1) Tipo da imagem (oximetro / pressao / termometro / ferida / curativo / exame / outro). 2) Valores ou leituras visíveis. 3) Aparência geral. Responda em português, formato: tipo_imagem: X | valores: X | observacao: X | qualidade_leitura: boa/ruim' }, { type: 'image_url', image_url: { url: $('Verificar Dono da Fila').item.json.mediaUrl } }] }] }) }}",
+        "options": {}
+      },
+      "id": "a9d997ec-ae00-483f-95fc-efeb597c2125",
+      "name": "Analisar Imagem [Vision]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        27296,
+        28544
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst debounce     = $('Verificar Dono da Fila').item.json;\nconst aggregated   = debounce.aggregatedText || '[mensagem sem texto]';\nconst msgType      = debounce.msgType;\n\nlet transcription = '';\ntry { transcription = $('Transcrição do áudio').item?.json?.text || ''; } catch(e) {}\n\nlet visionResult = '';\ntry { \n  visionResult = $('Analisar Imagem [Vision]').item?.json?.choices?.[0]?.message?.content || '';\n} catch(e) {}\n\nlet finalText = aggregated;\n\nif (transcription) {\n  finalText = '[Áudio transcrito]: ' + transcription;\n  if (aggregated && aggregated !== '[mensagem sem texto]') finalText += '\\n' + aggregated;\n}\nif (visionResult) {\n  finalText += '\\n[ANALISE_IMAGEM]: ' + visionResult;\n}\n\n\nconst isFirstMsg = !(debounce.rows && debounce.rows.length > 1);\n\n\n// Se for primeira mensagem e for apenas um número (escolha do menu),\n// adicionar contexto de pós-operatório\nlet contextText = finalText;\nif (isFirstMsg && /^[1-4]$/.test(finalText.trim())) {\n  contextText = '[Paciente acabou de iniciar atendimento de pós-operatório. Faça uma saudação e pergunte como pode ajudar.]';\n}\n\nreturn [{ json: { \n  text: contextText, \n  msgType,\n  firstMessage: isFirstMsg\n} }];\n\n"
+      },
+      "id": "3d62bc66-caa5-4ec8-abbd-33d615bfdb81",
+      "name": "Montar Input do Agente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        27744,
+        28288
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Montar Input do Agente').item.json.text }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "={{ $('Campos Personalizados').item.json['🤖 | Prompt do Agente (SystemPrompt)'] }}"
+        }
+      },
+      "id": "3a514bce-04ae-43c9-9f35-aa460bd1c01c",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        27968,
+        28288
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "options": {}
+      },
+      "id": "a7d3cf55-637d-4295-9c8f-1a2bf1481331",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        27952,
+        28640
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "wZQbyjQwigNwPYIw",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'] }}",
+        "contextWindowLength": 15
+      },
+      "id": "82e9c4cc-c7f8-42f4-bcf9-a343ab3a7684",
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        28048,
+        28496
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentOutput = items[0].json.output;\nconst rawOutput = agentOutput.output || agentOutput;\nlet jsonString = (typeof rawOutput === 'string') ? rawOutput : JSON.stringify(rawOutput);\njsonString = jsonString\n  .replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/```$/i, '').trim();\nlet parsedJson;\ntry { parsedJson = JSON.parse(jsonString); }\ncatch (e) { parsedJson = { messages: [jsonString], DISPARAR_ALERTA: false, alerta_resumo: '', PRECISA_MAIKON: false, duvida_maikon: '' }; }\n\nif (parsedJson.PRECISA_MAIKON === undefined) parsedJson.PRECISA_MAIKON = false;\nif (parsedJson.duvida_maikon === undefined) parsedJson.duvida_maikon = '';\nif (parsedJson.DISPARAR_ALERTA === undefined) parsedJson.DISPARAR_ALERTA = false;\nif (parsedJson.alerta_resumo === undefined) parsedJson.alerta_resumo = '';\n\nreturn [{ json: parsedJson }];"
+      },
+      "id": "441ad0c8-1963-488a-8caa-4b89461d332f",
+      "name": "Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        28224,
+        28144
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "messages",
+        "options": {}
+      },
+      "id": "ce9a43b2-5575-4554-8b8e-933b87e05ce1",
+      "name": "Split Out",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        28592,
+        28320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'], text: String($json.messages || $json.output || '') }) }}",
+        "options": {},
+        "contentType": "json"
+      },
+      "id": "287aa675-2a98-4477-96ad-51fb2fd97192",
+      "name": "Enviar Texto [Z-API]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        28784,
+        28480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "documentId": {
+          "__rl": true,
+          "value": "=1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "debounce_fila"
+        }
+      },
+      "id": "bd06f4f9-c8bc-4ede-a5c9-76db04b8075b",
+      "name": "Limpar Fila [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        29008,
+        28496
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 🏗️ ARQUITETURA v11\n\n**FILA DE DÚVIDAS (sem #REF)**\n\n→ Agente não sabe → salva (aguardando)\n→ Avisa paciente 'Um momento'\n→ Fila vazia? SIM → envia ao Maikon + marca enviado\n→ Fila ocupada? → aguarda (fila gerencia)\n\nMaikon responde → entrega paciente\n→ marca respondido\n→ tem próxima aguardando?\n   SIM → envia ao Maikon + marca enviado\n   NÃO → encerra\n\nStatus: aguardando → enviado → respondido",
+        "height": 280,
+        "width": 580
+      },
+      "id": "35e4dc0d-b370-4cb0-99b8-cbaebcbe8116",
+      "name": "SN Arquitetura",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        25200,
+        27872
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ⚙️ CONFIGURAR\n\n**Campos Personalizados:**\n→ ID, Token, Client-Token Z-API\n→ ID Planilha Google Sheets\n→ 🔑 OpenAI API Key\n→ 📱 Telefone Dr. Maikon (alerta)\n→ 📱 Telefone Raphaela (alerta)\n\n**Formato telefone alerta:**\n5547XXXXXXXXX (sem + e sem espaço)\n\n**Credenciais nos nós:**\n→ Google Sheets (3 nós)\n→ OpenAI Chat Model\n→ Transcrição do áudio\n\n**Z-API Webhook:**\nhttps://raulsxs.app.n8n.cloud/webhook/whatsapp-pacientes\n\n**Ativar ✅**",
+        "height": 340,
+        "width": 440
+      },
+      "id": "f659c525-3ddb-4ceb-9dff-1699e3c36857",
+      "name": "SN Config",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        26208,
+        27776
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "=1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "checklist_diario"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "phone",
+              "lookupValue": "={{ $('Campos Personalizados1').item.json['📞 | Telefone WhatsApp'] }}"
+            },
+            {
+              "lookupColumn": "data",
+              "lookupValue": "={{ $now.toFormat('yyyy-MM-dd') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "31e9a786-f2c3-4119-bd41-95ae1043dbcd",
+      "name": "Buscar Checklist [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        27744,
+        27792
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qsoRe9XnBIqe0Q1b",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Busca resultado do checklist do dia\nlet checkRow = null;\ntry { checkRow = $('Buscar Checklist [Google Sheets]').item?.json; } catch(e) {}\n\nconst hoje = $now.toFormat('yyyy-MM-dd');\nconst jaExiste = checkRow && checkRow.data === hoje;\n\nconst checklist = {\n  noite:    jaExiste ? (checkRow.noite    || 'nao') : 'nao',\n  pressao:  jaExiste ? (checkRow.pressao  || 'nao') : 'nao',\n  sol:      jaExiste ? (checkRow.sol      || 'nao') : 'nao',\n  caminhada: jaExiste ? (checkRow.caminhada || 'nao') : 'nao',\n  jaExiste\n};\n\nconst pendentes = [];\nif (checklist.noite     === 'nao') pendentes.push('como_foi_a_noite');\nif (checklist.pressao   === 'nao') pendentes.push('pressao_arterial');\nif (checklist.sol       === 'nao') pendentes.push('sol_30min');\nif (checklist.caminhada === 'nao') pendentes.push('caminhada');\n\nreturn [{ json: { checklist, pendentes, hoje } }];\n"
+      },
+      "id": "c7b938d9-33ae-482a-bb8b-043e945c2772",
+      "name": "Montar Contexto Checklist",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        27744,
+        27632
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Extrai do output do agente quais itens foram cobertos nessa interação\nconst parsed = $('Code1').item.json;\nconst checklistAtualizado = parsed.checklist_update || {};\n\n// Lê estado atual\nlet checkRow = null;\ntry { checkRow = $('Buscar Checklist [Google Sheets]').item?.json; } catch(e) {}\nconst hoje = $now.toFormat('yyyy-MM-dd');\nconst jaExiste = checkRow && checkRow.data === hoje;\n\nconst noite     = checklistAtualizado.noite     || (jaExiste ? checkRow.noite     : 'nao') || 'nao';\nconst pressao   = checklistAtualizado.pressao   || (jaExiste ? checkRow.pressao   : 'nao') || 'nao';\nconst sol       = checklistAtualizado.sol       || (jaExiste ? checkRow.sol       : 'nao') || 'nao';\nconst caminhada = checklistAtualizado.caminhada || (jaExiste ? checkRow.caminhada : 'nao') || 'nao';\n\nreturn [{ json: {\n  phone: $('Campos Personalizados1').item.json['📞 | Telefone WhatsApp'],\n  data: hoje,\n  noite, pressao, sol, caminhada,\n  jaExiste,\n  row_number: jaExiste ? checkRow.row_number : null\n}}];\n"
+      },
+      "id": "470e9c06-80ef-427e-b6a2-16838d39bc45",
+      "name": "Preparar Checklist para Salvar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        28448,
+        27696
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "=1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "checklist_diario"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phone": "={{ $json.phone }}",
+            "data": "={{ $json.data }}",
+            "noite": "={{ $json.noite }}",
+            "pressao": "={{ $json.pressao }}",
+            "sol": "={{ $json.sol }}",
+            "caminhada": "={{ $json.caminhada }}",
+            "banheiro": "={{ $json.banheiro }}"
+          },
+          "matchingColumns": [
+            "phone",
+            "data"
+          ],
+          "schema": [
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "data",
+              "displayName": "data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "noite",
+              "displayName": "noite",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "pressao",
+              "displayName": "pressao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "banheiro",
+              "displayName": "banheiro",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sol",
+              "displayName": "sol",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "caminhada",
+              "displayName": "caminhada",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "3cc80979-4737-4f61-9e31-c25163f938df",
+      "name": "Salvar Checklist [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        28704,
+        27728
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qsoRe9XnBIqe0Q1b",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## ✅ CHECKLIST DIÁRIO (v5)\n\nItens verificados por dia/paciente:\n→ noite (como foi a noite)\n→ pressao (pressão arterial)\n→ sol (30 min de sol)\n→ caminhada\n\nValores: 'sim' ou 'nao'\nReset: todo dia à meia-noite (por data)\n\nO agente recebe os pendentes no\nprompt e pergunta naturalmente\napenas o que ainda falta.\n\nSe o paciente mencionou\nespontaneamente → agente\nmarca como 'sim' no JSON.",
+        "height": 260,
+        "width": 300
+      },
+      "id": "8dacc437-ddb9-44be-9b8d-26fad6a275c8",
+      "name": "SN Checklist",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        27968,
+        27504
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "alerta-cond-001",
+                    "leftValue": "={{ $json.disparou_alerta }}",
+                    "rightValue": "sim",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Alerta"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "ed9d6d73-2b84-4897-8824-88d17c4a3631",
+      "name": "Disparar Alerta?1",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        28384,
+        28000
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst parsed = $('Code').item.json;\nconst phone = $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'] || 'desconhecido';\nconst resumo = parsed.alerta_resumo || 'Sem detalhes';\n\nconst msg = '🚨 *ALERTA PACIENTE* 🚨\\n\\n' +\n  'Paciente: ' + phone + '\\n' +\n  resumo + '\\n\\n' +\n  'Verifique o WhatsApp do paciente.';\n\nreturn [{ json: { alertMsg: msg, phone } }];"
+      },
+      "id": "07e16748-fc31-4fe2-bb1f-28bbcdfb4b1e",
+      "name": "Montar Alerta1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        28576,
+        27968
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "554792153480"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.alertMsg }}"
+            }
+          ]
+        },
+        "options": {},
+        "specifyBody": "keypair",
+        "contentType": "json"
+      },
+      "id": "2bdafb52-db7c-4806-867e-027eee6a998b",
+      "name": "Alerta → Dr. Maikon1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        29120,
+        27840
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "554788342543"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.alertMsg }}"
+            }
+          ]
+        },
+        "options": {},
+        "specifyBody": "keypair",
+        "contentType": "json"
+      },
+      "id": "bdbc6d01-7a2d-431f-add0-341f8768a31f",
+      "name": "Alerta → Raphaela1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        29328,
+        28016
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🚨 ALERTA AUTOMÁTICO\n\nQuando o agente detecta urgência\n(DISPARAR_ALERTA: true),\no fluxo envia automaticamente\numa mensagem para:\n\n→ Dr. Maikon (+55 47 9215-3480)\n→ Isadora (+55 47 9948-6377)\n→ Raphaela (+55 47 8834-2543)\n\nCritérios calibrados v6.0:\napenas urgências objetivas.",
+        "height": 220,
+        "width": 300
+      },
+      "id": "82774c57-ae68-4335-970e-d51c66bc73b7",
+      "name": "SN Alerta1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        28976,
+        27568
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "=1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "historico_mensagens"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "phone": "={{ $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'] }}",
+            "msgType": "={{ $('Verificar Dono da Fila').item.json.msgType }}",
+            "msgText": "={{ $('Verificar Dono da Fila').item.json.aggregatedText }}",
+            "mediaUrl": "={{ $('Verificar Dono da Fila').item.json.mediaUrl || '' }}",
+            "msgId": "={{ $('Detectar Tipo de Mensagem').item.json.msgId }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "msgType",
+              "displayName": "msgType",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "msgText",
+              "displayName": "msgText",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "mediaUrl",
+              "displayName": "mediaUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "msgId",
+              "displayName": "msgId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "dd3023f9-f191-49e2-ba93-6b6a909dc241",
+      "name": "Salvar Mensagem [Histórico]1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        27744,
+        28032
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "=1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "historico_respostas"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "phone": "={{ $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'] }}",
+            "flow": "=whatsapp-pacientes",
+            "respostas": "={{ $('Code').item.json.messages?.join(' | ') || '' }}",
+            "disparou_alerta": "={{ $('Code').item.json.DISPARAR_ALERTA ? 'sim' : 'nao' }}",
+            "alerta_resumo": "={{ $('Code').item.json.alerta_resumo || '' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "flow",
+              "displayName": "flow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "respostas",
+              "displayName": "respostas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "disparou_alerta",
+              "displayName": "disparou_alerta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "alerta_resumo",
+              "displayName": "alerta_resumo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "2284ea8a-264e-4295-89df-2edb483ca0aa",
+      "name": "Salvar Resposta [Histórico]1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        28384,
+        28320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 📋 HISTÓRICO (v4)\n\n**historico_mensagens:**\nGrava assim que o dono da fila\né confirmado (antes do agente).\nCaptura: timestamp, phone, flow,\nmsgType, msgText, mediaUrl, msgId\n\n**historico_respostas:**\nGrava após o agente processar.\nCaptura: timestamp, phone, flow,\nrespostas, disparou_alerta, alerta_resumo\n\nAs mensagens ficam separadas\npor ' | ' na coluna respostas.",
+        "height": 240,
+        "width": 300
+      },
+      "id": "413cc24f-0e69-49ec-8335-c673a5e4a467",
+      "name": "SN Histórico1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        27104,
+        27664
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-maikon",
+              "leftValue": "={{ $('Code').item.json.PRECISA_MAIKON }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c34ee93f-50c3-4077-9ab4-60ab13174049",
+      "name": "Precisa Maikon?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        28384,
+        28176
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "list",
+          "cachedResultName": "Memória_N8N",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 221994955,
+          "mode": "list",
+          "cachedResultName": "duvidas_maikon",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY/edit#gid=221994955"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "phone_paciente": "={{ $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'] }}",
+            "duvida": "={{ $('Code').item.json.duvida_maikon }}",
+            "status": "aguardando",
+            "ref_id": "={{ $('Gerar Ref ID').item.json.ref_id }}",
+            "nome_paciente": "={{ $('Campos Personalizados').item.json['👤 | Nome do Paciente'] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_paciente",
+              "displayName": "phone_paciente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duvida",
+              "displayName": "duvida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "resposta_maikon",
+              "displayName": "resposta_maikon",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ref_id",
+              "displayName": "ref_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nome_paciente",
+              "displayName": "nome_paciente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "4a959266-1764-4f12-8d8d-7fc32a53464e",
+      "name": "Salvar Dúvida [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        28576,
+        28144
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qsoRe9XnBIqe0Q1b",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: '554792153480', text: '❓ *DÚVIDA DE PACIENTE*\\n\\nPaciente: ' + $('Campos Personalizados').item.json['👤 | Nome do Paciente'] + ' (' + $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'] + ')\\n\\n' + $('Code').item.json.duvida_maikon + '\\n\\nResponda diretamente neste chat.' }) }}",
+        "options": {},
+        "contentType": "json"
+      },
+      "id": "38db1a9e-c28b-46ed-a22e-9c9788c28d22",
+      "name": "Enviar Dúvida ao Maikon",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        29584,
+        28400
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "id": "fbd63a08-a6e5-4c2f-9467-5de7946970a9",
+      "name": "Aguardar 30s Maikon",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        25984,
+        28448
+      ],
+      "webhookId": "wait-maikon-30s"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "duvidas_maikon",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "status",
+              "lookupValue": "enviado"
+            }
+          ]
+        },
+        "options": {
+          "returnFirstMatch": true
+        }
+      },
+      "id": "cc3470f8-dffc-47b0-a443-0861ff51ad99",
+      "name": "Buscar Dúvida Pendente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        26192,
+        28480
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "tem-duvida",
+              "leftValue": "={{ $json.ref_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ebd024ff-9556-47bd-87ed-326b6e3dabe4",
+      "name": "Tem Dúvida Pendente?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        26416,
+        28480
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ 'Dúvida do paciente: ' + $('Buscar Dúvida Pendente').item.json.duvida + '\\n\\nResposta do Dr. Maikon: ' + $('Detectar Tipo de Mensagem').item.json.msgText }}",
+        "options": {
+          "systemMessage": "Você é o Dr. Maikon Madeira. Reformule a resposta abaixo de forma humana, acolhedora e em linguagem simples para o paciente. Máximo 2 mensagens curtas. Responda APENAS com JSON válido: {\"messages\": [\"msg1\", \"msg2\"]}"
+        }
+      },
+      "id": "eeb58f39-acfa-4143-a493-5cb49632ca25",
+      "name": "Reformular Resposta",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        26624,
+        28448
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = items[0].json.output || items[0].json.text || '';\nlet jsonString = (typeof raw === 'string') ? raw : JSON.stringify(raw);\njsonString = jsonString.replace(/^```json\\s*/i,'').replace(/^```\\s*/i,'').replace(/```$/i,'').trim();\nlet parsed;\ntry { parsed = JSON.parse(jsonString); }\ncatch(e) { parsed = { messages: [jsonString] }; }\nreturn [{ json: parsed }];"
+      },
+      "id": "0f96bb86-4816-4660-a062-0f3ba5926533",
+      "name": "Code Reformular",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        26864,
+        28480
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "messages",
+        "options": {}
+      },
+      "id": "8a72e35c-d8b5-4e49-8838-03e282c33ed0",
+      "name": "Split Resposta Maikon",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        27088,
+        28480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $('Buscar Dúvida Pendente').item.json.phone_paciente, text: String($json.messages || '') }) }}",
+        "options": {},
+        "contentType": "json"
+      },
+      "id": "122376cf-2313-4c42-ab7b-589cb37fae56",
+      "name": "Enviar Resposta ao Paciente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        27312,
+        28480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "list",
+          "cachedResultName": "Memória_N8N",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 221994955,
+          "mode": "list",
+          "cachedResultName": "duvidas_maikon",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY/edit#gid=221994955"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ref_id": "={{ $('Buscar Dúvida Pendente').item.json.ref_id }}",
+            "resposta_maikon": "={{ $('Code Reformular').item.json.resposta_final }}",
+            "status": "respondido"
+          },
+          "matchingColumns": [
+            "ref_id"
+          ],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_paciente",
+              "displayName": "phone_paciente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duvida",
+              "displayName": "duvida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "resposta_maikon",
+              "displayName": "resposta_maikon",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ref_id",
+              "displayName": "ref_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nome_paciente",
+              "displayName": "nome_paciente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "11ae0356-3a35-49be-b716-e819cd8fd865",
+      "name": "Atualizar Status [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        27536,
+        28480
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qsoRe9XnBIqe0Q1b",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "options": {}
+      },
+      "id": "c2f2e022-63b0-41e2-9cb3-1bc6106ab07f",
+      "name": "OpenAI Chat Model (Reformular)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        26656,
+        28640
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "wZQbyjQwigNwPYIw",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';\nlet ref = '';\nfor (let i = 0; i < 4; i++) ref += chars[Math.floor(Math.random() * chars.length)];\nreturn [{ json: { ref_id: ref } }];"
+      },
+      "id": "177a4c14-bcbd-4f6c-997c-832d40670408",
+      "name": "Gerar Ref ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        28208,
+        27872
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'], text: 'Um momento por favor 🙏' }) }}",
+        "options": {},
+        "contentType": "json"
+      },
+      "id": "5e72409b-a49a-4349-9498-ef2324ed3874",
+      "name": "Avisar Paciente [Um momento]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        28960,
+        28144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = String($('Detectar Tipo de Mensagem').item.json.msgText || '');\nconst match = text.match(/#([A-Z0-9]{4})/i);\nconst ref_id = match ? match[1].toUpperCase() : '';\nconst resposta = text.replace(/#[A-Z0-9]{4}\\s*/i, '').trim();\nreturn [{ json: { ref_id, resposta_maikon: resposta } }];"
+      },
+      "id": "a061f76b-f4a1-4d43-8439-90abd94914ea",
+      "name": "Extrair Ref Maikon",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        25792,
+        28608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "554799486377"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.alertMsg }}"
+            }
+          ]
+        },
+        "options": {},
+        "specifyBody": "keypair",
+        "contentType": "json"
+      },
+      "id": "ee22798b-6dab-4f0d-969c-320f2a55a4a2",
+      "name": "Alerta → Isadora",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        28752,
+        28016
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "duvidas_maikon",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "status",
+              "lookupValue": "enviado"
+            }
+          ]
+        },
+        "options": {
+          "returnFirstMatch": true
+        }
+      },
+      "id": "99649562-033e-4b50-8f23-5f7b7147cc00",
+      "name": "Verificar Fila [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        29184,
+        28144
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-enviado",
+              "leftValue": "={{ $json.ref_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5624787e-c768-4a30-ad13-8dd1d8b40884",
+      "name": "Tem Enviado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        29360,
+        28224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "list",
+          "cachedResultName": "Memória_N8N",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 221994955,
+          "mode": "list",
+          "cachedResultName": "duvidas_maikon",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY/edit#gid=221994955"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ref_id": "={{ $('Gerar Ref ID').item.json.ref_id }}",
+            "status": "enviado"
+          },
+          "matchingColumns": [
+            "ref_id"
+          ],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_paciente",
+              "displayName": "phone_paciente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duvida",
+              "displayName": "duvida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "resposta_maikon",
+              "displayName": "resposta_maikon",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ref_id",
+              "displayName": "ref_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nome_paciente",
+              "displayName": "nome_paciente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f73ad85-7894-46cb-96d2-03133da8cf7a",
+      "name": "Marcar Enviado [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        29616,
+        28192
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "duvidas_maikon",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "status",
+              "lookupValue": "aguardando"
+            }
+          ]
+        },
+        "options": {
+          "returnFirstMatch": true
+        }
+      },
+      "id": "95f99d1a-dd34-4239-b612-2c35eaf825fa",
+      "name": "Buscar Próxima Dúvida [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        27760,
+        28480
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-proxima",
+              "leftValue": "={{ $json.ref_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d6667817-97f7-4559-8d2c-43c6e43dcbf0",
+      "name": "Tem Próxima?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        28352,
+        28656
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: '554792153480', text: '❓ *PRÓXIMA DÚVIDA NA FILA*\\n\\nPaciente: ' + ($json.nome_paciente || $json.phone_paciente) + ' (' + $json.phone_paciente + ')' + '\\n\\n' + $json.duvida + '\\n\\nResponda diretamente neste chat.' }) }}",
+        "options": {},
+        "contentType": "json"
+      },
+      "id": "553a286d-3d70-4e98-a19b-e0a7553952a9",
+      "name": "Enviar Próxima ao Maikon",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        28208,
+        28480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "list",
+          "cachedResultName": "Memória_N8N",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 221994955,
+          "mode": "list",
+          "cachedResultName": "duvidas_maikon",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY/edit#gid=221994955"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ref_id": "={{ $('Buscar Próxima Dúvida [Google Sheets]').item.json.ref_id }}",
+            "status": "enviado"
+          },
+          "matchingColumns": [
+            "ref_id"
+          ],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_paciente",
+              "displayName": "phone_paciente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duvida",
+              "displayName": "duvida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "resposta_maikon",
+              "displayName": "resposta_maikon",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ref_id",
+              "displayName": "ref_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nome_paciente",
+              "displayName": "nome_paciente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f1cee6b6-0a9e-4196-a979-06343e7b0604",
+      "name": "Marcar Próxima Enviado [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        28432,
+        28480
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "=1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "triagem",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "phone",
+              "lookupValue": "={{ String($('Campos Personalizados').item.json['📞 | Telefone WhatsApp']) }}"
+            }
+          ]
+        },
+        "options": {
+          "returnFirstMatch": true
+        }
+      },
+      "id": "fad0f629-d239-4807-8ee3-af00a7d312ae",
+      "name": "Verificar Triagem [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        26016,
+        28592
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-triagem",
+              "leftValue": "={{ $json.phone ? String($json.phone) : '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "3c703d73-2134-4884-8372-2996265c4e25",
+      "name": "Tem Triagem?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        26208,
+        28640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'], text: 'Olá! 👋\\nVocê entrou em contato com o consultório do Dr. Maikon Madeira.\\n\\nPara te direcionar mais rapidamente, selecione abaixo a opção que melhor descreve o que você precisa:\\n\\n1️⃣ Orientações e dúvidas sobre pré-operatório\\n2️⃣ Orientações sobre pós-operatório\\n3️⃣ Agendamento de consulta\\n4️⃣ Exames e prescrições' }) }}",
+        "options": {},
+        "contentType": "json"
+      },
+      "id": "222bdad2-4e48-451d-9e83-bcfefea1896c",
+      "name": "Enviar Menu [Z-API]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        26448,
+        28768
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "=1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "triagem",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "phone": "={{ String($('Campos Personalizados').item.json['📞 | Telefone WhatsApp']) }}",
+            "nome": "={{ $('Campos Personalizados').item.json['👤 | Nome do Paciente'] }}",
+            "status": "menu_enviado",
+            "primeira_msg": "={{ $('Detectar Tipo de Mensagem').item.json.msgText }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nome",
+              "displayName": "nome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "opcao",
+              "displayName": "opcao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "primeira_msg",
+              "displayName": "primeira_msg",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "b6e7acc3-d895-4c80-90d4-30bfa347321f",
+      "name": "Salvar Triagem Menu [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        26272,
+        28768
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst msg     = (String($('Detectar Tipo de Mensagem').item.json.msgText || '')).trim();\nconst triagem = $('Verificar Triagem [Google Sheets]').item.json;\nconst msgType = $('Detectar Tipo de Mensagem').item.json.msgType || 'text';\n\n// Reset manual pelo paciente\nif (/^0$|^menu$|^voltar$|^inicio$|^início$/i.test(msg)) {\n  return [{ json: { opcao: '', destino: 'menu', msg, reset: true } }];\n}\n\n// Reset após 3 dias\nconst RESET_MS  = 3 * 24 * 60 * 60 * 1000;\nconst agora     = Date.now();\nconst tsTriagem = triagem.timestamp ? new Date(triagem.timestamp).getTime() : 0;\nconst expirado  = tsTriagem > 0 && (agora - tsTriagem) > RESET_MS;\n\n// Se expirado → menu\nif (expirado) {\n  return [{ json: { opcao: '', destino: 'menu', msg, expirado: true } }];\n}\n\n// Se já tem opção salva e ativo → roteia direto sem pedir menu de novo\nif (triagem.status === 'ativo' && triagem.opcao) {\n  const opcaoStr = String(triagem.opcao);\n  const destino = opcaoStr === '2' ? 'agente' : 'encerrado';\n  return [{ json: { opcao: triagem.opcao, destino, nome: triagem.nome || '', expirado: false } }];\n}\n\n// Se for áudio → ignora silenciosamente\nif (msgType === 'audio' || msgType === 'ptt') {\n  return [{ json: { opcao: '', destino: 'encerrado', msg, motivo: 'audio_sem_opcao' } }];\n}\n\n// Detectar opção pelo texto — regex ampliada para linguagem natural\nlet opcao = '';\n\nif (/\\b1\\b|^1$|1️⃣|pré.operat|pre.operat|antes da cirurg|pré.op|pre.op/i.test(msg)) {\n  opcao = '1';\n} else if (/\\b2\\b|^2$|2️⃣|pós.operat|pos.operat|depois da cirurg|pós.op|pos.op/i.test(msg)) {\n  opcao = '2';\n} else if (/\\b3\\b|^3$|3️⃣|agend|consult|marcar|agendar/i.test(msg)) {\n  opcao = '3';\n} else if (/\\b4\\b|^4$|4️⃣|exam|prescri|receita|resultado/i.test(msg)) {\n  opcao = '4';\n}\n\n// Se não detectou opção → silêncio (não reenvia menu)\n// O paciente pode estar digitando algo fora do contexto ou mandando saudação\n// Apenas o menu original já está visível para ele\nif (!opcao) {\n  return [{ json: { opcao: '', destino: 'encerrado', msg, motivo: 'mensagem_invalida' } }];\n}\n\nconst destino = opcao === '2' ? 'agente' : 'secretaria';\nreturn [{ json: { opcao, destino, msg, expirado: false } }];\n"
+      },
+      "id": "84fc7dac-2fc7-4503-bd5e-9e4665010d0c",
+      "name": "Detectar Opção [Code]",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        26512,
+        28592
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "dest-agente",
+                    "leftValue": "={{ $json.destino }}",
+                    "rightValue": "agente",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Agente"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "dest-secretaria",
+                    "leftValue": "={{ $json.destino }}",
+                    "rightValue": "secretaria",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Secretaria"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "dest-menu",
+                    "leftValue": "={{ $json.destino }}",
+                    "rightValue": "menu",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Menu"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "e143b1eb-33e5-4f6a-bfc6-cdada0119a20",
+      "name": "Rotear Opção [Switch]",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        26688,
+        28848
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "=1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "triagem",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phone": "={{ String($('Campos Personalizados').item.json['📞 | Telefone WhatsApp']) }}",
+            "opcao": "={{ $('Detectar Opção [Code]').item.json.opcao }}",
+            "status": "ativo",
+            "timestamp": "={{ $now.toISO() }}",
+            "nome": "={{ $('Campos Personalizados').item.json['👤 | Nome do Paciente'] }}",
+            "row_number": 0
+          },
+          "matchingColumns": [
+            "phone"
+          ],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nome",
+              "displayName": "nome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "opcao",
+              "displayName": "opcao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "primeira_msg",
+              "displayName": "primeira_msg",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "749690b5-4fb3-44eb-bbee-f3dba4c43134",
+      "name": "Salvar Triagem Opção [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        26816,
+        29040
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst opcao = $('Detectar Opção [Code]').item.json.opcao || '';\nconst phone = $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'] || '';\nconst nome  = $('Campos Personalizados').item.json['👤 | Nome do Paciente'] || 'Paciente';\nconst msg   = String($('Detectar Tipo de Mensagem').item.json.msgText || '');\n\nconst labels = { '1': 'Pré-operatório', '3': 'Agendamento de consulta', '4': 'Exames e prescrições' };\nconst label = labels[opcao] || 'Não identificado';\n\nconst alerta = `📋 *NOVO CONTATO NO CONSULTÓRIO*\n\n👤 Paciente: ${nome}\n📞 Telefone: ${phone}\n📌 Assunto: ${label}\n\n💬 Mensagem: ${msg}\n\nPor favor, entre em contato com o paciente.`;\n\nreturn [{ json: { alerta } }];\n"
+      },
+      "id": "d213972c-19ca-4772-9716-deedf50d205c",
+      "name": "Montar Alerta Secretaria [Code]",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        27024,
+        28752
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: '554799486377', text: $json.alerta }) }}",
+        "options": {},
+        "contentType": "json"
+      },
+      "id": "59d0ec7d-4b11-49c9-b3be-97dbdce1f681",
+      "name": "Alerta Secretaria → Isadora [Z-API]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        27232,
+        28752
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: '554788342543', text: $json.alerta }) }}",
+        "options": {},
+        "contentType": "json"
+      },
+      "id": "033188af-708f-4dc7-af4d-ff796590438a",
+      "name": "Alerta Secretaria → Mariana [Z-API]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        27248,
+        28960
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'], text: 'Perfeito! Nossa equipe vai entrar em contato com você em breve. 🙏' }) }}",
+        "options": {},
+        "contentType": "json"
+      },
+      "id": "b8aff8a1-b822-4934-bad9-da92c3a579dd",
+      "name": "Confirmar Paciente [Z-API]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        27008,
+        28976
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "documentId": {
+          "__rl": true,
+          "value": "=1BJjEce415otRs0ZGuXW8z_5VUUWLQlnS1g3vpOTCOPY",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "triagem",
+          "mode": "name"
+        }
+      },
+      "id": "3b6c505e-8d55-45b5-94f7-b22fdae93c44",
+      "name": "Limpar Triagem [Google Sheets]",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        26208,
+        28976
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RWGFYJl0trO75IdY",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sdsd-evolution-api.r65ocn.easypanel.host/message/sendText/Consultorio",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "<<EVOLUTION_API_KEY>>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $('Campos Personalizados').item.json['📞 | Telefone WhatsApp'], text: 'Caso queira voltar ao menu, digite *voltar*.' }) }}",
+        "options": {},
+        "contentType": "json"
+      },
+      "id": "4cec6084-7200-4f97-a6b5-60155d0944f9",
+      "name": "Mensagem Voltar Secretaria [Z-API]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        27008,
+        29184
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Campos Personalizados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Campos Personalizados": {
+      "main": [
+        [
+          {
+            "node": "Detectar Tipo de Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detectar Tipo de Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Filtrar Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enfileirar [Google Sheets]": {
+      "main": [
+        [
+          {
+            "node": "Aguardar 60s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Fila [Google Sheets]": {
+      "main": [
+        [
+          {
+            "node": "Verificar Dono da Fila",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Buscar Próxima Dúvida [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Dono da Fila": {
+      "main": [
+        [
+          {
+            "node": "Processar ou Descartar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar ou Descartar?": {
+      "main": [
+        [
+          {
+            "node": "É áudio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É áudio?": {
+      "main": [
+        [
+          {
+            "node": "Download do áudio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É imagem?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download do áudio": {
+      "main": [
+        [
+          {
+            "node": "Transcrição do áudio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcrição do áudio": {
+      "main": [
+        [
+          {
+            "node": "Montar Input do Agente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É imagem?": {
+      "main": [
+        [
+          {
+            "node": "Analisar Imagem [Vision]",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Montar Input do Agente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analisar Imagem [Vision]": {
+      "main": [
+        [
+          {
+            "node": "Montar Input do Agente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Input do Agente": {
+      "main": [
+        [
+          {
+            "node": "Salvar Mensagem [Histórico]1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Salvar Resposta [Histórico]1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Precisa Maikon?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Enviar Texto [Z-API]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Texto [Z-API]": {
+      "main": [
+        [
+          {
+            "node": "Limpar Fila [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Checklist [Google Sheets]": {
+      "main": [
+        [
+          {
+            "node": "Montar Contexto Checklist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Checklist para Salvar": {
+      "main": [
+        [
+          {
+            "node": "Salvar Checklist [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disparar Alerta?1": {
+      "main": [
+        [
+          {
+            "node": "Montar Alerta1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Alerta1": {
+      "main": [
+        [
+          {
+            "node": "Alerta → Dr. Maikon1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Alerta → Raphaela1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Alerta → Isadora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alerta → Dr. Maikon1": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alerta → Raphaela1": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Mensagem [Histórico]1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Resposta [Histórico]1": {
+      "main": [
+        [
+          {
+            "node": "Disparar Alerta?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Precisa Maikon?": {
+      "main": [
+        [
+          {
+            "node": "Gerar Ref ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Dúvida [Google Sheets]": {
+      "main": [
+        [
+          {
+            "node": "Avisar Paciente [Um momento]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar 30s Maikon": {
+      "main": [
+        [
+          {
+            "node": "Buscar Dúvida Pendente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Dúvida Pendente": {
+      "main": [
+        [
+          {
+            "node": "Tem Dúvida Pendente?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Dúvida Pendente?": {
+      "main": [
+        [
+          {
+            "node": "Reformular Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reformular Resposta": {
+      "main": [
+        [
+          {
+            "node": "Code Reformular",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code Reformular": {
+      "main": [
+        [
+          {
+            "node": "Split Resposta Maikon",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Resposta Maikon": {
+      "main": [
+        [
+          {
+            "node": "Enviar Resposta ao Paciente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Resposta ao Paciente": {
+      "main": [
+        [
+          {
+            "node": "Atualizar Status [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar Status [Google Sheets]": {
+      "main": [
+        [
+          {
+            "node": "Buscar Próxima Dúvida [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Aguardar 30s Maikon",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Verificar Triagem [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enfileirar [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model (Reformular)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Reformular Resposta",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar Ref ID": {
+      "main": [
+        [
+          {
+            "node": "Salvar Dúvida [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisar Paciente [Um momento]": {
+      "main": [
+        [
+          {
+            "node": "Verificar Fila [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Ref Maikon": {
+      "main": [
+        [
+          {
+            "node": "Aguardar 30s Maikon",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alerta → Isadora": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Fila [Google Sheets]": {
+      "main": [
+        [
+          {
+            "node": "Tem Enviado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Enviado?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Enviar Dúvida ao Maikon",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Marcar Enviado [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Próxima Dúvida [Google Sheets]": {
+      "main": [
+        [
+          {
+            "node": "Tem Próxima?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Próxima?": {
+      "main": [
+        [
+          {
+            "node": "Enviar Próxima ao Maikon",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Marcar Próxima Enviado [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar 60s": {
+      "main": [
+        [
+          {
+            "node": "Buscar Fila [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Triagem [Google Sheets]": {
+      "main": [
+        [
+          {
+            "node": "Tem Triagem?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Triagem?": {
+      "main": [
+        [
+          {
+            "node": "Detectar Opção [Code]",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar Menu [Z-API]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Salvar Triagem Menu [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detectar Opção [Code]": {
+      "main": [
+        [
+          {
+            "node": "Rotear Opção [Switch]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rotear Opção [Switch]": {
+      "main": [
+        [
+          {
+            "node": "Salvar Triagem Opção [Google Sheets]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enfileirar [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Salvar Triagem Opção [Google Sheets]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Montar Alerta Secretaria [Code]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Confirmar Paciente [Z-API]",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Limpar Triagem [Google Sheets]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Alerta Secretaria [Code]": {
+      "main": [
+        [
+          {
+            "node": "Alerta Secretaria → Isadora [Z-API]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Alerta Secretaria → Mariana [Z-API]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpar Triagem [Google Sheets]": {
+      "main": [
+        [
+          {
+            "node": "Enviar Menu [Z-API]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmar Paciente [Z-API]": {
+      "main": [
+        [
+          {
+            "node": "Mensagem Voltar Secretaria [Z-API]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1454a6da01ded5cb1fe127a8ef8dd33bce7edbe2eb27338ba375698f025077dd"
+  },
+  "id": "consultorio-pacientes-evo-v1",
+  "tags": []
+}
