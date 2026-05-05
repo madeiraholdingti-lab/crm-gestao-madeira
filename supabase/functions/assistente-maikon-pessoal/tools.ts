@@ -2483,29 +2483,50 @@ const tarefasPorResponsavel: ToolDefinition = {
 
 const buscarGrupo: ToolDefinition = {
   name: 'buscar_grupo',
-  description: 'Busca mensagens recentes de grupos WhatsApp do Maikon (CEDEX, MBS, qualquer outro). Use quando ele perguntar "tem aula hoje no CEDEX/MBS?", "qual o assunto da aula", "o que rolou no grupo X". Retorna até 30 mensagens ordenadas por mais recente. Filtra por nome do grupo (substring) ou jid. Default 1 dia atrás. Pra pegar a semana, passe dias_atras=7.',
+  description: 'Busca mensagens recentes de grupos WhatsApp do Maikon (MBS, qualquer outro grupo dos 464 que ele participa). Use quando ele perguntar "tem aula hoje no MBS?", "qual o assunto da aula", "o que rolou no grupo X". Procura primeiro o grupo na tabela whatsapp_groups por nome (subject), depois busca msgs recentes desse grupo. Default 1 dia atrás. Se nome ambíguo (ex: "MBS" tem 3 grupos), retorna mensagens de todos.',
   input_schema: {
     type: 'object',
     properties: {
-      nome_ou_jid: {
+      nome_grupo: {
         type: 'string',
-        description: 'Pedaço do nome do grupo (ex: "CEDEX", "MBS") ou JID completo (ex: "12036xxx@g.us"). Match case-insensitive em pushName/sender ou conversa.',
+        description: 'Pedaço do nome do grupo (ex: "MBS", "Cardio", "Cetrus"). Case-insensitive. Se não passar, busca em TODOS os grupos no período.',
       },
       dias_atras: { type: 'integer', minimum: 1, maximum: 30, default: 1 },
       filtro: {
         type: 'string',
-        description: 'Substring opcional pra filtrar conteúdo (ex: "aula", "horário", "sábado"). Case-insensitive.',
+        description: 'Substring opcional pra filtrar conteúdo (ex: "aula", "horário", "sábado").',
       },
-      limit: { type: 'integer', minimum: 1, maximum: 50, default: 30 },
+      limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
     },
   },
   async handler(args, ctx) {
     const dias = (args.dias_atras as number) || 1;
-    const limit = (args.limit as number) || 30;
-    const nomeOuJid = (args.nome_ou_jid as string || '').trim();
+    const limit = (args.limit as number) || 50;
+    const nomeGrupo = (args.nome_grupo as string || '').trim();
     const filtro = (args.filtro as string || '').trim();
     const desde = new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString();
 
+    // 1. Resolver nome → lista de JIDs via whatsapp_groups
+    let jidsAlvo: string[] = [];
+    let gruposEncontrados: Array<{ jid: string; subject: string }> = [];
+    if (nomeGrupo) {
+      const escaped = nomeGrupo.replace(/[%_]/g, '\\$&');
+      const { data: grupos } = await ctx.supa
+        .from('whatsapp_groups')
+        .select('jid, subject')
+        .ilike('subject', `%${escaped}%`)
+        .limit(20);
+      gruposEncontrados = (grupos || []) as Array<{ jid: string; subject: string }>;
+      jidsAlvo = gruposEncontrados.map(g => g.jid);
+      if (jidsAlvo.length === 0) {
+        return {
+          ok: false,
+          motivo: `Nenhum grupo com "${nomeGrupo}" no nome. Tente outro termo ou peça pra ver lista.`,
+        };
+      }
+    }
+
+    // 2. Buscar mensagens
     let query = ctx.supa
       .from('messages')
       .select('text, sender_jid, raw_payload, created_at, message_type')
@@ -2513,17 +2534,10 @@ const buscarGrupo: ToolDefinition = {
       .order('created_at', { ascending: false })
       .limit(limit);
 
-    // Filtro por @g.us. Como sender_jid em grupos é o participant (não o jid do grupo),
-    // a melhor pista é raw_payload->key->remoteJid LIKE %@g.us
-    // Postgrest aceita filtro JSONB via .filter
-    query = query.filter('raw_payload->key->>remoteJid', 'like', '%@g.us');
-
-    if (nomeOuJid) {
-      // Match em remoteJid OR pushName OR text — buscar de forma flexível
-      const escaped = nomeOuJid.replace(/[%_]/g, '\\$&');
-      query = query.or(
-        `raw_payload->key->>remoteJid.ilike.%${escaped}%,raw_payload->>pushName.ilike.%${escaped}%,text.ilike.%${escaped}%`
-      );
+    if (jidsAlvo.length > 0) {
+      query = query.in('raw_payload->key->>remoteJid', jidsAlvo);
+    } else {
+      query = query.filter('raw_payload->key->>remoteJid', 'like', '%@g.us');
     }
     if (filtro) {
       const f = filtro.replace(/[%_]/g, '\\$&');
@@ -2535,16 +2549,23 @@ const buscarGrupo: ToolDefinition = {
 
     const msgs = (data || []).map((r: Record<string, unknown>) => {
       const raw = r.raw_payload as { key?: { remoteJid?: string }; pushName?: string } | undefined;
+      const jid = raw?.key?.remoteJid || '';
+      const grupo = gruposEncontrados.find(g => g.jid === jid)?.subject || jid.replace('@g.us', '');
       return {
         em: r.created_at,
-        grupo: raw?.key?.remoteJid?.replace('@g.us', '') || '?',
+        grupo,
         de: raw?.pushName || (r.sender_jid as string)?.split('@')[0] || '?',
         tipo: r.message_type,
         texto: ((r.text as string) || '').slice(0, 280),
       };
     });
 
-    return { total: msgs.length, dias_atras: dias, mensagens: msgs };
+    return {
+      total: msgs.length,
+      dias_atras: dias,
+      grupos_pesquisados: gruposEncontrados.map(g => g.subject),
+      mensagens: msgs,
+    };
   },
 };
 
