@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useConversas } from "@/hooks/useConversas";
@@ -237,6 +238,23 @@ export default function SDRZap() {
   const [conversasOutrasInstancias, setConversasOutrasInstancias] = useState<Conversa[]>([]);
   
   const mensagensEndRef = useRef<HTMLDivElement>(null);
+  // Scroll ref do container do chat (pra virtualização)
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+
+  // Virtualização do chat: renderiza só o slice visível + overscan.
+  // Em conversas pequenas (< 50 msgs) o overhead é zero (renderiza tudo).
+  // Em conversas grandes (1k+) reduz nodes do DOM em ~95%.
+  const messageVirtualizer = useVirtualizer({
+    count: mensagens.length,
+    getScrollElement: () => messagesScrollRef.current,
+    estimateSize: () => 80,
+    overscan: 8,
+    // Mensagens podem ter altura variável (texto curto vs imagem vs áudio).
+    // measureElement deixa o virtualizer ajustar após render.
+    measureElement: typeof window !== 'undefined' && navigator.userAgent.indexOf('Firefox') === -1
+      ? (el) => el?.getBoundingClientRect().height
+      : undefined,
+  });
 
   // Carrega mais histórico de mensagens. Reusado pelo botão e pelo
   // IntersectionObserver (auto-load ao scroll bater no topo).
@@ -2878,7 +2896,7 @@ export default function SDRZap() {
         )}
 
         {/* Mensagens - ÁREA COM SCROLL (fundo estilo WhatsApp com pattern sutil) */}
-        <div className="flex-1 overflow-y-auto p-4 wa-chat-wallpaper">
+        <div ref={messagesScrollRef} className="flex-1 overflow-y-auto p-4 wa-chat-wallpaper">
           {/* Loading centralizado enquanto troca de conversa (antes das mensagens renderizarem) */}
           {conversaSelecionada && loadingMensagens && mensagens.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">
@@ -2897,6 +2915,7 @@ export default function SDRZap() {
                       <span>Sincronizando histórico...</span>
                     </div>
                   ) : (
+                    <>
                     <div ref={loadMoreSentinelRef} className="h-1" />
                     <Button
                       variant="ghost"
@@ -2917,10 +2936,15 @@ export default function SDRZap() {
                         </>
                       )}
                     </Button>
+                    </>
                   )}
                 </div>
 
-                {mensagens.map((msg, index) => {
+                <div style={{ height: messageVirtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+                {messageVirtualizer.getVirtualItems().map((virtualItem) => {
+                  const msg = mensagens[virtualItem.index];
+                  const index = virtualItem.index;
+                  if (!msg) return null;
                   // Detectar se é conversa interna (o contato é outra instância da equipe)
                   const numeroContato = conversaSelecionada.numero_contato;
                   const instanciaAtualId = conversaSelecionada.current_instance_id || conversaSelecionada.orig_instance_id;
@@ -2997,7 +3021,18 @@ export default function SDRZap() {
                   };
 
                   return (
-                    <div key={msg.id}>
+                    <div
+                      key={msg.id}
+                      ref={messageVirtualizer.measureElement}
+                      data-index={virtualItem.index}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualItem.start}px)`,
+                      }}
+                    >
                       {/* Separador de Data */}
                       {showDateSeparator && (
                         <div className="flex items-center justify-center my-4">
@@ -3904,6 +3939,7 @@ export default function SDRZap() {
                     </div>
                   );
                 })}
+                </div>
                 <div ref={mensagensEndRef} />
               </>
             ) : (
