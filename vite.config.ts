@@ -15,6 +15,12 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // Em produção, descarta console.* (exceto error/warn) pra reduzir bundle e
+  // não expor logs internos. Em dev mantém tudo.
+  esbuild: mode === "production" ? {
+    drop: ["debugger"],
+    pure: ["console.log", "console.info", "console.debug", "console.trace"],
+  } : undefined,
   test: {
     globals: true,
     environment: "jsdom",
