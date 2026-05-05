@@ -149,6 +149,9 @@ Deno.serve(async (req: Request) => {
     let currentAudioBase64: string | null = null;
     let currentAudioMime: string | null = null;
     let currentAudioDuracaoSeg = 0;
+    // Imagem inline pro Sonnet vision — se Maikon mandar foto.
+    let currentImageBase64: string | null = null;
+    let currentImageMime: string | null = null;
 
     if (directText) {
       // Modo direto (testes ou outras integrações)
@@ -180,14 +183,32 @@ Deno.serve(async (req: Request) => {
 
       waMessageId = data.key.id || null;
 
-      // Extrai texto (com Whisper inline pra áudio)
+      // Extrai texto (com Whisper inline pra áudio, vision pra imagem)
       const audioMsg = data.message?.audioMessage || data.message?.pttMessage;
       const isAudio = !!audioMsg || data.messageType === 'audioMessage' || data.messageType === 'pttMessage';
+      const imageMsg = data.message?.imageMessage;
+      const isImage = !!imageMsg || data.messageType === 'imageMessage';
 
       if (data.message?.conversation) {
         inputText = data.message.conversation;
       } else if (data.message?.extendedTextMessage?.text) {
         inputText = data.message.extendedTextMessage.text;
+      } else if (isImage) {
+        inputType = 'image';
+        const mime = imageMsg?.mimetype?.split(';')[0] || 'image/jpeg';
+        const caption = imageMsg?.caption || '';
+        let b64: string | null = imageMsg?.base64 || null;
+        if (!b64 && data.key) {
+          b64 = await fetchAudioBase64(data.instance, data.key);
+        }
+        if (!b64) {
+          inputText = '[imagem recebida mas não consegui baixar — me reenvia ou descreve por texto]';
+        } else {
+          currentImageBase64 = b64;
+          currentImageMime = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mime) ? mime : 'image/jpeg';
+          // Caption serve de "pergunta sobre a imagem". Se não tiver, ser genérico.
+          inputText = caption.trim() || '[Maikon mandou uma imagem — descreva o que tem na imagem e seja útil. Se for tabela/cronograma/lista, extraia os itens estruturados.]';
+        }
       } else if (isAudio) {
         inputType = 'audio';
         const mime = audioMsg?.mimetype || 'audio/ogg';
@@ -291,7 +312,14 @@ Deno.serve(async (req: Request) => {
     const contextoCompactado = montarContextoExtra(ctxData);
     const perfilDono = montarPerfilDono(perfilData);
 
-    const messages: AnthropicMessage[] = [{ role: 'user', content: inputText }];
+    // Se imagem capturada, monta content multimodal (Sonnet 4.6 vision)
+    const initialUserContent: unknown = currentImageBase64 && currentImageMime
+      ? [
+          { type: 'image', source: { type: 'base64', media_type: currentImageMime, data: currentImageBase64 } },
+          { type: 'text', text: inputText },
+        ]
+      : inputText;
+    const messages: AnthropicMessage[] = [{ role: 'user', content: initialUserContent }];
     const toolCallsLog: Array<Record<string, unknown>> = [];
     let respostaFinal = '';
     let tokensIn = 0;
