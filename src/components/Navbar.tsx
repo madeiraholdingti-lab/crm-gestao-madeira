@@ -88,7 +88,7 @@ export function Navbar() {
   // não aparecem mais no menu — a nova UI /prospeccao consome a mesma engine.
   const menuItemsOperacao = [
     { title: "Home", url: "/home", icon: LayoutDashboard, show: true },
-    { title: "SDR Zap", url: "/sdr-zap", icon: Target, show: canAccessSDR },
+    { title: "Conversas", url: "/conversas", icon: Target, show: canAccessSDR },
     { title: "Task-Flow", url: "/task-flow", icon: ClipboardList, show: canAccessSDR && !isDisparador },
     { title: "Contatos", url: "/contatos", icon: Users, show: !isDisparador },
     { title: "Hub WhatsApp", url: "/hub-whatsapp", icon: Network, show: canAccessReports },

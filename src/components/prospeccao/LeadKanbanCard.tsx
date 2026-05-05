@@ -15,7 +15,7 @@ export default function LeadKanbanCard({ envio }: Props) {
   const nome = lead?.nome || envio.telefone;
 
   const openConversa = () => {
-    navigate(`/sdr-zap?phone=${encodeURIComponent(envio.telefone)}`);
+    navigate(`/conversas?phone=${encodeURIComponent(envio.telefone)}`);
   };
 
   const tempo = envio.respondeu_em ? envio.respondeu_em : envio.enviado_em;

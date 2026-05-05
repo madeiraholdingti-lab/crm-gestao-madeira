@@ -294,7 +294,7 @@ export const MonitorSecretarias = () => {
                   key={card.userId}
                   className="rounded-lg border p-3 text-center transition-all hover:shadow-md cursor-pointer"
                   style={{ borderTopColor: maxUrgency, borderTopWidth: '3px' }}
-                  onClick={() => navigate('/sdr-zap')}
+                  onClick={() => navigate('/conversas')}
                 >
                   <p className="text-xs font-medium truncate">{card.nome}</p>
                   <p className="text-2xl font-bold" style={{ color: maxUrgency }}>
@@ -356,7 +356,7 @@ export const MonitorSecretarias = () => {
                     key={conv.id}
                     className="text-xs cursor-pointer hover:bg-muted/50 rounded-md px-2 py-2 transition-colors border"
                     style={{ borderLeftColor: urgColor, borderLeftWidth: '3px' }}
-                    onClick={() => navigate(`/sdr-zap`)}
+                    onClick={() => navigate(`/conversas`)}
                   >
                     {/* Linha 1: nome + metadata direita (tempo, responsável, urgência) */}
                     <div className="flex items-center justify-between gap-2">
@@ -412,7 +412,7 @@ export const MonitorSecretarias = () => {
               {totalPendentes > topPendentes.length && (
                 <button
                   className="text-[10px] text-primary hover:underline w-full text-center py-1"
-                  onClick={() => navigate('/sdr-zap')}
+                  onClick={() => navigate('/conversas')}
                 >
                   Ver todas ({totalPendentes})
                 </button>
@@ -455,7 +455,7 @@ export const MonitorSecretarias = () => {
                     <div
                       key={conv.id}
                       className="flex items-center justify-between text-xs cursor-pointer hover:bg-muted/50 rounded px-1.5 py-1 transition-colors"
-                      onClick={() => navigate(`/sdr-zap`)}
+                      onClick={() => navigate(`/conversas`)}
                     >
                       <span className="truncate max-w-[60%]">
                         {conv.nome_contato || conv.numero_contato}

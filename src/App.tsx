@@ -41,7 +41,7 @@ import { Sparkles } from "lucide-react";
 const queryClient = new QueryClient();
 
 // Rotas permitidas para o role "disparador"
-const DISPARADOR_ALLOWED_ROUTES = ["/home", "/sdr-zap", "/zaps", "/disparos-em-massa", "/perfil"];
+const DISPARADOR_ALLOWED_ROUTES = ["/home", "/conversas", "/sdr-zap", "/zaps", "/disparos-em-massa", "/perfil"];
 
 const RoleGuard = ({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) => {
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -150,12 +150,16 @@ const App = () => (
               />
               <Route path="/" element={<AuthLinkRouter />} />
               <Route
-                path="/sdr-zap"
+                path="/conversas"
                 element={
                   <AppLayout>
                     <SDRZap />
                   </AppLayout>
                 }
+              />
+              <Route
+                path="/sdr-zap"
+                element={<Navigate to="/conversas" replace />}
               />
               <Route
                 path="/conversa/:id"

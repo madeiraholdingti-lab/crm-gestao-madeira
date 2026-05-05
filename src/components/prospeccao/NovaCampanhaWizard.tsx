@@ -456,7 +456,7 @@ export default function NovaCampanhaWizard({ open, onOpenChange, editing, onSave
 
               {!b.ia_ativa && (
                 <p className="text-xs text-mh-ink-3 italic">
-                  Com IA desligada, as respostas dos leads caem no SDR Zap normal pra alguém responder manualmente.
+                  Com IA desligada, as respostas dos leads caem nas Conversas pra alguém responder manualmente.
                 </p>
               )}
             </TabsContent>

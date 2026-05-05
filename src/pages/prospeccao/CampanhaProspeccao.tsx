@@ -141,7 +141,7 @@ export default function CampanhaProspeccao() {
             <AlertTriangle className="h-4 w-4 text-amber-700 flex-shrink-0 mt-0.5" />
             <div>
               <div className="font-medium text-amber-900">IA desativada</div>
-              <div className="text-xs text-amber-800">Quando o lead responder, a conversa fica parada no SDR Zap até alguém responder manualmente. Edite a campanha pra ativar a IA no briefing.</div>
+              <div className="text-xs text-amber-800">Quando o lead responder, a conversa fica parada nas Conversas até alguém responder manualmente. Edite a campanha pra ativar a IA no briefing.</div>
             </div>
           </CardContent>
         </Card>
@@ -175,7 +175,7 @@ export default function CampanhaProspeccao() {
           <h2 className="font-serif-display text-lg font-medium">Pipeline</h2>
           <span className="text-xs text-mh-ink-3 flex items-center gap-1">
             <Info className="h-3 w-3" />
-            status controlado automaticamente pela IA. Clique num card pra abrir a conversa no SDR Zap.
+            status controlado automaticamente pela IA. Clique num card pra abrir a conversa.
           </span>
         </div>
         <CampanhaKanban envios={envios} isLoading={enviosLoading} />
