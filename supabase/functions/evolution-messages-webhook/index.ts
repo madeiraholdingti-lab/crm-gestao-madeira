@@ -86,11 +86,52 @@ Deno.serve(async (req) => {
       'contacts.upsert',      // Upsert de contato
     ];
 
+    // HANDLE: presence.update — captura "digitando..." e "gravando áudio".
+    // Evolution v2 emite com data.presences[jid].lastKnownPresence:
+    //   composing | recording  → atualiza conversas.last_typing_at = now()
+    //   paused | available     → zera last_typing_at (parou de digitar)
+    // Frontend assina UPDATE em conversas e mostra badge se < 5s atrás.
+    if (event === 'presence.update' || event === 'PRESENCE_UPDATE') {
+      try {
+        const data = payload.body?.data || payload.data;
+        const presences = data?.presences || {};
+        const instanceName = payload.body?.instance || payload.instance;
+        for (const [jid, p] of Object.entries(presences as Record<string, { lastKnownPresence?: string }>)) {
+          const phone = (jid || '').split('@')[0].replace(/\D/g, '');
+          if (!phone) continue;
+          const presence = (p?.lastKnownPresence || '').toLowerCase();
+          const typing = presence === 'composing' || presence === 'recording';
+          const stopped = presence === 'paused' || presence === 'available';
+          if (!typing && !stopped) continue;
+          // Atualiza qualquer conversa desse phone na instância (se temos
+          // como achar a instância) ou em qualquer instância (fallback).
+          let q = supabase
+            .from('conversas')
+            .update({ last_typing_at: typing ? new Date().toISOString() : null })
+            .eq('numero_contato', phone);
+          if (instanceName) {
+            const { data: inst } = await supabase
+              .from('instancias_whatsapp')
+              .select('id')
+              .eq('nome_instancia', instanceName)
+              .maybeSingle();
+            if (inst?.id) q = q.eq('current_instance_id', inst.id);
+          }
+          await q;
+        }
+      } catch (e) {
+        console.warn('[presence.update] erro:', e);
+      }
+      return new Response(
+        JSON.stringify({ success: true, event: 'presence.update' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
+
     // Eventos ignorados (não críticos)
     const ignoredEvents = [
       'groups.update',
       'groups.upsert',
-      'presence.update',
       'chats.update',
       'chats.upsert',
       'chats.delete',

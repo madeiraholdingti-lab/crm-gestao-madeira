@@ -33,6 +33,8 @@ import { transferirConversa } from "@/utils/transferirConversa";
 import { DragDropInstanceOverlay } from "@/components/DragDropInstanceOverlay";
 import { MessageStatusIcon } from "@/components/MessageStatusIcon";
 import { ChatInput } from "@/components/ChatInput";
+import { RealtimeHealthBanner } from "@/components/RealtimeHealthBanner";
+import { TypingIndicator } from "@/components/TypingIndicator";
 import { MessageActions, ReplyingTo } from "@/components/MessageActions";
 import { ReplyContext } from "@/components/ChatInput";
 import { useCalendarAction, CalendarVerifyPayload, CalendarConfirmPayload } from "@/hooks/useCalendarAction";
@@ -172,6 +174,8 @@ export default function SDRZap() {
   const [carregandoMaisHistorico, setCarregandoMaisHistorico] = useState(false);
   const [historicoPage, setHistoricoPage] = useState(1);
   const [historicoTotalPages, setHistoricoTotalPages] = useState<number | null>(null);
+  // Auto-load de histórico: ref do sentinel no topo do chat + observer.
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   // Estados para tamanho dos painéis (responsividade)
   const [col1Size, setCol1Size] = useState(28);
   const [col2Size, setCol2Size] = useState(28);
@@ -233,6 +237,70 @@ export default function SDRZap() {
   const [conversasOutrasInstancias, setConversasOutrasInstancias] = useState<Conversa[]>([]);
   
   const mensagensEndRef = useRef<HTMLDivElement>(null);
+
+  // Carrega mais histórico de mensagens. Reusado pelo botão e pelo
+  // IntersectionObserver (auto-load ao scroll bater no topo).
+  // silent=true (auto-load) suprime toast de "novas mensagens" pra não poluir.
+  const carregarMaisHistorico = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!conversaSelecionada || carregandoMaisHistorico) return;
+    const contactId = conversaSelecionada.contact?.id;
+    const instanciaId = conversaSelecionada.current_instance_id || conversaSelecionada.orig_instance_id;
+    if (!contactId || !instanciaId) return;
+
+    const nextPage = historicoPage + 1;
+    if (historicoTotalPages && nextPage > historicoTotalPages) {
+      if (!opts?.silent) toast.info("Sem mais histórico para carregar");
+      return;
+    }
+
+    setCarregandoMaisHistorico(true);
+    try {
+      const { data: syncResult, error: syncError } = await supabase.functions.invoke(
+        "sincronizar-historico-mensagens",
+        { body: { contact_id: contactId, instancia_id: instanciaId, limit: 50, page: nextPage } }
+      );
+      if (syncError) {
+        console.error('[SDRZap] Erro ao carregar mais histórico:', syncError);
+        if (!opts?.silent) toast.error("Erro ao carregar histórico");
+        return;
+      }
+      setHistoricoPage(syncResult?.currentPage ?? nextPage);
+      setHistoricoTotalPages(syncResult?.pages ?? historicoTotalPages);
+      if (!opts?.silent && syncResult?.novas_inseridas > 0) {
+        toast.success(`${syncResult.novas_inseridas} novas mensagens carregadas`);
+      }
+      // Refetch local
+      const { data: refreshed } = await supabase
+        .from("messages")
+        .select("id, text, from_me, wa_timestamp, created_at, status, message_type, instancia_whatsapp_id, media_url, media_mime_type, wa_message_id, sender_jid, raw_payload, is_edited")
+        .eq("contact_id", contactId)
+        .eq("instancia_whatsapp_id", instanciaId)
+        .order("created_at", { ascending: true });
+      if (refreshed) setMensagens(refreshed);
+    } catch (err) {
+      console.error('[SDRZap] Erro carregar histórico:', err);
+      if (!opts?.silent) toast.error("Erro ao carregar histórico");
+    } finally {
+      setCarregandoMaisHistorico(false);
+    }
+  }, [conversaSelecionada, carregandoMaisHistorico, historicoPage, historicoTotalPages]);
+
+  // Auto-load: dispara carregarMaisHistorico quando o sentinel no topo fica
+  // visível. Threshold 0.1 = ~80% do scroll pra cima triggers.
+  useEffect(() => {
+    const el = loadMoreSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting && !carregandoMaisHistorico && !sincronizandoHistorico) {
+          carregarMaisHistorico({ silent: true });
+        }
+      },
+      { threshold: 0.1, rootMargin: '200px 0px 0px 0px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [carregarMaisHistorico, carregandoMaisHistorico, sincronizandoHistorico, conversaSelecionada?.id]);
 
   // Carregar filtros e nome da coluna salvos do localStorage ao montar o componente
   useEffect(() => {
@@ -2297,6 +2365,7 @@ export default function SDRZap() {
       onDragEnd={handleDragEnd}
     >
       <div className="h-screen overflow-hidden flex flex-col">
+      <RealtimeHealthBanner />
       {/* Overlay de instâncias para drag & drop */}
       <DragDropInstanceOverlay 
         instancias={instancias.filter(i => i.status !== 'deletada')}
@@ -2684,6 +2753,10 @@ export default function SDRZap() {
                         </div>
                         {/* Linha 2: telefone + chips (perfil, especialidade) */}
                         <div className="flex items-center gap-1.5 text-[11px] text-mh-ink-3 min-w-0 flex-wrap">
+                          <TypingIndicator
+                            conversaId={conversaSelecionada.id}
+                            initialLastTypingAt={(conversaSelecionada as any).last_typing_at}
+                          />
                           <span className="inline-flex items-center gap-1 font-mono tabular-nums">
                             <Phone className="h-2.5 w-2.5 flex-shrink-0" />
                             {conversaSelecionada.contact.phone.replace('@s.whatsapp.net', '')}
@@ -2824,71 +2897,11 @@ export default function SDRZap() {
                       <span>Sincronizando histórico...</span>
                     </div>
                   ) : (
+                    <div ref={loadMoreSentinelRef} className="h-1" />
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={async () => {
-                        if (!conversaSelecionada || carregandoMaisHistorico) return;
-                        
-                        const contactId = conversaSelecionada.contact.id;
-                        const instanciaId = conversaSelecionada.current_instance_id || conversaSelecionada.orig_instance_id;
-                        
-                        if (!instanciaId) {
-                          toast.error("Instância não encontrada");
-                          return;
-                        }
-
-                        const nextPage = historicoPage + 1;
-                        if (historicoTotalPages && nextPage > historicoTotalPages) {
-                          toast.info("Sem mais histórico para carregar");
-                          return;
-                        }
-                        
-                        setCarregandoMaisHistorico(true);
-                        
-                        try {
-                          const { data: syncResult, error: syncError } = await supabase.functions.invoke(
-                            "sincronizar-historico-mensagens",
-                            {
-                              body: {
-                                contact_id: contactId,
-                                instancia_id: instanciaId,
-                                limit: 50,
-                                page: nextPage,
-                              }
-                            }
-                          );
-                          
-                          if (syncError) {
-                            console.error('[SDRZap] Erro ao carregar mais histórico:', syncError);
-                            toast.error("Erro ao carregar histórico");
-                          } else {
-                            setHistoricoPage(syncResult?.currentPage ?? nextPage);
-                            setHistoricoTotalPages(syncResult?.pages ?? historicoTotalPages);
-
-                            if (syncResult?.novas_inseridas > 0) {
-                              toast.success(`${syncResult.novas_inseridas} novas mensagens carregadas`);
-                            } else {
-                              toast.info("Nenhuma mensagem nova encontrada");
-                            }
-
-                            // Recarregar mensagens do banco para refletir imediatamente
-                            const { data: refreshed, error: refreshError } = await supabase
-                              .from("messages")
-                              .select("id, text, from_me, wa_timestamp, created_at, status, message_type, instancia_whatsapp_id, media_url, media_mime_type, wa_message_id, sender_jid, raw_payload, is_edited")
-                              .eq("contact_id", contactId)
-                              .eq("instancia_whatsapp_id", instanciaId)
-                              .order("created_at", { ascending: true });
-
-                            if (!refreshError) setMensagens(refreshed || []);
-                          }
-                        } catch (err) {
-                          console.error('[SDRZap] Erro:', err);
-                          toast.error("Erro ao carregar histórico");
-                        } finally {
-                          setCarregandoMaisHistorico(false);
-                        }
-                      }}
+                      onClick={() => carregarMaisHistorico({ silent: false })}
                       disabled={carregandoMaisHistorico}
                       className="text-xs text-muted-foreground hover:text-foreground"
                     >
