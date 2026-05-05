@@ -26,3 +26,12 @@ verify_jwt = false
 
 [functions.processar-aula-vimeo]
 verify_jwt = false
+
+[functions.maikon-gss-router]
+verify_jwt = false
+
+[functions.madeira-router]
+verify_jwt = false
+
+[functions.consultorio-triagem]
+verify_jwt = false

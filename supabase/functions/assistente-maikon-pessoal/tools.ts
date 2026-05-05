@@ -2478,6 +2478,77 @@ const tarefasPorResponsavel: ToolDefinition = {
 };
 
 // ============================================================================
+// Grupos WhatsApp (CEDEX, MBS, etc)
+// ============================================================================
+
+const buscarGrupo: ToolDefinition = {
+  name: 'buscar_grupo',
+  description: 'Busca mensagens recentes de grupos WhatsApp do Maikon (CEDEX, MBS, qualquer outro). Use quando ele perguntar "tem aula hoje no CEDEX/MBS?", "qual o assunto da aula", "o que rolou no grupo X". Retorna até 30 mensagens ordenadas por mais recente. Filtra por nome do grupo (substring) ou jid. Default 1 dia atrás. Pra pegar a semana, passe dias_atras=7.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      nome_ou_jid: {
+        type: 'string',
+        description: 'Pedaço do nome do grupo (ex: "CEDEX", "MBS") ou JID completo (ex: "12036xxx@g.us"). Match case-insensitive em pushName/sender ou conversa.',
+      },
+      dias_atras: { type: 'integer', minimum: 1, maximum: 30, default: 1 },
+      filtro: {
+        type: 'string',
+        description: 'Substring opcional pra filtrar conteúdo (ex: "aula", "horário", "sábado"). Case-insensitive.',
+      },
+      limit: { type: 'integer', minimum: 1, maximum: 50, default: 30 },
+    },
+  },
+  async handler(args, ctx) {
+    const dias = (args.dias_atras as number) || 1;
+    const limit = (args.limit as number) || 30;
+    const nomeOuJid = (args.nome_ou_jid as string || '').trim();
+    const filtro = (args.filtro as string || '').trim();
+    const desde = new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString();
+
+    let query = ctx.supa
+      .from('messages')
+      .select('text, sender_jid, raw_payload, created_at, message_type')
+      .gte('created_at', desde)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    // Filtro por @g.us. Como sender_jid em grupos é o participant (não o jid do grupo),
+    // a melhor pista é raw_payload->key->remoteJid LIKE %@g.us
+    // Postgrest aceita filtro JSONB via .filter
+    query = query.filter('raw_payload->key->>remoteJid', 'like', '%@g.us');
+
+    if (nomeOuJid) {
+      // Match em remoteJid OR pushName OR text — buscar de forma flexível
+      const escaped = nomeOuJid.replace(/[%_]/g, '\\$&');
+      query = query.or(
+        `raw_payload->key->>remoteJid.ilike.%${escaped}%,raw_payload->>pushName.ilike.%${escaped}%,text.ilike.%${escaped}%`
+      );
+    }
+    if (filtro) {
+      const f = filtro.replace(/[%_]/g, '\\$&');
+      query = query.ilike('text', `%${f}%`);
+    }
+
+    const { data, error } = await query;
+    if (error) return { ok: false, error: error.message };
+
+    const msgs = (data || []).map((r: Record<string, unknown>) => {
+      const raw = r.raw_payload as { key?: { remoteJid?: string }; pushName?: string } | undefined;
+      return {
+        em: r.created_at,
+        grupo: raw?.key?.remoteJid?.replace('@g.us', '') || '?',
+        de: raw?.pushName || (r.sender_jid as string)?.split('@')[0] || '?',
+        tipo: r.message_type,
+        texto: ((r.text as string) || '').slice(0, 280),
+      };
+    });
+
+    return { total: msgs.length, dias_atras: dias, mensagens: msgs };
+  },
+};
+
+// ============================================================================
 // Perfil estrutural do dono (Madeira "claude.md" do Maikon)
 // ============================================================================
 
@@ -2553,6 +2624,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   gerarBriefing,
   // Web search (Fase 8)
   pesquisarWeb,
+  // Grupos WhatsApp (Fase 11)
+  buscarGrupo,
   // Perfil estrutural (Fase 10)
   atualizarPerfilDono,
   // Memória / Crons
