@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    const { conversa_id, texto, instancia_whatsapp_id, user_id } = await req.json();
+    const { conversa_id, texto, instancia_whatsapp_id, user_id, mentioned } = await req.json();
 
     if (!conversa_id || !texto || !user_id) {
       console.error("Missing required fields:", { conversa_id, texto, user_id });
@@ -195,10 +195,17 @@ serve(async (req) => {
     // 5. Enviar mensagem via Evolution API (formato v2)
     // IMPORTANTE: Para enviar mensagem, usar o NOME da instância
     const sendUrl = `${evolutionBaseUrl}/message/sendText/${encodeURIComponent(instancia_name_for_status)}`;
-    const payload = {
+    const payload: Record<string, unknown> = {
       number: numero_contato,
       text: texto  // v2: text direto no root, não dentro de textMessage
     };
+    // Mentions em grupo: array de JIDs (5511...@s.whatsapp.net) que serão
+    // marcados no texto (ex: "@João bom dia"). Frontend resolve nome → JID
+    // e passa mentioned[]. Evolution exige que cada JID mencionado também
+    // apareça no texto na forma @numero (sem @s.whatsapp.net).
+    if (Array.isArray(mentioned) && mentioned.length > 0) {
+      payload.mentioned = mentioned;
+    }
 
     console.log(`[ENVIO] Enviando para Evolution: ${sendUrl}`);
     console.log(`[ENVIO] Instance Evolution ID: ${instancia_evolution_id}`);
