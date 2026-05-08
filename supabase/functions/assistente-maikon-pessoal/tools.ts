@@ -86,9 +86,19 @@ async function googleAccessToken(
     key: encKey,
   });
   if (error) return { ok: false, error: error.message };
-  const conta = (contas || []).find((c: { user_id: string }) => c.user_id === ctx.userId) as
-    | { id: string; refresh_token: string; access_token: string; expires_at: string | null }
-    | undefined;
+  // Fallback: secretária (Isadora) pode conectar contas Google DO MAIKON em
+  // nome dele estando logada com o profile dela. As contas ficam atribuídas
+  // ao user_id da Isadora. Pra Madeira achar, comparamos por email canônico
+  // do Maikon via env ASSISTENTE_DONO_EMAILS (CSV).
+  const ownerEmails = (Deno.env.get('ASSISTENTE_DONO_EMAILS') || '')
+    .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+  type ContaGoogle = { id: string; user_id: string; email: string; refresh_token: string; access_token: string; expires_at: string | null };
+  const candidatos = ((contas || []) as ContaGoogle[]).filter(c =>
+    c.user_id === ctx.userId ||
+    (ownerEmails.length > 0 && ownerEmails.includes((c.email || '').toLowerCase()))
+  );
+  // Prefere conta sob o próprio user_id; fallback: conta sob proxy mas com email do dono
+  const conta = candidatos.find(c => c.user_id === ctx.userId) || candidatos[0];
   if (!conta) return { ok: false, error: 'Maikon não tem conta Google ativa — re-autoriza em /perfil' };
 
   const expiresAt = conta.expires_at ? new Date(conta.expires_at).getTime() : 0;
@@ -1319,7 +1329,10 @@ const listarEmailsNaoLidos: ToolDefinition = {
     const r = await fetch(`${GMAIL_BASE}/messages?q=is:unread&maxResults=${limite}${labelStr}`, {
       headers: { Authorization: `Bearer ${tk.token}` },
     });
-    if (!r.ok) return { ok: false, error: `Gmail list ${r.status}` };
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      return { ok: false, error: `Gmail list ${r.status}: ${body.slice(0, 300)}` };
+    }
     const j = await r.json();
     const ids = ((j.messages || []) as Array<{ id: string }>).map(m => m.id);
     if (ids.length === 0) return { ok: true, total: 0, emails: [] };
