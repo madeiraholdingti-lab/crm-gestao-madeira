@@ -28,7 +28,7 @@ Deno.serve(async (req: Request) => {
     // 1. Carrega crons ativos
     const { data: crons } = await supa
       .from('assistente_crons')
-      .select('id, user_id, nome, tipo, cron_expression, payload, ultima_execucao_em, apenas_uma_vez')
+      .select('id, user_id, nome, tipo, cron_expression, payload, ultima_execucao_em, apenas_uma_vez, data_fim')
       .eq('ativo', true);
 
     const agora = new Date();
@@ -40,7 +40,17 @@ Deno.serve(async (req: Request) => {
         cron_expression: string; payload: Record<string, unknown>;
         ultima_execucao_em: string | null;
         apenas_uma_vez: boolean;
+        data_fim: string | null;
       };
+
+      // Cron expirado: desativa e pula. Anti spam-eterno.
+      if (c.data_fim && new Date(c.data_fim).getTime() < agora.getTime()) {
+        await supa.from('assistente_crons')
+          .update({ ativo: false, updated_at: agora.toISOString(), ultima_falha: 'expirado (data_fim ultrapassada)' })
+          .eq('id', c.id);
+        executados.push({ nome: c.nome, resultado: 'expirado_desativado' });
+        continue;
+      }
 
       if (!cronShouldFire(c.cron_expression, agora, c.ultima_execucao_em)) continue;
 
@@ -54,6 +64,16 @@ Deno.serve(async (req: Request) => {
           await dispararMensagem(supa, c.user_id, texto);
         }
         else if (c.tipo === 'briefing') await dispararBriefing(supa, c.user_id, (c.payload.prompt as string) || '');
+        else if (c.tipo === 'mensagem_chip') {
+          // Envia mensagem via chip ESPECÍFICO (ex: Maikon GSS) pra um destinatário.
+          // Diferente de tipo='mensagem' que sempre vai pelo chip Madeira pro próprio Maikon.
+          await dispararMensagemPorChip(
+            supa,
+            (c.payload.instancia as string) || '',
+            (c.payload.numero as string) || '',
+            (c.payload.texto as string) || '',
+          );
+        }
 
         await supa.from('assistente_crons').update({
           ultima_execucao_em: agora.toISOString(),
@@ -184,6 +204,32 @@ async function dispararMensagem(
     body: JSON.stringify({ number: phone, text: texto }),
   });
   if (!r.ok) throw new Error(`Evolution sendText ${r.status}`);
+}
+
+// =============================================================================
+// Tipo MENSAGEM_CHIP — envia texto agendado via chip específico (ex: Maikon GSS)
+// =============================================================================
+
+async function dispararMensagemPorChip(
+  supa: ReturnType<typeof createClient>,
+  instancia: string,
+  numero: string,
+  texto: string,
+): Promise<void> {
+  if (!instancia || !numero || !texto) throw new Error('instancia/numero/texto vazio');
+  const { data: cfg } = await supa
+    .from('config_global')
+    .select('evolution_base_url, evolution_api_key')
+    .single();
+  const evoUrl = (cfg as { evolution_base_url?: string } | null)?.evolution_base_url;
+  const evoKey = (cfg as { evolution_api_key?: string } | null)?.evolution_api_key;
+  if (!evoUrl || !evoKey) throw new Error('config_global Evolution incompleta');
+  const r = await fetch(`${evoUrl}/message/sendText/${encodeURIComponent(instancia)}`, {
+    method: 'POST',
+    headers: { apikey: evoKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ number: numero, text: texto }),
+  });
+  if (!r.ok) throw new Error(`Evolution sendText (${instancia}) ${r.status}`);
 }
 
 // =============================================================================

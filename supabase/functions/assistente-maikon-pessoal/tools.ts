@@ -1832,7 +1832,7 @@ const buscarMemoria: ToolDefinition = {
 
 const criarCron: ToolDefinition = {
   name: 'criar_cron',
-  description: 'Cria um lembrete agendado. SEMPRE confirme 2 coisas com o Maikon antes de chamar: (1) o HORÁRIO exato (repita "às HH:MM, certo?") e (2) se é DIÁRIO ou SÓ UMA VEZ (apenas_uma_vez). Whisper às vezes confunde "sete e meia" com "18h30" — confirme. Tipos: "mensagem" (texto pro WhatsApp), "briefing" (roda prompt e manda resultado), "versiculo" (versículo + reflexão).',
+  description: 'Cria um lembrete agendado pro próprio Maikon (chega no chip Madeira). SEMPRE confirme HORÁRIO + RECORRÊNCIA antes de chamar. Pra mensagem ENVIADA PRA OUTRA PESSOA pelo chip do Maikon, NÃO use esta — use enviar_mensagem_pelo_chip. Tipos: "mensagem" (texto pro Maikon via chip Madeira), "briefing" (roda prompt e manda resultado), "versiculo" (versículo + reflexão diária).',
   input_schema: {
     type: 'object',
     properties: {
@@ -1840,12 +1840,16 @@ const criarCron: ToolDefinition = {
       tipo: { type: 'string', enum: ['mensagem', 'briefing', 'versiculo'] },
       cron_expression: {
         type: 'string',
-        description: 'Cron 5 campos no fuso BRT (min hora dia mês dia_semana). Ex: "0 6 * * *" = todo dia 6h. Pra one-shot ("hoje 18h30"), use o horário no padrão diário e marque apenas_uma_vez=true (worker desativa após disparar).',
+        description: 'Cron 5 campos no fuso BRT (min hora dia mês dia_semana). Ex: "0 6 * * *" = todo dia 6h. Pra one-shot ("hoje 18h30"), use o horário no padrão diário e marque apenas_uma_vez=true.',
       },
       apenas_uma_vez: {
         type: 'boolean',
-        description: 'true = lembrete pontual, desativa após 1ª execução. false = recorrente. PERGUNTE ao Maikon antes de definir.',
+        description: 'true = lembrete pontual, desativa após 1ª execução. false = recorrente.',
         default: false,
+      },
+      data_fim: {
+        type: 'string',
+        description: 'ISO 8601 (ex: "2026-06-30T23:59:00-03:00"). Se setado, worker desativa cron após esta data. Use quando recorrência tem prazo definido ("até dia X", "por 4 semanas").',
       },
       payload: {
         type: 'object',
@@ -1864,12 +1868,146 @@ const criarCron: ToolDefinition = {
         cron_expression: args.cron_expression,
         payload: args.payload || {},
         apenas_uma_vez: args.apenas_uma_vez === true,
+        data_fim: (args.data_fim as string) || null,
         ativo: true,
       })
       .select('id, nome')
       .single();
     if (error) return { ok: false, error: error.message };
     return { ok: true, cron_id: (data as { id: string }).id, nome: (data as { nome: string }).nome };
+  },
+};
+
+// ============================================================================
+// Envio de mensagem pelo chip do Maikon (Maikon GSS)
+// — agora ou agendado, com prazo opcional pra recorrência.
+// ============================================================================
+
+const enviarMensagemPeloChip: ToolDefinition = {
+  name: 'enviar_mensagem_pelo_chip',
+  description: 'Envia mensagem PELO CHIP DO MAIKON (Maikon GSS) pra outra pessoa. Pode ser AGORA (sem agendar_*) ou agendado (com agendar_para ou cron_expression). REGRAS OBRIGATÓRIAS: 1) Confirme PRA QUEM (nome+número), QUANDO e TEXTO antes de chamar. 2) Se for cron RECORRENTE ("toda segunda 7h"), PERGUNTE até quando vai durar — sem isso vira spam eterno. Use ate_data com ISO 8601 ou setar quantas semanas/meses. 3) Whitelist de instâncias: hoje só "Maikon GSS" liberada. 4) NÃO envie pro próprio número do Maikon (use criar_cron pra lembrete pessoal).',
+  input_schema: {
+    type: 'object',
+    properties: {
+      instancia: {
+        type: 'string',
+        enum: ['Maikon GSS'],
+        description: 'Chip que envia. Hoje só Maikon GSS liberado.',
+      },
+      numero: {
+        type: 'string',
+        description: 'Número destinatário no formato 5547999999999 (com 55 + DDD + número, sem espaços/pontuação).',
+      },
+      texto: { type: 'string', description: 'Texto da mensagem.' },
+      cron_expression: {
+        type: 'string',
+        description: 'Pra agendar recorrente. Cron BRT 5 campos. Ex: "0 7 * * 1" = toda segunda 7h. Omitir = envio imediato OU one-shot via agendar_para.',
+      },
+      agendar_para: {
+        type: 'string',
+        description: 'ISO 8601 BRT pra envio one-shot único. Ex: "2026-05-12T07:00:00-03:00". Cria cron one-shot que dispara nessa hora e desativa.',
+      },
+      ate_data: {
+        type: 'string',
+        description: 'ISO 8601. Se cron_expression for recorrente, OBRIGATÓRIO ter prazo. Ex: "2026-12-31T23:59:00-03:00" pra fim do ano.',
+      },
+    },
+    required: ['instancia', 'numero', 'texto'],
+  },
+  async handler(args, ctx) {
+    const liberadas = (Deno.env.get('ASSISTENTE_INSTANCIAS_LIBERADAS_ENVIO') || 'Maikon GSS')
+      .split(',').map(s => s.trim());
+    const instancia = args.instancia as string;
+    if (!liberadas.includes(instancia)) {
+      return { ok: false, error: `Instância "${instancia}" não está na whitelist. Liberadas: ${liberadas.join(', ')}` };
+    }
+    const numero = (args.numero as string).replace(/\D/g, '');
+    if (!numero) return { ok: false, error: 'numero inválido' };
+    const userPhone = ctx.userPhone?.replace(/\D/g, '') || '';
+    if (numero === userPhone) {
+      return { ok: false, error: 'Não envia pro próprio Maikon — use criar_cron pra lembrete pessoal.' };
+    }
+    const texto = args.texto as string;
+    const cronExpr = args.cron_expression as string | undefined;
+    const agendarPara = args.agendar_para as string | undefined;
+    const ateData = args.ate_data as string | undefined;
+
+    // Caso 1: envio imediato (sem agendar_para nem cron)
+    if (!cronExpr && !agendarPara) {
+      const { data: cfg } = await ctx.supa
+        .from('config_global')
+        .select('evolution_base_url, evolution_api_key')
+        .single();
+      const evoUrl = (cfg as { evolution_base_url?: string } | null)?.evolution_base_url;
+      const evoKey = (cfg as { evolution_api_key?: string } | null)?.evolution_api_key;
+      if (!evoUrl || !evoKey) return { ok: false, error: 'config Evolution incompleta' };
+      const r = await fetch(`${evoUrl}/message/sendText/${encodeURIComponent(instancia)}`, {
+        method: 'POST',
+        headers: { apikey: evoKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ number: numero, text: texto }),
+      });
+      if (!r.ok) {
+        const body = await r.text().catch(() => '');
+        return { ok: false, error: `Evolution ${r.status}: ${body.slice(0, 200)}` };
+      }
+      return { ok: true, modo: 'imediato', destino: numero, instancia };
+    }
+
+    // Caso 2: agendamento (cria cron tipo mensagem_chip)
+    let cronExpression: string;
+    let apenasUmaVez = false;
+    let dataFim: string | null = null;
+
+    if (agendarPara) {
+      // One-shot pra data específica. Convertemos ISO em cron min+hora+dia+mes.
+      const dt = new Date(agendarPara);
+      if (isNaN(dt.getTime())) return { ok: false, error: 'agendar_para inválido (use ISO 8601)' };
+      // Cron no fuso BRT: extrai min/hora/dia/mes na timezone local
+      const fmt = (val: number) => val;
+      const minBRT = parseInt(dt.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', minute: '2-digit' }), 10);
+      const horaBRT = parseInt(dt.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }), 10);
+      const diaBRT = parseInt(dt.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', day: '2-digit' }), 10);
+      const mesBRT = parseInt(dt.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', month: '2-digit' }), 10);
+      cronExpression = `${fmt(minBRT)} ${fmt(horaBRT)} ${fmt(diaBRT)} ${fmt(mesBRT)} *`;
+      apenasUmaVez = true;
+      dataFim = null;
+    } else {
+      // Recorrente — exige ate_data
+      if (!ateData) {
+        return {
+          ok: false,
+          error: 'Cron recorrente exige ate_data (até quando vai rodar). Pergunta ao Maikon o prazo.',
+        };
+      }
+      cronExpression = cronExpr!;
+      apenasUmaVez = false;
+      dataFim = ateData;
+    }
+
+    const { data, error } = await ctx.supa
+      .from('assistente_crons')
+      .insert({
+        user_id: ctx.userId,
+        nome: `Envio "${texto.slice(0, 40)}" para ${numero}`,
+        tipo: 'mensagem_chip',
+        cron_expression: cronExpression,
+        payload: { instancia, numero, texto },
+        apenas_uma_vez: apenasUmaVez,
+        data_fim: dataFim,
+        ativo: true,
+      })
+      .select('id, nome')
+      .single();
+    if (error) return { ok: false, error: error.message };
+    return {
+      ok: true,
+      modo: apenasUmaVez ? 'agendado_one_shot' : 'agendado_recorrente',
+      cron_id: (data as { id: string }).id,
+      cron_expression: cronExpression,
+      data_fim: dataFim,
+      destino: numero,
+      instancia,
+    };
   },
 };
 
@@ -2666,6 +2804,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   salvarMemoria,
   buscarMemoria,
   criarCron,
+  enviarMensagemPeloChip,
   listarCrons,
   pausarCron,
   registrarCorrecao,
