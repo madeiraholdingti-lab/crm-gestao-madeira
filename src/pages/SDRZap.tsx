@@ -36,6 +36,7 @@ import { MessageStatusIcon } from "@/components/MessageStatusIcon";
 import { ChatInput } from "@/components/ChatInput";
 import { RealtimeHealthBanner } from "@/components/RealtimeHealthBanner";
 import { TypingIndicator } from "@/components/TypingIndicator";
+import { useGroupParticipants } from "@/hooks/useGroupParticipants";
 import { MessageActions, ReplyingTo } from "@/components/MessageActions";
 import { ReplyContext } from "@/components/ChatInput";
 import { useCalendarAction, CalendarVerifyPayload, CalendarConfirmPayload } from "@/hooks/useCalendarAction";
@@ -1373,7 +1374,31 @@ export default function SDRZap() {
     setExternalFilesCol3([]);
   };
 
-  const handleSendMessage = async (text: string, replyContext?: ReplyContext, tempMsgId?: string) => {
+  // Participantes do grupo atual (pra autocomplete @ no ChatInput).
+  // Hook é safe — retorna [] se conversa 1:1.
+  const conversaJid = conversaSelecionada?.contact?.jid
+    || (conversaSelecionada?.numero_contato ? `${conversaSelecionada.numero_contato}@s.whatsapp.net` : '');
+  const conversaInstanceName = useMemo(() => {
+    const id = conversaSelecionada?.current_instance_id;
+    if (!id) return null;
+    return instancias.find(i => i.id === id)?.nome_instancia || null;
+  }, [conversaSelecionada?.current_instance_id, instancias]);
+  const { participants: groupParticipants } = useGroupParticipants(conversaJid, conversaInstanceName);
+
+  const handleSendMessage = async (text: string, replyContext?: ReplyContext, mentionedOrTempId?: string[] | string, tempMsgId?: string) => {
+    // Compat: assinatura antiga era (text, replyContext, tempMsgId). Nova adiciona mentioned[]
+    // entre replyContext e tempMsgId. Detecta tipo pra retro-compat.
+    let mentioned: string[] | undefined;
+    let actualTempMsgId: string | undefined = tempMsgId;
+    if (Array.isArray(mentionedOrTempId)) {
+      mentioned = mentionedOrTempId;
+    } else if (typeof mentionedOrTempId === 'string') {
+      actualTempMsgId = mentionedOrTempId;
+    }
+    return _handleSendMessage(text, replyContext, mentioned, actualTempMsgId);
+  };
+
+  const _handleSendMessage = async (text: string, replyContext?: ReplyContext, mentioned?: string[], tempMsgId?: string) => {
     if (!conversaSelecionada) {
       toast.error("Selecione uma conversa");
       return;
@@ -1495,6 +1520,7 @@ export default function SDRZap() {
           texto: text,
           instancia_whatsapp_id: instanciaSelecionada,
           user_id: user.id,
+          ...(mentioned && mentioned.length > 0 ? { mentioned } : {}),
         },
       });
 
@@ -1502,7 +1528,7 @@ export default function SDRZap() {
 
       if (data && !data.success) {
         // Marcar mensagem como erro
-        setMensagens(prev => prev.map(m => 
+        setMensagens(prev => prev.map(m =>
           m.id === optimisticMsgId ? { ...m, _sending: false, _error: true, status: "FAILED" } : m
         ));
         return;
@@ -1514,7 +1540,7 @@ export default function SDRZap() {
       if (instancia) {
         // Atualizar mensagem local para sucesso
         // O realtime listener vai substituir pela mensagem real quando chegar do webhook
-        setMensagens(prev => prev.map(m => 
+        setMensagens(prev => prev.map(m =>
           m.id === optimisticMsgId ? { ...m, _sending: false, _error: false, status: "SENT", _retryData: undefined } : m
         ));
       }
@@ -3973,6 +3999,7 @@ export default function SDRZap() {
           replyingTo={replyingTo}
           onCancelReply={() => setReplyingTo(null)}
           remoteJid={conversaSelecionada?.contact?.jid || `${conversaSelecionada?.numero_contato}@s.whatsapp.net`}
+          groupParticipants={groupParticipants}
         />
           </div>
         </ResizablePanel>

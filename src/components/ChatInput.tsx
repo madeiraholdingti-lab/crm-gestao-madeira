@@ -25,6 +25,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { ReplyingTo } from './MessageActions';
+import { MentionPicker } from './MentionPicker';
+import { GroupParticipant } from '@/hooks/useGroupParticipants';
 
 interface FilePreview {
   file: File;
@@ -40,7 +42,7 @@ export interface ReplyContext {
 }
 
 interface ChatInputProps {
-  onSendMessage: (text: string, replyContext?: ReplyContext) => Promise<void>;
+  onSendMessage: (text: string, replyContext?: ReplyContext, mentioned?: string[]) => Promise<void>;
   onSendMedia: (file: File, type: 'image' | 'video' | 'document' | 'audio', caption?: string) => Promise<void>;
   onSendMultipleMedia?: (files: { file: File; caption: string }[], type: 'image' | 'video' | 'document') => Promise<void>;
   disabled?: boolean;
@@ -50,11 +52,13 @@ interface ChatInputProps {
   replyingTo?: ReplyingTo | null;
   onCancelReply?: () => void;
   remoteJid?: string;
+  /** Participantes do grupo pra autocomplete @. Vazio em conversa 1:1. */
+  groupParticipants?: GroupParticipant[];
 }
 
-export function ChatInput({ 
-  onSendMessage, 
-  onSendMedia, 
+export function ChatInput({
+  onSendMessage,
+  onSendMedia,
   onSendMultipleMedia,
   disabled = false,
   placeholder = "Digite sua mensagem...",
@@ -62,7 +66,8 @@ export function ChatInput({
   onExternalFilesProcessed,
   replyingTo,
   onCancelReply,
-  remoteJid
+  remoteJid,
+  groupParticipants
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [sendingFiles, setSendingFiles] = useState(false);
@@ -71,6 +76,18 @@ export function ChatInput({
   const [dragCounter, setDragCounter] = useState(0);
   const [previewFiles, setPreviewFiles] = useState<FilePreview[]>([]);
   const [activePreviewIndex, setActivePreviewIndex] = useState(0);
+
+  // === Mention state ===
+  // mentionAnchor: posição do '@' mais recente no texto (>= 0). null = picker fechado.
+  const [mentionAnchor, setMentionAnchor] = useState<number | null>(null);
+  const [mentionQuery, setMentionQuery] = useState('');
+  // selectedMentions: jids escolhidos. O texto guarda @5547... (número).
+  const [selectedMentions, setSelectedMentions] = useState<string[]>([]);
+  const [forwardedKey, setForwardedKey] = useState<string | undefined>(undefined);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const isGroupChat = !!remoteJid?.endsWith('@g.us');
+  const mentionPickerOpen = mentionAnchor !== null && isGroupChat && (groupParticipants?.length || 0) > 0;
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -156,26 +173,106 @@ export function ChatInput({
     setActivePreviewIndex(previewFiles.length);
   };
 
+  // === Mention helpers ===
+  // Detecta se o cursor está dentro de uma "menção em digitação" (@palavra sem espaço).
+  // Retorna posição do @ ou null se não estiver mencionando agora.
+  const detectMentionAt = (value: string, cursor: number): { anchor: number; query: string } | null => {
+    if (!isGroupChat || !groupParticipants?.length) return null;
+    // Olha do cursor pra trás até achar @ ou whitespace
+    let i = cursor - 1;
+    while (i >= 0) {
+      const ch = value[i];
+      if (ch === '@') {
+        // Confirma que '@' está no início ou precedido por whitespace (não no meio de email tipo a@b)
+        if (i === 0 || /\s/.test(value[i - 1])) {
+          return { anchor: i, query: value.slice(i + 1, cursor) };
+        }
+        return null;
+      }
+      if (/\s/.test(ch)) return null;
+      i--;
+    }
+    return null;
+  };
+
+  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setMessage(val);
+    const cursor = e.target.selectionStart || val.length;
+    const detected = detectMentionAt(val, cursor);
+    if (detected) {
+      setMentionAnchor(detected.anchor);
+      setMentionQuery(detected.query);
+    } else {
+      setMentionAnchor(null);
+      setMentionQuery('');
+    }
+  };
+
+  const insertMention = (participant: GroupParticipant) => {
+    if (mentionAnchor === null) return;
+    const phone = participant.participant_jid.split('@')[0];
+    // Substitui o trecho "@<query>" pelo "@<phone> " (com espaço final)
+    const before = message.slice(0, mentionAnchor);
+    const after = message.slice(mentionAnchor + 1 + mentionQuery.length);
+    const replacement = `@${phone} `;
+    const newMessage = before + replacement + after;
+    setMessage(newMessage);
+    setSelectedMentions(prev => prev.includes(participant.participant_jid) ? prev : [...prev, participant.participant_jid]);
+    setMentionAnchor(null);
+    setMentionQuery('');
+    // Reposiciona cursor após a menção inserida
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (ta) {
+        const newPos = before.length + replacement.length;
+        ta.setSelectionRange(newPos, newPos);
+        ta.focus();
+      }
+    });
+  };
+
+  const closeMentionPicker = () => {
+    setMentionAnchor(null);
+    setMentionQuery('');
+  };
+
   const handleSendText = () => {
     if (!message.trim() || disabled) return;
-    
+
     const textToSend = message.trim();
+    // Filtra mentions que ainda existem no texto (user pode ter apagado)
+    const mentionedFinal = selectedMentions.filter(jid => {
+      const phone = jid.split('@')[0];
+      return textToSend.includes(`@${phone}`);
+    });
     setMessage(''); // Limpar input imediatamente
-    
+    setSelectedMentions([]);
+    closeMentionPicker();
+
     // Envio assíncrono (fire-and-forget) - não esperar resposta
     if (replyingTo && remoteJid) {
       onSendMessage(textToSend, {
         waMessageId: replyingTo.waMessageId,
         remoteJid: remoteJid,
         fromMe: replyingTo.fromMe
-      });
+      }, mentionedFinal.length ? mentionedFinal : undefined);
       onCancelReply?.();
     } else {
-      onSendMessage(textToSend);
+      onSendMessage(textToSend, undefined, mentionedFinal.length ? mentionedFinal : undefined);
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
+    // Se picker aberto, intercepta navegação ANTES do Enter de envio
+    if (mentionPickerOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        // Forward via state (toggle pra disparar useEffect mesmo se mesma tecla)
+        setForwardedKey(e.key + '_' + Date.now());
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendText();
@@ -644,7 +741,16 @@ export function ChatInput({
       )}
 
       {/* Input Area */}
-      <div className="p-3">
+      <div className="p-3 relative">
+        {mentionPickerOpen && (
+          <MentionPicker
+            participants={groupParticipants || []}
+            query={mentionQuery}
+            onSelect={insertMention}
+            onClose={closeMentionPicker}
+            externalKey={forwardedKey}
+          />
+        )}
         <div className="flex items-end gap-2">
           {/* Attachment Menu */}
           <DropdownMenu>
@@ -687,10 +793,24 @@ export function ChatInput({
               />
             ) : (
               <Textarea
+                ref={textareaRef}
                 placeholder={placeholder}
                 value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onChange={handleMessageChange}
+                onKeyDown={handleKeyPress}
+                onSelect={(e) => {
+                  // Reavalia menção quando user move cursor (clicar/setas sem digitar)
+                  const ta = e.currentTarget;
+                  const cursor = ta.selectionStart || 0;
+                  const detected = detectMentionAt(ta.value, cursor);
+                  if (detected) {
+                    setMentionAnchor(detected.anchor);
+                    setMentionQuery(detected.query);
+                  } else if (mentionAnchor !== null) {
+                    setMentionAnchor(null);
+                    setMentionQuery('');
+                  }
+                }}
                 className="min-h-[44px] max-h-[120px] resize-none flex-1"
                 disabled={disabled || isRecording}
                 rows={1}
