@@ -435,7 +435,10 @@ Deno.serve(async (req: Request) => {
         toolResults.push({
           type: 'tool_result',
           tool_use_id: tu.id,
-          content: JSON.stringify(result).slice(0, 8000),
+          // 24KB de tool_result. Antes 8KB cortava agenda densa de 150 eventos
+          // (truncava antes de chegar nos últimos dias da semana — Sonnet via
+          // sexta como "vazia" porque não chegava no payload).
+          content: JSON.stringify(result).slice(0, 24000),
           is_error: isError,
         });
       }
@@ -619,6 +622,13 @@ function montarContextoExtra(ctxData: unknown): string {
   const c = arr[0] || {};
 
   const partes: string[] = [];
+
+  // Data atual em BRT — Sonnet não sabe a data sem isso (errava cálculos
+  // tipo "próxima sexta", caía no cutoff de treino).
+  const agora = new Date();
+  const dataBR = agora.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+  const horaBR = agora.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  partes.push(`<agora>\nHoje é ${dataBR}, ${horaBR} (BRT). Use isso pra calcular "amanhã", "próxima sexta", "essa semana", etc.\n</agora>`);
 
   if (c.resumo_longo) partes.push(`<historico_longo>\n${c.resumo_longo}\n</historico_longo>`);
   if (c.resumo_mes) partes.push(`<historico_mes>\n${c.resumo_mes}\n</historico_mes>`);

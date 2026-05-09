@@ -773,18 +773,18 @@ const listarAgenda: ToolDefinition = {
     }
     const { data, error } = await ctx.supa
       .from('eventos_agenda')
-      .select('id, titulo, data_hora_inicio, data_hora_fim, tipo_evento, descricao, google_event_id, origem')
+      .select('id, titulo, data_hora_inicio, data_hora_fim, tipo_evento, google_event_id, origem')
+      .eq('medico_id', ctx.userId) // FIX 09/05: sem filtro retornava 129 eventos de TODOS os médicos
       .gte('data_hora_inicio', inicio.toISOString())
       .lt('data_hora_inicio', fim.toISOString())
-      .order('data_hora_inicio');
+      .order('data_hora_inicio')
+      .limit(150);
     if (error) throw new Error(error.message);
-    return {
-      periodo,
-      total: (data || []).length,
-      eventos: (data || []).map((e: {
-        id: string; titulo: string; data_hora_inicio: string; data_hora_fim: string | null;
-        tipo_evento?: string; google_event_id: string | null; origem?: string;
-      }) => ({
+    // Dedup: Google Calendar às vezes duplica eventos quando há recorrência
+    // ou múltiplos calendars sincronizando o mesmo. Chave: titulo+inicio.
+    const seen = new Set<string>();
+    const eventos = (data || [])
+      .map((e: { id: string; titulo: string; data_hora_inicio: string; data_hora_fim: string | null; tipo_evento?: string; google_event_id: string | null; origem?: string }) => ({
         evento_id: e.id,
         google_event_id: e.google_event_id,
         titulo: e.titulo,
@@ -792,8 +792,14 @@ const listarAgenda: ToolDefinition = {
         ate: e.data_hora_fim,
         tipo: e.tipo_evento || 'evento',
         origem: e.origem || 'crm',
-      })),
-    };
+      }))
+      .filter(e => {
+        const k = `${e.titulo}|${e.quando}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+    return { periodo, total: eventos.length, eventos };
   },
 };
 
