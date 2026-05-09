@@ -1929,6 +1929,15 @@ const enviarMensagemPeloChip: ToolDefinition = {
     }
     const numero = (args.numero as string).replace(/\D/g, '');
     if (!numero) return { ok: false, error: 'numero inválido' };
+    // Guarda contra bug do Sonnet truncar/adicionar dígito no número.
+    // Brasil: 12 dígitos (55+DDD2+8) sem 9 OU 13 dígitos (55+DDD2+9+8) com 9 mobile.
+    // Sem 55 inicial: 10 ou 11 dígitos. Tolera 10-13 mas avisa se fora.
+    if (numero.length < 10 || numero.length > 13) {
+      return {
+        ok: false,
+        error: `Número "${numero}" tem ${numero.length} dígitos — esperado 10-13 (Brasil). Confirme com o Maikon o número EXATO antes de chamar de novo.`,
+      };
+    }
     const userPhone = ctx.userPhone?.replace(/\D/g, '') || '';
     if (numero === userPhone) {
       return { ok: false, error: 'Não envia pro próprio Maikon — use criar_cron pra lembrete pessoal.' };
