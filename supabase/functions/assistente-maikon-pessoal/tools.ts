@@ -771,34 +771,101 @@ const listarAgenda: ToolDefinition = {
     } else if (periodo === 'mes') {
       fim.setMonth(fim.getMonth() + 1);
     }
-    const { data, error } = await ctx.supa
+    // Filtra eventos pelas CONTAS GOOGLE DO DONO (Maikon).
+    // Antes: contas terceiras (ex: Isadora conectou conta dela com agenda
+    // compartilhada do Maikon) injetavam 21 eventos confundindo o agente.
+    // Pega google_account_id das contas com email canônico do dono.
+    const ownerEmails = (Deno.env.get('ASSISTENTE_DONO_EMAILS') || '')
+      .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    let ownerAccountIds: string[] = [];
+    if (ownerEmails.length > 0) {
+      const { data: contas } = await ctx.supa
+        .from('google_accounts')
+        .select('id, email')
+        .eq('ativo', true);
+      ownerAccountIds = ((contas || []) as Array<{ id: string; email: string }>)
+        .filter(c => ownerEmails.includes((c.email || '').toLowerCase()))
+        .map(c => c.id);
+    }
+
+    let query = ctx.supa
       .from('eventos_agenda')
-      .select('id, titulo, data_hora_inicio, data_hora_fim, tipo_evento, google_event_id, origem')
-      .eq('medico_id', ctx.userId) // FIX 09/05: sem filtro retornava 129 eventos de TODOS os médicos
+      .select('id, titulo, data_hora_inicio, data_hora_fim, tipo_evento, google_event_id, origem, google_account_id, timezone')
+      .eq('medico_id', ctx.userId)
       .gte('data_hora_inicio', inicio.toISOString())
       .lt('data_hora_inicio', fim.toISOString())
       .order('data_hora_inicio')
-      .limit(150);
+      .limit(200);
+    // Filtro por contas do dono OU eventos sem google_account_id (criados manualmente)
+    if (ownerAccountIds.length > 0) {
+      query = query.or(`google_account_id.in.(${ownerAccountIds.join(',')}),google_account_id.is.null`);
+    }
+    const { data, error } = await query;
     if (error) throw new Error(error.message);
-    // Dedup: Google Calendar às vezes duplica eventos quando há recorrência
-    // ou múltiplos calendars sincronizando o mesmo. Chave: titulo+inicio.
-    const seen = new Set<string>();
-    const eventos = (data || [])
-      .map((e: { id: string; titulo: string; data_hora_inicio: string; data_hora_fim: string | null; tipo_evento?: string; google_event_id: string | null; origem?: string }) => ({
+    type Row = { id: string; titulo: string; data_hora_inicio: string; data_hora_fim: string | null; tipo_evento?: string; google_event_id: string | null; origem?: string; timezone?: string | null };
+
+    // Dedup em 2 níveis:
+    // 1) Mesmo (titulo+inicio): duplicata exata
+    // 2) Mesmo data_hora_inicio E hora_fim com títulos parecidos: mesmo evento
+    //    sincronizado de contas diferentes (ex: "Flight to SP" vs "Voo SP")
+    const seenExact = new Set<string>();
+    const byStart = new Map<string, Row>();
+    const eventos: Array<Record<string, unknown>> = [];
+
+    for (const e of (data || []) as Row[]) {
+      const exactKey = `${e.titulo}|${e.data_hora_inicio}`;
+      if (seenExact.has(exactKey)) continue;
+      seenExact.add(exactKey);
+
+      // Dedup por horário próximo (mesmo inicio + fim = mesmo bloco)
+      const blockKey = `${e.data_hora_inicio}|${e.data_hora_fim || ''}`;
+      const existing = byStart.get(blockKey);
+      if (existing) {
+        // Mantém o título mais descritivo (mais longo, sem ?? ou abreviação)
+        if (e.titulo.length > existing.titulo.length && !e.titulo.includes('??')) {
+          byStart.set(blockKey, e);
+        }
+        continue;
+      }
+      byStart.set(blockKey, e);
+    }
+
+    // Pré-formata data/hora pra Sonnet. ATENÇÃO ao bug do google-calendar-sync:
+    // eventos com timezone='America/Sao_Paulo' têm data_hora_inicio salvo como
+    // hora local (BRT) MAS marcado +00 (UTC) no banco. Fazendo conversão UTC→BRT
+    // ficaria -3h errado. Solução: pra timezone=America/Sao_Paulo, lê substring
+    // de hora literal do ISO (sem conversão de fuso). Pra outros tz, converte.
+    const fmtDia = (iso: string, tz: string | null | undefined) => {
+      if (tz === 'America/Sao_Paulo' || !tz) {
+        // Trata o timestamp como já estando em BRT — extrai data literal
+        const d = new Date(iso.replace(/\+\d{2}:?\d{2}$|Z$/, '')); // remove tz suffix
+        return d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+      }
+      return new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit' });
+    };
+    const fmtHora = (iso: string, tz: string | null | undefined) => {
+      if (tz === 'America/Sao_Paulo' || !tz) {
+        const m = iso.match(/T?(\d{2}):(\d{2})/);
+        return m ? `${m[1]}:${m[2]}` : '';
+      }
+      return new Date(iso).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+    };
+
+    for (const e of byStart.values()) {
+      eventos.push({
         evento_id: e.id,
         google_event_id: e.google_event_id,
         titulo: e.titulo,
         quando: e.data_hora_inicio,
         ate: e.data_hora_fim,
+        dia_semana_brt: fmtDia(e.data_hora_inicio, e.timezone),
+        hora_inicio_brt: fmtHora(e.data_hora_inicio, e.timezone),
+        hora_fim_brt: e.data_hora_fim ? fmtHora(e.data_hora_fim, e.timezone) : null,
         tipo: e.tipo_evento || 'evento',
         origem: e.origem || 'crm',
-      }))
-      .filter(e => {
-        const k = `${e.titulo}|${e.quando}`;
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
       });
+    }
+    eventos.sort((a, b) => String(a.quando).localeCompare(String(b.quando)));
     return { periodo, total: eventos.length, eventos };
   },
 };
