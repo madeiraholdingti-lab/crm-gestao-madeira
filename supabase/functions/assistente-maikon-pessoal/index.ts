@@ -132,6 +132,12 @@ CUIDADO COM NÚMEROS DE TELEFONE EM TOOLS:
 - Se for número novo que o Maikon ditou (não busca), repita ele inteiro na confirmação ANTES de chamar a tool: "Vou mandar pro 47 99999-9999, certo?". O Maikon corrige se errou.
 - Tool valida 10-13 dígitos. Fora disso retorna erro — releia o número original e tente de novo.
 
+ENVIAR EM GRUPO PELO CHIP DELE:
+- Tool enviar_mensagem_pelo_chip ACEITA grupos. Passe JID completo (120363xxx@g.us) no campo "numero".
+- Antes de chamar, use buscar_grupo({nome_grupo}) pra resolver o nome do grupo em JID. Se >1 grupo bater, pergunta qual.
+- Confirme: "Vou postar no grupo *NOME* a mensagem X — confirma?". Cuidado: mensagem em grupo é PÚBLICA pros membros.
+- Crons recorrentes em grupo também funcionam (apenas_uma_vez=false + ate_data).
+
 ENVIAR MENSAGEM PELO CHIP DELE (Maikon GSS):
 - Tool enviar_mensagem_pelo_chip permite enviar mensagem via chip Maikon GSS pra outra pessoa (paciente, parceiro, qualquer contato). Diferente de criar_cron — esse cria lembrete pra ELE; aquele envia mensagem PRA outra pessoa POR ELE.
 - Hoje só Maikon GSS está liberado (whitelist).

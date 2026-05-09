@@ -1891,7 +1891,7 @@ const criarCron: ToolDefinition = {
 
 const enviarMensagemPeloChip: ToolDefinition = {
   name: 'enviar_mensagem_pelo_chip',
-  description: 'Envia mensagem PELO CHIP DO MAIKON (Maikon GSS) pra outra pessoa. Pode ser AGORA (sem agendar_*) ou agendado (com agendar_para ou cron_expression). REGRAS OBRIGATÓRIAS: 1) Confirme PRA QUEM (nome+número), QUANDO e TEXTO antes de chamar. 2) Se for cron RECORRENTE ("toda segunda 7h"), PERGUNTE até quando vai durar — sem isso vira spam eterno. Use ate_data com ISO 8601 ou setar quantas semanas/meses. 3) Whitelist de instâncias: hoje só "Maikon GSS" liberada. 4) NÃO envie pro próprio número do Maikon (use criar_cron pra lembrete pessoal).',
+  description: 'Envia mensagem PELO CHIP DO MAIKON (Maikon GSS) pra outra pessoa OU GRUPO. Pode ser AGORA (sem agendar_*) ou agendado (com agendar_para ou cron_expression). REGRAS OBRIGATÓRIAS: 1) Confirme PRA QUEM (nome+número/grupo), QUANDO e TEXTO antes de chamar. 2) Se for GRUPO, use buscar_grupo primeiro pra pegar o JID e passe ele em "numero" (formato 120363xxx@g.us). 3) Se for cron RECORRENTE ("toda segunda 7h"), PERGUNTE até quando vai durar. 4) Whitelist de instâncias: hoje só "Maikon GSS". 5) NÃO envie pro próprio número do Maikon.',
   input_schema: {
     type: 'object',
     properties: {
@@ -1902,7 +1902,7 @@ const enviarMensagemPeloChip: ToolDefinition = {
       },
       numero: {
         type: 'string',
-        description: 'Número destinatário no formato 5547999999999 (com 55 + DDD + número, sem espaços/pontuação).',
+        description: 'Destinatário: número individual no formato 5547999999999 (55+DDD+número, sem espaços) OU JID de grupo no formato 120363xxx@g.us. Pra mandar em GRUPO, primeiro use buscar_grupo pra resolver nome → JID, depois passe o JID inteiro aqui.',
       },
       texto: { type: 'string', description: 'Texto da mensagem.' },
       cron_expression: {
@@ -1927,20 +1927,30 @@ const enviarMensagemPeloChip: ToolDefinition = {
     if (!liberadas.includes(instancia)) {
       return { ok: false, error: `Instância "${instancia}" não está na whitelist. Liberadas: ${liberadas.join(', ')}` };
     }
-    const numero = (args.numero as string).replace(/\D/g, '');
-    if (!numero) return { ok: false, error: 'numero inválido' };
-    // Guarda contra bug do Sonnet truncar/adicionar dígito no número.
-    // Brasil: 12 dígitos (55+DDD2+8) sem 9 OU 13 dígitos (55+DDD2+9+8) com 9 mobile.
-    // Sem 55 inicial: 10 ou 11 dígitos. Tolera 10-13 mas avisa se fora.
-    if (numero.length < 10 || numero.length > 13) {
-      return {
-        ok: false,
-        error: `Número "${numero}" tem ${numero.length} dígitos — esperado 10-13 (Brasil). Confirme com o Maikon o número EXATO antes de chamar de novo.`,
-      };
-    }
-    const userPhone = ctx.userPhone?.replace(/\D/g, '') || '';
-    if (numero === userPhone) {
-      return { ok: false, error: 'Não envia pro próprio Maikon — use criar_cron pra lembrete pessoal.' };
+    const numeroRaw = (args.numero as string).trim();
+    let numero: string;
+    let isGroupSend = false;
+    // Detecta JID de grupo (@g.us). Evolution aceita 'number' = JID de grupo
+    // pra postar no grupo. Mantém o JID inteiro pra passar na API.
+    if (/@g\.us$/.test(numeroRaw)) {
+      numero = numeroRaw;
+      isGroupSend = true;
+    } else {
+      numero = numeroRaw.replace(/\D/g, '');
+      if (!numero) return { ok: false, error: 'numero inválido' };
+      // Guarda contra bug do Sonnet truncar/adicionar dígito no número.
+      // Brasil: 12 dígitos (55+DDD2+8) sem 9 OU 13 dígitos (55+DDD2+9+8) com 9 mobile.
+      // Sem 55 inicial: 10 ou 11 dígitos. Tolera 10-13 mas avisa se fora.
+      if (numero.length < 10 || numero.length > 13) {
+        return {
+          ok: false,
+          error: `Número "${numero}" tem ${numero.length} dígitos — esperado 10-13 (Brasil). Confirme com o Maikon o número EXATO antes de chamar de novo. Pra GRUPO use o jid completo no formato 120363xxx@g.us (busque com buscar_grupo).`,
+        };
+      }
+      const userPhone = ctx.userPhone?.replace(/\D/g, '') || '';
+      if (numero === userPhone) {
+        return { ok: false, error: 'Não envia pro próprio Maikon — use criar_cron pra lembrete pessoal.' };
+      }
     }
     const texto = args.texto as string;
     const cronExpr = args.cron_expression as string | undefined;
