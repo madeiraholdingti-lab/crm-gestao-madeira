@@ -830,24 +830,13 @@ const listarAgenda: ToolDefinition = {
       byStart.set(blockKey, e);
     }
 
-    // Pré-formata data/hora pra Sonnet. ATENÇÃO ao bug do google-calendar-sync:
-    // eventos com timezone='America/Sao_Paulo' têm data_hora_inicio salvo como
-    // hora local (BRT) MAS marcado +00 (UTC) no banco. Fazendo conversão UTC→BRT
-    // ficaria -3h errado. Solução: pra timezone=America/Sao_Paulo, lê substring
-    // de hora literal do ISO (sem conversão de fuso). Pra outros tz, converte.
-    const fmtDia = (iso: string, tz: string | null | undefined) => {
-      if (tz === 'America/Sao_Paulo' || !tz) {
-        // Trata o timestamp como já estando em BRT — extrai data literal
-        const d = new Date(iso.replace(/\+\d{2}:?\d{2}$|Z$/, '')); // remove tz suffix
-        return d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
-      }
+    // Pré-formata data/hora em BRT pra Sonnet — antes ele errava cálculo de
+    // dia da semana mesmo com data atual no contexto. Banco salva timestamptz
+    // em UTC (correto), aqui converte pra BRT pra display.
+    const fmtDia = (iso: string) => {
       return new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit' });
     };
-    const fmtHora = (iso: string, tz: string | null | undefined) => {
-      if (tz === 'America/Sao_Paulo' || !tz) {
-        const m = iso.match(/T?(\d{2}):(\d{2})/);
-        return m ? `${m[1]}:${m[2]}` : '';
-      }
+    const fmtHora = (iso: string) => {
       return new Date(iso).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
     };
 
@@ -858,9 +847,9 @@ const listarAgenda: ToolDefinition = {
         titulo: e.titulo,
         quando: e.data_hora_inicio,
         ate: e.data_hora_fim,
-        dia_semana_brt: fmtDia(e.data_hora_inicio, e.timezone),
-        hora_inicio_brt: fmtHora(e.data_hora_inicio, e.timezone),
-        hora_fim_brt: e.data_hora_fim ? fmtHora(e.data_hora_fim, e.timezone) : null,
+        dia_semana_brt: fmtDia(e.data_hora_inicio),
+        hora_inicio_brt: fmtHora(e.data_hora_inicio),
+        hora_fim_brt: e.data_hora_fim ? fmtHora(e.data_hora_fim) : null,
         tipo: e.tipo_evento || 'evento',
         origem: e.origem || 'crm',
       });
