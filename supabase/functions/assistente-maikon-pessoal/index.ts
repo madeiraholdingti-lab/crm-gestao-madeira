@@ -212,10 +212,28 @@ Deno.serve(async (req: Request) => {
       const imageMsg = data.message?.imageMessage;
       const isImage = !!imageMsg || data.messageType === 'imageMessage';
 
+      // Extrai mensagem citada (reply WhatsApp) — Maikon pode responder
+      // a um lembrete ou mensagem antiga, e queremos que Madeira veja o
+      // contexto. Evolution coloca em extendedTextMessage.contextInfo.quotedMessage.
+      const ctxInfo = data.message?.extendedTextMessage?.contextInfo;
+      const quotedMsg = ctxInfo?.quotedMessage;
+      const quotedText: string = quotedMsg?.conversation
+        || quotedMsg?.extendedTextMessage?.text
+        || quotedMsg?.imageMessage?.caption
+        || quotedMsg?.videoMessage?.caption
+        || (quotedMsg?.audioMessage ? '[áudio]' : '')
+        || (quotedMsg?.imageMessage ? '[imagem]' : '')
+        || '';
+      const buildInputWithQuote = (txt: string): string => {
+        if (!quotedText.trim()) return txt;
+        const trecho = quotedText.length > 500 ? quotedText.slice(0, 500) + '…' : quotedText;
+        return `[Maikon respondeu/citou esta mensagem anterior:]\n> ${trecho.replace(/\n/g, '\n> ')}\n\n${txt}`;
+      };
+
       if (data.message?.conversation) {
-        inputText = data.message.conversation;
+        inputText = buildInputWithQuote(data.message.conversation);
       } else if (data.message?.extendedTextMessage?.text) {
-        inputText = data.message.extendedTextMessage.text;
+        inputText = buildInputWithQuote(data.message.extendedTextMessage.text);
       } else if (isImage) {
         inputType = 'image';
         const mime = imageMsg?.mimetype?.split(';')[0] || 'image/jpeg';
