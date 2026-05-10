@@ -2817,21 +2817,57 @@ const resolverGrupo: ToolDefinition = {
   async handler(args, ctx) {
     const nome = (args.nome as string || '').trim();
     if (!nome) return { ok: false, error: 'nome obrigatório' };
-    const escaped = nome.replace(/[%_]/g, '\\$&');
-    const { data, error } = await ctx.supa
-      .from('whatsapp_groups')
-      .select('jid, subject, participants_count')
-      .ilike('subject', `%${escaped}%`)
-      .limit(20);
+
+    // Fuzzy match: tira acentos, split em palavras (>=3 chars), busca grupos
+    // que contenham TODAS as palavras (qualquer ordem). Antes ILIKE substring
+    // exata falhava em "GSS Juridico" pra grupo "Jurídico GSS Sócios" (ordem
+    // diferente + acento).
+    const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const termos = semAcento(nome).split(/[\s\-_/|]+/).filter(w => w.length >= 3);
+
+    if (termos.length === 0) {
+      // Fallback: busca substring direta como antes
+      const escaped = nome.replace(/[%_]/g, '\\$&');
+      const { data } = await ctx.supa.from('whatsapp_groups')
+        .select('jid, subject, participants_count').ilike('subject', `%${escaped}%`).limit(20);
+      const grupos = (data || []) as Array<{ jid: string; subject: string; participants_count: number | null }>;
+      if (grupos.length === 0) return { ok: false, motivo: `Nenhum grupo com "${nome}".` };
+      return { ok: true, total: grupos.length, grupos: grupos.map(g => ({ jid: g.jid, nome: g.subject, participantes: g.participants_count })) };
+    }
+
+    // Pré-filtro DB: retorna grupos que contenham PELO MENOS uma palavra
+    // (reduz universo). Filtragem fina (todas as palavras, sem acento) em JS.
+    let q = ctx.supa.from('whatsapp_groups').select('jid, subject, participants_count');
+    const orParts = termos.map(t => `subject.ilike.%${t.replace(/[%_]/g, '\\$&')}%`).join(',');
+    q = q.or(orParts);
+    const { data, error } = await q.limit(200);
     if (error) return { ok: false, error: error.message };
-    const grupos = (data || []) as Array<{ jid: string; subject: string; participants_count: number | null }>;
-    if (grupos.length === 0) {
+
+    type Row = { jid: string; subject: string; participants_count: number | null };
+    const todos = (data || []) as Row[];
+    // Ranking: quantas palavras do termo aparecem no subject (sem acento).
+    // Se TODAS aparecem, score = termos.length (match perfeito).
+    const ranked = todos
+      .map(g => {
+        const subj = semAcento(g.subject || '');
+        const matches = termos.filter(t => subj.includes(t)).length;
+        return { ...g, _matches: matches };
+      })
+      .filter(g => g._matches > 0)
+      .sort((a, b) => b._matches - a._matches || a.subject.length - b.subject.length);
+
+    // Prefere matches perfeitos (todas palavras). Se nenhum perfeito, devolve top 10 parciais.
+    const perfeitos = ranked.filter(g => g._matches === termos.length);
+    const finais = perfeitos.length > 0 ? perfeitos : ranked.slice(0, 10);
+
+    if (finais.length === 0) {
       return { ok: false, motivo: `Nenhum grupo com "${nome}" no nome.` };
     }
     return {
       ok: true,
-      total: grupos.length,
-      grupos: grupos.map(g => ({ jid: g.jid, nome: g.subject, participantes: g.participants_count })),
+      total: finais.length,
+      match_perfeito: perfeitos.length > 0,
+      grupos: finais.map(g => ({ jid: g.jid, nome: g.subject, participantes: g.participants_count })),
     };
   },
 };
