@@ -2795,8 +2795,43 @@ const buscarGrupo: ToolDefinition = {
     return {
       total: msgs.length,
       dias_atras: dias,
-      grupos_pesquisados: gruposEncontrados.map(g => g.subject),
+      grupos_pesquisados: gruposEncontrados.map(g => ({ jid: g.jid, nome: g.subject })),
       mensagens: msgs,
+    };
+  },
+};
+
+// resolver_grupo: query rápida só na whatsapp_groups (sem JOIN com messages
+// que dá timeout em base grande). Use quando precisar SÓ do JID pra enviar
+// mensagem em grupo, sem listar conteúdo.
+const resolverGrupo: ToolDefinition = {
+  name: 'resolver_grupo',
+  description: 'Resolve nome de grupo WhatsApp em JID (formato 120363xxx@g.us). Use ANTES de chamar enviar_mensagem_pelo_chip pra grupos. NÃO INVENTE JID — sempre use esta tool. Match case-insensitive substring no nome do grupo.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      nome: { type: 'string', description: 'Pedaço do nome do grupo (ex: "GSS Jurídico", "MBS", "CBEXS").' },
+    },
+    required: ['nome'],
+  },
+  async handler(args, ctx) {
+    const nome = (args.nome as string || '').trim();
+    if (!nome) return { ok: false, error: 'nome obrigatório' };
+    const escaped = nome.replace(/[%_]/g, '\\$&');
+    const { data, error } = await ctx.supa
+      .from('whatsapp_groups')
+      .select('jid, subject, participants_count')
+      .ilike('subject', `%${escaped}%`)
+      .limit(20);
+    if (error) return { ok: false, error: error.message };
+    const grupos = (data || []) as Array<{ jid: string; subject: string; participants_count: number | null }>;
+    if (grupos.length === 0) {
+      return { ok: false, motivo: `Nenhum grupo com "${nome}" no nome.` };
+    }
+    return {
+      ok: true,
+      total: grupos.length,
+      grupos: grupos.map(g => ({ jid: g.jid, nome: g.subject, participantes: g.participants_count })),
     };
   },
 };
@@ -2879,6 +2914,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   pesquisarWeb,
   // Grupos WhatsApp (Fase 11)
   buscarGrupo,
+  resolverGrupo,
   // Perfil estrutural (Fase 10)
   atualizarPerfilDono,
   // Memória / Crons

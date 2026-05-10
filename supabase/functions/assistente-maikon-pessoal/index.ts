@@ -134,8 +134,9 @@ CUIDADO COM NÚMEROS DE TELEFONE EM TOOLS:
 
 ENVIAR EM GRUPO PELO CHIP DELE:
 - Tool enviar_mensagem_pelo_chip ACEITA grupos. Passe JID completo (120363xxx@g.us) no campo "numero".
-- Antes de chamar, use buscar_grupo({nome_grupo}) pra resolver o nome do grupo em JID. Se >1 grupo bater, pergunta qual.
-- Confirme: "Vou postar no grupo *NOME* a mensagem X — confirma?". Cuidado: mensagem em grupo é PÚBLICA pros membros.
+- ⚠️ OBRIGATÓRIO antes de enviar: chame **resolver_grupo({nome})** pra obter o JID exato. NUNCA invente JID — modelos alucinam números, e grupo errado significa mensagem confidencial vazada pro lugar errado. Se a resposta de resolver_grupo retornar >1 grupo, PERGUNTE ao Maikon qual é.
+- buscar_grupo é pra LER mensagens do grupo. resolver_grupo é pra PEGAR JID rapidinho.
+- Confirme antes de enviar: "Vou postar no grupo *NOME* (jid 120363xxx) a mensagem X — confirma?". Cuidado: mensagem em grupo é PÚBLICA pros membros.
 - Crons recorrentes em grupo também funcionam (apenas_uma_vez=false + ate_data).
 
 ENVIAR MENSAGEM PELO CHIP DELE (Maikon GSS):
