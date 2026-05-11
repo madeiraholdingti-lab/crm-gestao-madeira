@@ -107,6 +107,23 @@ PERFIL ESTRUTURAL (claude.md do Maikon):
 ÁUDIO INBOUND:
 - Você AGORA RECEBE ÁUDIO. O webhook baixa do Evolution e transcreve via Whisper. Se uma vez ele reclamar "tu escuta áudio?", responde que sim, agora sim.
 
+LEMBRETES — DOIS DESTINOS POSSÍVEIS:
+
+Maikon recebe diariamente às 7h da manhã uma mensagem da Iza com lista de tarefas do kanban "Lembrar Dr. Maikon" (briefing matinal automatizado). Quando ele te pede pra criar lembrete, escolha o destino:
+
+Caso 1 — Sem horário específico ("lembrar amanhã", "terça preciso fazer X", "daqui 15 dias"):
+- Use APENAS criar_tarefa_kanban com prazo_iso = 07:00 BRT do dia.
+- Vai aparecer SÓ no briefing matinal 7h do dia do prazo. Iza/Mariana também veem no kanban.
+- NÃO criar cron individual (evita duplicar mensagem).
+
+Caso 2 — Com horário específico ("amanhã às 14h", "hoje às 18h30 ligar pro X"):
+- Crie AMBOS: criar_tarefa_kanban (prazo na hora exata) + criar_cron tipo=mensagem (alerta na hora exata).
+- Maikon recebe no briefing 7h ("vai ter X às 14h hoje") + na hora ("🔔 Lembrete 14h").
+- Confirme com ele se quer ambos ("aviso só na hora ou também na lista das 7h?") se parecer redundante.
+
+Caso 3 — Recorrente ("toda segunda 8h", "todo dia 6h versículo"):
+- Use APENAS criar_cron recorrente (com ate_data se for recorrente). Kanban é pra task pontual.
+
 LEMBRETES / CRONS — REGRA OBRIGATÓRIA:
 - ANTES de chamar criar_cron, confirme com o Maikon parafraseando o ENUNCIADO COMPLETO da intenção, não só horário. Ex: "Te lembro HOJE às 15h de ligar pro André, tá?". Nunca confirme só "às 15h, certo?" — ele pode confirmar no automático sem perceber.
 - CUIDADO COM NÚMEROS NO ÁUDIO: nem todo número é horário. Whisper transcreve literal, mas a intenção do Maikon pode ser:
@@ -379,39 +396,66 @@ Deno.serve(async (req: Request) => {
     let tokensIn = 0;
     let tokensOut = 0;
 
-    for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-      const apiResp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: MAX_TOKENS,
-          system: [
-            // Bloco 1 (fixo): cacheado — system prompt da persona. Economiza ~80% em re-uso.
-            { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
-            // Bloco 2 (semi-fixo): perfil estrutural do dono — muda raramente, cacheado.
-            { type: 'text', text: perfilDono, cache_control: { type: 'ephemeral' } },
-            // Bloco 3 (variável): contexto compactado (memórias, correções, sumários, turnos
-            // recentes). Não cacheado porque muda a cada turno.
-            { type: 'text', text: contextoCompactado },
-          ],
-          tools: TOOL_SCHEMAS,
-          messages,
-        }),
-      });
+    // Fallback Anthropic → Gemini: se saldo Anthropic estourar (400 com
+    // "credit balance"), mantém Madeira online via Gemini 2.5 Flash usando
+    // a mesma key que o Maikon já tem configurada no CRM. Sticky por turno:
+    // se cair pra Gemini num iter, mantém Gemini nos próximos (tool_use_id
+    // entre providers não bate). Quando Anthropic recarregar, próximo turn
+    // volta automático.
+    let usandoGemini = false;
 
-      if (!apiResp.ok) {
-        const err = await apiResp.text();
-        throw new Error(`Anthropic ${apiResp.status}: ${err.slice(0, 400)}`);
+    for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+      let claudeResp: { content: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>; stop_reason: string; usage?: { input_tokens?: number; output_tokens?: number } };
+
+      if (!usandoGemini) {
+        const apiResp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: MAX_TOKENS,
+            system: [
+              { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+              { type: 'text', text: perfilDono, cache_control: { type: 'ephemeral' } },
+              { type: 'text', text: contextoCompactado },
+            ],
+            tools: TOOL_SCHEMAS,
+            messages,
+          }),
+        });
+
+        if (!apiResp.ok) {
+          const err = await apiResp.text();
+          // Fallback automático se saldo estourou
+          if (apiResp.status === 400 && /credit balance|insufficient/i.test(err)) {
+            console.warn('[madeira] Anthropic sem saldo, fallback Gemini');
+            usandoGemini = true;
+          } else {
+            throw new Error(`Anthropic ${apiResp.status}: ${err.slice(0, 400)}`);
+          }
+        } else {
+          claudeResp = await apiResp.json();
+          tokensIn += claudeResp.usage?.input_tokens || 0;
+          tokensOut += claudeResp.usage?.output_tokens || 0;
+        }
       }
 
-      const claudeResp = await apiResp.json();
-      tokensIn += claudeResp.usage?.input_tokens || 0;
-      tokensOut += claudeResp.usage?.output_tokens || 0;
+      if (usandoGemini) {
+        claudeResp = await callGeminiAsAnthropic({
+          systemText: `${SYSTEM_PROMPT}\n\n${perfilDono}\n\n${contextoCompactado}`,
+          tools: TOOL_SCHEMAS,
+          messages,
+          geminiKey: Deno.env.get('GEMINI_API_KEY') || '',
+        });
+        tokensIn += claudeResp.usage?.input_tokens || 0;
+        tokensOut += claudeResp.usage?.output_tokens || 0;
+      }
+      // @ts-ignore — claudeResp atribuído em um dos dois caminhos
+      claudeResp = claudeResp!;
 
       // Adiciona resposta do assistant ao histórico
       messages.push({ role: 'assistant', content: claudeResp.content });
@@ -530,6 +574,153 @@ async function fetchAudioBase64(
     console.warn('[madeira] fetchAudioBase64 erro:', e);
     return null;
   }
+}
+
+// ============================================================================
+// Fallback Gemini — chamado quando Anthropic sem saldo.
+// Aceita formato Anthropic (messages + tools + system) e devolve no mesmo
+// formato Anthropic-compat pra resto do código não precisar mudar.
+// Gemini 2.5 Flash: tool use compatível, sem caching mas barato.
+// ============================================================================
+async function callGeminiAsAnthropic(opts: {
+  systemText: string;
+  tools: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>;
+  messages: Array<{ role: string; content: unknown }>;
+  geminiKey: string;
+}): Promise<{ content: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>; stop_reason: string; usage?: { input_tokens?: number; output_tokens?: number } }> {
+  if (!opts.geminiKey) throw new Error('GEMINI_API_KEY ausente — fallback impossível');
+
+  // 1) Converte tools Anthropic → Gemini functionDeclarations
+  const functionDeclarations = opts.tools.map(t => ({
+    name: t.name,
+    description: t.description,
+    parameters: sanitizeJsonSchemaForGemini(t.input_schema),
+  }));
+
+  // 2) Converte messages Anthropic → Gemini contents
+  const contents: Array<{ role: string; parts: Array<Record<string, unknown>> }> = [];
+  for (const m of opts.messages) {
+    if (m.role === 'user') {
+      // content pode ser string OU array (com tool_result ou image)
+      if (typeof m.content === 'string') {
+        contents.push({ role: 'user', parts: [{ text: m.content }] });
+      } else if (Array.isArray(m.content)) {
+        // tool_results: separar como role=function
+        const parts: Array<Record<string, unknown>> = [];
+        const fnParts: Array<Record<string, unknown>> = [];
+        for (const b of m.content as Array<Record<string, unknown>>) {
+          if (b.type === 'tool_result') {
+            const content = typeof b.content === 'string' ? b.content : JSON.stringify(b.content);
+            // Gemini precisa do nome da function pra parear. id no anthropic = tool_use_id.
+            // Usamos id como name (fallback), pq não temos mapping aqui.
+            fnParts.push({
+              functionResponse: {
+                name: (b.tool_use_id as string)?.slice(0, 60) || 'tool',
+                response: { result: content },
+              },
+            });
+          } else if (b.type === 'text') {
+            parts.push({ text: b.text as string });
+          } else if (b.type === 'image') {
+            const src = b.source as { type?: string; media_type?: string; data?: string } | undefined;
+            if (src?.type === 'base64' && src.data) {
+              parts.push({ inlineData: { mimeType: src.media_type || 'image/jpeg', data: src.data } });
+            }
+          }
+        }
+        if (parts.length > 0) contents.push({ role: 'user', parts });
+        if (fnParts.length > 0) contents.push({ role: 'function', parts: fnParts });
+      }
+    } else if (m.role === 'assistant') {
+      const parts: Array<Record<string, unknown>> = [];
+      const arr = Array.isArray(m.content) ? m.content as Array<Record<string, unknown>> : [];
+      for (const b of arr) {
+        if (b.type === 'text' && b.text) parts.push({ text: b.text as string });
+        if (b.type === 'tool_use') {
+          parts.push({
+            functionCall: {
+              name: b.name as string,
+              args: (b.input as Record<string, unknown>) || {},
+            },
+          });
+        }
+      }
+      if (typeof m.content === 'string') parts.push({ text: m.content });
+      if (parts.length > 0) contents.push({ role: 'model', parts });
+    }
+  }
+
+  // 3) Chama Gemini
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${opts.geminiKey}`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: opts.systemText }] },
+      contents,
+      tools: functionDeclarations.length > 0 ? [{ functionDeclarations }] : undefined,
+      generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+    }),
+  });
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(`Gemini ${r.status}: ${err.slice(0, 400)}`);
+  }
+  const j = await r.json();
+  const cand = j.candidates?.[0];
+  const parts = cand?.content?.parts || [];
+
+  // 4) Converte response Gemini → Anthropic-compat
+  const anthContent: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }> = [];
+  let hasToolUse = false;
+  for (const p of parts) {
+    if (p.text) anthContent.push({ type: 'text', text: p.text });
+    if (p.functionCall) {
+      hasToolUse = true;
+      anthContent.push({
+        type: 'tool_use',
+        // Gemini não tem id; geramos um pra parear depois com tool_result
+        id: `gem_${crypto.randomUUID().slice(0, 16)}`,
+        name: p.functionCall.name,
+        input: p.functionCall.args || {},
+      });
+    }
+  }
+
+  return {
+    content: anthContent,
+    stop_reason: hasToolUse ? 'tool_use' : 'end_turn',
+    usage: {
+      input_tokens: j.usageMetadata?.promptTokenCount || 0,
+      output_tokens: j.usageMetadata?.candidatesTokenCount || 0,
+    },
+  };
+}
+
+// Gemini é mais estrito com JSON Schema. Remove campos não suportados
+// (default, additionalProperties, etc) e converte enum corretamente.
+function sanitizeJsonSchemaForGemini(schema: Record<string, unknown>): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') return { type: 'object', properties: {} };
+  const clean: Record<string, unknown> = {};
+  const allowedKeys = ['type', 'properties', 'required', 'items', 'enum', 'description'];
+  for (const k of allowedKeys) {
+    if (k in schema) {
+      if (k === 'properties' && schema.properties) {
+        const props: Record<string, unknown> = {};
+        for (const [pk, pv] of Object.entries(schema.properties as Record<string, unknown>)) {
+          props[pk] = sanitizeJsonSchemaForGemini(pv as Record<string, unknown>);
+        }
+        clean[k] = props;
+      } else if (k === 'items' && schema.items) {
+        clean[k] = sanitizeJsonSchemaForGemini(schema.items as Record<string, unknown>);
+      } else {
+        clean[k] = schema[k];
+      }
+    }
+  }
+  if (!clean.type) clean.type = 'object';
+  if (clean.type === 'object' && !clean.properties) clean.properties = {};
+  return clean;
 }
 
 async function transcribeWhisper(b64: string, mimeType: string): Promise<string> {

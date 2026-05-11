@@ -2710,6 +2710,70 @@ const tarefasPorResponsavel: ToolDefinition = {
 };
 
 // ============================================================================
+// Kanban "Lembrar Dr. Maikon" (entra no briefing matinal 7h da Iza)
+// ============================================================================
+
+// Coluna fixa do kanban Task Flow que a edge taskflow-lembrar-maikon lê
+// pra montar o briefing matinal das 7h. Tasks aqui com prazo do dia entram
+// na lista que Iza envia pro Maikon. Vide docs/n8n-workflows/avisos-diarios-07h.json
+// + supabase/functions/taskflow-lembrar-maikon/index.ts.
+const COLUNA_LEMBRAR_MAIKON = 'a2816095-38f9-44f9-9af9-e17ca8a2f5ea';
+// Profile da Isadora no task_flow (ela é quem executa o "lembrar"). Padrão
+// das tasks já criadas — Madeira segue mesmo padrão pra consistência visual
+// no kanban da Iza/Mariana.
+const PROFILE_ISADORA = 'cc5eabb0-8ebc-482f-af78-116953dce891';
+
+const criarTarefaKanban: ToolDefinition = {
+  name: 'criar_tarefa_kanban',
+  description: 'Cria tarefa/lembrete no kanban TaskFlow na coluna "Lembrar Dr. Maikon". Tasks com prazo do dia entram automaticamente no briefing matinal de 7h que Iza envia pro Maikon. USE SEMPRE que Maikon pedir lembrete pra dia futuro ("lembrar amanhã", "terça preciso fazer X", "daqui 15 dias"). Pra recorrente ou horário específico EXATO use criar_cron junto. Tarefa fica visível pra Iza/Mariana no kanban.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      titulo: { type: 'string', description: 'Título curto da tarefa (até 100 chars). Ex: "Lembrar Arthur do terno", "Ligar pro Dr Lobo".' },
+      prazo_iso: {
+        type: 'string',
+        description: 'Data/hora do prazo em ISO 8601 BRT. Ex: "2026-05-12T07:00:00-03:00" pra entrar no briefing de terça 12/05. Se Maikon não especificou hora, use 07:00 BRT do dia (cai no briefing). Se especificou hora ("amanhã às 14h"), use a hora dele.',
+      },
+      descricao: { type: 'string', description: 'Detalhes opcionais (contexto, número, link, etc).' },
+      tipo: { type: 'string', enum: ['tarefa', 'lembrete'], default: 'lembrete' },
+    },
+    required: ['titulo', 'prazo_iso'],
+  },
+  async handler(args, ctx) {
+    const titulo = (args.titulo as string).trim();
+    if (!titulo) return { ok: false, error: 'titulo obrigatorio' };
+    const prazoIso = args.prazo_iso as string;
+    const prazo = new Date(prazoIso);
+    if (isNaN(prazo.getTime())) {
+      return { ok: false, error: `prazo_iso inválido: "${prazoIso}". Use ISO 8601 (ex: 2026-05-12T07:00:00-03:00).` };
+    }
+    const { data, error } = await ctx.supa
+      .from('task_flow_tasks')
+      .insert({
+        titulo: titulo.slice(0, 200),
+        descricao: (args.descricao as string) || null,
+        column_id: COLUNA_LEMBRAR_MAIKON,
+        responsavel_id: PROFILE_ISADORA,
+        criado_por_id: ctx.userId, // auth user_id Maikon — preserva audit trail "via Madeira"
+        prazo: prazo.toISOString(),
+        tipo: (args.tipo as string) || 'lembrete',
+        origem: 'madeira_agente',
+      })
+      .select('id, titulo, prazo')
+      .single();
+    if (error) return { ok: false, error: error.message };
+    const r = data as { id: string; titulo: string; prazo: string };
+    return {
+      ok: true,
+      task_id: r.id,
+      titulo: r.titulo,
+      prazo_iso: r.prazo,
+      info: 'Vai aparecer no briefing matinal 7h da Iza no dia do prazo.',
+    };
+  },
+};
+
+// ============================================================================
 // Grupos WhatsApp (CEDEX, MBS, etc)
 // ============================================================================
 
@@ -2948,6 +3012,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   gerarBriefing,
   // Web search (Fase 8)
   pesquisarWeb,
+  // Kanban Task Flow (Fase 12)
+  criarTarefaKanban,
   // Grupos WhatsApp (Fase 11)
   buscarGrupo,
   resolverGrupo,
