@@ -1,18 +1,18 @@
 // assistente-maikon-pessoal — agente conversacional pro WhatsApp pessoal do Maikon.
 //
-// Stack: Claude Sonnet 4.6 com Tool Use + prompt caching no system prompt.
+// Stack: Gemini 2.5 Flash com Tool Use (chave do Maikon — custo dele).
 // Tools em ./tools.ts (CRM read/write, agenda, memória).
 //
 // Fluxo:
 //   1. Webhook Evolution chega (msg do Maikon no chip dedicado)
 //   2. Whitelist: rejeita se não for número do Maikon
 //   3. Whisper se for áudio (já temos)
-//   4. Loop tool use: Claude → tool calls → executa → Claude de novo até stop
+//   4. Loop tool use: Gemini → tool calls → executa → Gemini de novo até stop
 //   5. Resposta enviada via Evolution sendText (mesmo chip)
 //   6. Audit log gravado
 //
 // Setup necessário (no Supabase secrets):
-//   - ANTHROPIC_API_KEY
+//   - GEMINI_API_KEY
 //   - ASSISTENTE_INSTANCE_NAME = nome da instância dedicada (ex: "Maikonect AI")
 //   - ASSISTENTE_USER_ID = UUID do profile do Maikon
 //   - ASSISTENTE_USER_PHONE = número whitelist (só dígitos, ex: "554792153480")
@@ -28,7 +28,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MODEL = 'claude-sonnet-4-6';
+const MODEL = 'gemini-2.5-flash';
 const MAX_TOOL_ITERATIONS = 8;  // safety: evita loops infinitos
 const MAX_TOKENS = 2048;
 
@@ -367,10 +367,10 @@ Deno.serve(async (req: Request) => {
       currentWaMessageId: waMessageId,
     };
 
-    // Loop de tool use
-    const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!apiKey) {
-      return jsonRes(500, { error: 'ANTHROPIC_API_KEY não configurada' });
+    // Loop de tool use — Gemini 2.5 Flash como provider único (chave do Maikon).
+    const geminiKey = Deno.env.get('GEMINI_API_KEY');
+    if (!geminiKey) {
+      return jsonRes(500, { error: 'GEMINI_API_KEY não configurada' });
     }
 
     // Carrega contexto compactado (sumários + correções + memórias + últimos turns)
@@ -383,7 +383,7 @@ Deno.serve(async (req: Request) => {
     const contextoCompactado = montarContextoExtra(ctxData);
     const perfilDono = montarPerfilDono(perfilData);
 
-    // Se imagem capturada, monta content multimodal (Sonnet 4.6 vision)
+    // Se imagem capturada, monta content multimodal (Gemini vision)
     const initialUserContent: unknown = currentImageBase64 && currentImageMime
       ? [
           { type: 'image', source: { type: 'base64', media_type: currentImageMime, data: currentImageBase64 } },
@@ -396,66 +396,15 @@ Deno.serve(async (req: Request) => {
     let tokensIn = 0;
     let tokensOut = 0;
 
-    // Fallback Anthropic → Gemini: se saldo Anthropic estourar (400 com
-    // "credit balance"), mantém Madeira online via Gemini 2.5 Flash usando
-    // a mesma key que o Maikon já tem configurada no CRM. Sticky por turno:
-    // se cair pra Gemini num iter, mantém Gemini nos próximos (tool_use_id
-    // entre providers não bate). Quando Anthropic recarregar, próximo turn
-    // volta automático.
-    let usandoGemini = false;
-
     for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-      let claudeResp: { content: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>; stop_reason: string; usage?: { input_tokens?: number; output_tokens?: number } };
-
-      if (!usandoGemini) {
-        const apiResp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: MODEL,
-            max_tokens: MAX_TOKENS,
-            system: [
-              { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
-              { type: 'text', text: perfilDono, cache_control: { type: 'ephemeral' } },
-              { type: 'text', text: contextoCompactado },
-            ],
-            tools: TOOL_SCHEMAS,
-            messages,
-          }),
-        });
-
-        if (!apiResp.ok) {
-          const err = await apiResp.text();
-          // Fallback automático se saldo estourou
-          if (apiResp.status === 400 && /credit balance|insufficient/i.test(err)) {
-            console.warn('[madeira] Anthropic sem saldo, fallback Gemini');
-            usandoGemini = true;
-          } else {
-            throw new Error(`Anthropic ${apiResp.status}: ${err.slice(0, 400)}`);
-          }
-        } else {
-          claudeResp = await apiResp.json();
-          tokensIn += claudeResp.usage?.input_tokens || 0;
-          tokensOut += claudeResp.usage?.output_tokens || 0;
-        }
-      }
-
-      if (usandoGemini) {
-        claudeResp = await callGeminiAsAnthropic({
-          systemText: `${SYSTEM_PROMPT}\n\n${perfilDono}\n\n${contextoCompactado}`,
-          tools: TOOL_SCHEMAS,
-          messages,
-          geminiKey: Deno.env.get('GEMINI_API_KEY') || '',
-        });
-        tokensIn += claudeResp.usage?.input_tokens || 0;
-        tokensOut += claudeResp.usage?.output_tokens || 0;
-      }
-      // @ts-ignore — claudeResp atribuído em um dos dois caminhos
-      claudeResp = claudeResp!;
+      const claudeResp = await callGeminiAsAnthropic({
+        systemText: `${SYSTEM_PROMPT}\n\n${perfilDono}\n\n${contextoCompactado}`,
+        tools: TOOL_SCHEMAS,
+        messages,
+        geminiKey,
+      });
+      tokensIn += claudeResp.usage?.input_tokens || 0;
+      tokensOut += claudeResp.usage?.output_tokens || 0;
 
       // Adiciona resposta do assistant ao histórico
       messages.push({ role: 'assistant', content: claudeResp.content });
@@ -577,10 +526,10 @@ async function fetchAudioBase64(
 }
 
 // ============================================================================
-// Fallback Gemini — chamado quando Anthropic sem saldo.
-// Aceita formato Anthropic (messages + tools + system) e devolve no mesmo
-// formato Anthropic-compat pra resto do código não precisar mudar.
-// Gemini 2.5 Flash: tool use compatível, sem caching mas barato.
+// Gemini call — provider único (chave do Maikon, custo no faturamento dele).
+// Aceita formato Anthropic-like (messages + tools + system) por inércia do
+// histórico do código (era fallback antes), devolve mesmo formato.
+// Gemini 2.5 Flash: tool use compatível, sem prompt cache mas custo baixo.
 // ============================================================================
 async function callGeminiAsAnthropic(opts: {
   systemText: string;
@@ -588,7 +537,7 @@ async function callGeminiAsAnthropic(opts: {
   messages: Array<{ role: string; content: unknown }>;
   geminiKey: string;
 }): Promise<{ content: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>; stop_reason: string; usage?: { input_tokens?: number; output_tokens?: number } }> {
-  if (!opts.geminiKey) throw new Error('GEMINI_API_KEY ausente — fallback impossível');
+  if (!opts.geminiKey) throw new Error('GEMINI_API_KEY ausente');
 
   // 1) Converte tools Anthropic → Gemini functionDeclarations
   const functionDeclarations = opts.tools.map(t => ({
@@ -596,6 +545,21 @@ async function callGeminiAsAnthropic(opts: {
     description: t.description,
     parameters: sanitizeJsonSchemaForGemini(t.input_schema),
   }));
+
+  // Pré-escaneia messages pra montar map tool_use_id → tool_name. Gemini
+  // exige que functionResponse.name bata com o functionCall.name original
+  // (não aceita id arbitrário). Sem esse map, multi-turn tool use quebra
+  // (Gemini não sabe a que call o resultado pertence).
+  const toolUseIdToName = new Map<string, string>();
+  for (const m of opts.messages) {
+    if (m.role === 'assistant' && Array.isArray(m.content)) {
+      for (const b of m.content as Array<Record<string, unknown>>) {
+        if (b.type === 'tool_use' && b.id && b.name) {
+          toolUseIdToName.set(b.id as string, b.name as string);
+        }
+      }
+    }
+  }
 
   // 2) Converte messages Anthropic → Gemini contents
   const contents: Array<{ role: string; parts: Array<Record<string, unknown>> }> = [];
@@ -611,11 +575,10 @@ async function callGeminiAsAnthropic(opts: {
         for (const b of m.content as Array<Record<string, unknown>>) {
           if (b.type === 'tool_result') {
             const content = typeof b.content === 'string' ? b.content : JSON.stringify(b.content);
-            // Gemini precisa do nome da function pra parear. id no anthropic = tool_use_id.
-            // Usamos id como name (fallback), pq não temos mapping aqui.
+            const origName = toolUseIdToName.get(b.tool_use_id as string) || 'tool';
             fnParts.push({
               functionResponse: {
-                name: (b.tool_use_id as string)?.slice(0, 60) || 'tool',
+                name: origName,
                 response: { result: content },
               },
             });
@@ -651,6 +614,11 @@ async function callGeminiAsAnthropic(opts: {
   }
 
   // 3) Chama Gemini
+  // thinkingBudget=0 desabilita o thinking mode default do 2.5 Flash, que
+  // estava produzindo candidatos com content.role=model SEM parts (zero
+  // tokens, zero texto, zero tool call) em queries que envolviam tools
+  // específicas (buscar_emails, resumir_grupo). Sem thinking, o modelo
+  // responde direto e o tool use volta a funcionar consistentemente.
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${opts.geminiKey}`;
   const r = await fetch(url, {
     method: 'POST',
@@ -659,7 +627,11 @@ async function callGeminiAsAnthropic(opts: {
       systemInstruction: { parts: [{ text: opts.systemText }] },
       contents,
       tools: functionDeclarations.length > 0 ? [{ functionDeclarations }] : undefined,
-      generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens: 2048,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
   });
   if (!r.ok) {
@@ -669,6 +641,19 @@ async function callGeminiAsAnthropic(opts: {
   const j = await r.json();
   const cand = j.candidates?.[0];
   const parts = cand?.content?.parts || [];
+
+  // Diagnóstico: Gemini às vezes retorna candidates vazio quando filtra por
+  // safety/recitation ou quando hit em algum limite implícito. Sem isto, a
+  // edge function devolve resposta vazia silenciosa — Maikon não saberia
+  // o que aconteceu.
+  if (parts.length === 0) {
+    const finish = cand?.finishReason || 'UNKNOWN';
+    const safetyRatings = cand?.safetyRatings ? JSON.stringify(cand.safetyRatings).slice(0, 300) : '';
+    const promptFeedback = j.promptFeedback ? JSON.stringify(j.promptFeedback).slice(0, 200) : '';
+    const fullCand = cand ? JSON.stringify(cand).slice(0, 2000) : '';
+    console.warn(`[gemini] empty parts. finish=${finish} safety=${safetyRatings} feedback=${promptFeedback}`);
+    console.warn(`[gemini] full candidate: ${fullCand}`);
+  }
 
   // 4) Converte response Gemini → Anthropic-compat
   const anthContent: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }> = [];
