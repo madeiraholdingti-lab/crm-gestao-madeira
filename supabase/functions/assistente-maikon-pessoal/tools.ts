@@ -80,7 +80,8 @@ async function checarCota(
 // Retorna { ok: true, token } ou { ok: false, error }.
 async function googleAccessToken(
   ctx: ToolContext,
-): Promise<{ ok: true; token: string } | { ok: false; error: string }> {
+  preferEmail?: string,
+): Promise<{ ok: true; token: string; email: string } | { ok: false; error: string }> {
   const encKey = Deno.env.get('GOOGLE_TOKEN_ENCRYPTION_KEY');
   if (!encKey) return { ok: false, error: 'GOOGLE_TOKEN_ENCRYPTION_KEY ausente' };
   const { data: contas, error } = await ctx.supa.rpc('get_active_google_accounts_decrypted', {
@@ -98,13 +99,22 @@ async function googleAccessToken(
     c.user_id === ctx.userId ||
     (ownerEmails.length > 0 && ownerEmails.includes((c.email || '').toLowerCase()))
   );
-  // Prefere conta sob o próprio user_id; fallback: conta sob proxy mas com email do dono
-  const conta = candidatos.find(c => c.user_id === ctx.userId) || candidatos[0];
+  // Seleção:
+  //  - Se preferEmail veio (tool quer conta específica), match exato pelo email canônico
+  //  - Senão: prefere conta sob próprio user_id; fallback: proxy com email do dono
+  let conta: ContaGoogle | undefined;
+  if (preferEmail) {
+    const target = preferEmail.trim().toLowerCase();
+    conta = candidatos.find(c => (c.email || '').toLowerCase() === target);
+    if (!conta) return { ok: false, error: `Conta ${preferEmail} não está ativa/autorizada` };
+  } else {
+    conta = candidatos.find(c => c.user_id === ctx.userId) || candidatos[0];
+  }
   if (!conta) return { ok: false, error: 'Maikon não tem conta Google ativa — re-autoriza em /perfil' };
 
   const expiresAt = conta.expires_at ? new Date(conta.expires_at).getTime() : 0;
   if (conta.access_token && expiresAt - Date.now() > 5 * 60 * 1000) {
-    return { ok: true, token: conta.access_token };
+    return { ok: true, token: conta.access_token, email: conta.email };
   }
   // Refresh
   const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
@@ -128,7 +138,7 @@ async function googleAccessToken(
     p_expires_at: new Date(Date.now() + j.expires_in * 1000).toISOString(),
     p_encryption_key: encKey,
   });
-  return { ok: true, token: j.access_token };
+  return { ok: true, token: j.access_token, email: conta.email };
 }
 
 function decodeBase64Url(s: string): string {
@@ -1376,20 +1386,27 @@ const GMAIL_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
 const listarEmailsNaoLidos: ToolDefinition = {
   name: 'listar_emails_nao_lidos',
-  description: 'Lista emails não lidos da caixa do Maikon (com remetente, assunto, snippet, data). Use quando ele perguntar "tem email novo?", "o que entrou na caixa?".',
+  description: 'Lista emails não lidos da caixa do Maikon (com remetente, assunto, snippet, data). Use quando ele perguntar "tem email novo?", "o que entrou na caixa?". Aceita conta_email opcional pra escolher uma das contas linkadas (maikonmadeira@gmail.com ou maikon.madeira@gestaoservicosaude.com.br). Pra filtrar promo/social/newsletter, NÃO use label — use q_extra com sintaxe Gmail (ex: "-category:promotions -category:social -category:forums"). label é só pra LabelID puro (INBOX/IMPORTANT).',
   input_schema: {
     type: 'object',
     properties: {
       limite: { type: 'integer', default: 10, minimum: 1, maximum: 30 },
-      label: { type: 'string', description: 'Label opcional pra filtrar (ex: INBOX, IMPORTANT)' },
+      label: { type: 'string', description: 'LabelID puro (INBOX/IMPORTANT). Default INBOX. NÃO aceita query syntax.' },
+      conta_email: { type: 'string', description: 'Email da conta Google específica a consultar (opcional)' },
+      so_24h: { type: 'boolean', description: 'Se true, filtra só não lidos das últimas 24h' },
+      q_extra: { type: 'string', description: 'Termos extra de busca Gmail (ex: "-category:promotions -category:social"). Concatenado ao query is:unread.' },
     },
   },
   async handler(args, ctx) {
-    const tk = await googleAccessToken(ctx);
+    const tk = await googleAccessToken(ctx, args.conta_email as string | undefined);
     if (!tk.ok) return tk;
     const limite = (args.limite as number) || 10;
     const labelStr = args.label ? `&labelIds=${encodeURIComponent(args.label as string)}` : '&labelIds=INBOX';
-    const r = await fetch(`${GMAIL_BASE}/messages?q=is:unread&maxResults=${limite}${labelStr}`, {
+    const queryParts = ['is:unread'];
+    if (args.so_24h) queryParts.push('newer_than:1d');
+    if (args.q_extra) queryParts.push(String(args.q_extra));
+    const q = encodeURIComponent(queryParts.join(' '));
+    const r = await fetch(`${GMAIL_BASE}/messages?q=${q}&maxResults=${limite}${labelStr}`, {
       headers: { Authorization: `Bearer ${tk.token}` },
     });
     if (!r.ok) {
@@ -1398,7 +1415,7 @@ const listarEmailsNaoLidos: ToolDefinition = {
     }
     const j = await r.json();
     const ids = ((j.messages || []) as Array<{ id: string }>).map(m => m.id);
-    if (ids.length === 0) return { ok: true, total: 0, emails: [] };
+    if (ids.length === 0) return { ok: true, conta: tk.email, total: 0, emails: [] };
 
     // Busca metadata em paralelo (limitado a limite)
     const emails = await Promise.all(ids.map(async (id) => {
@@ -1417,7 +1434,7 @@ const listarEmailsNaoLidos: ToolDefinition = {
         snippet: m.snippet || '',
       };
     }));
-    return { ok: true, total: emails.filter(Boolean).length, emails: emails.filter(Boolean) };
+    return { ok: true, conta: tk.email, total: emails.filter(Boolean).length, emails: emails.filter(Boolean) };
   },
 };
 
