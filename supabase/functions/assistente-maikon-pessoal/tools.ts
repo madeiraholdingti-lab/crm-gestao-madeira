@@ -44,6 +44,7 @@ const DAILY_LIMITS: Record<string, number> = {
   indexar_aula_g4_atual: 8,
   indexar_aula_drive: 8,
   pesquisar_web: 50,  // Tavily free tier dá 1k/mês — 50/dia segura cota e custo
+  extrair_url: 50,    // Tavily extract — mesma cota
 };
 
 async function checarCota(
@@ -1684,6 +1685,58 @@ const pesquisarWeb: ToolDefinition = {
   },
 };
 
+const extrairUrl: ToolDefinition = {
+  name: 'extrair_url',
+  description: 'Faz fetch de uma URL específica e devolve o conteúdo textual limpo da página (HTML strippado, ads removidos). Use quando Maikon mandar um LINK pedindo pra você ler/lembrar algo daquela página sem dizer explicitamente a data — você abre o link, extrai data/hora/local do evento (ou tema do vídeo/artigo), e propõe lembrete pra ele confirmar. Diferente de pesquisar_web (que é busca por keywords); aqui você JÁ tem a URL exata. Bom pra: páginas de evento (conferences, simpósios), artigos, posts. Limitado pra: YouTube live e SPAs muito dinâmicas — se vier vazio, pergunta a data direto pro Maikon.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: 'URL completa começando com http(s)://' },
+    },
+    required: ['url'],
+  },
+  async handler(args, ctx) {
+    const cota = await checarCota(ctx, 'extrair_url');
+    if (!cota.ok) return cota;
+    const apiKey = Deno.env.get('TAVILY_API_KEY');
+    if (!apiKey) return { ok: false, error: 'TAVILY_API_KEY não configurada' };
+    const url = String(args.url || '').trim();
+    if (!/^https?:\/\//i.test(url)) {
+      return { ok: false, error: 'URL inválida (precisa começar com http:// ou https://)' };
+    }
+    const r = await fetch('https://api.tavily.com/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: apiKey, urls: [url], extract_depth: 'basic' }),
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      return { ok: false, error: `Tavily extract ${r.status}: ${txt.slice(0, 200)}` };
+    }
+    const j = await r.json() as {
+      results?: Array<{ url: string; raw_content?: string }>;
+      failed_results?: Array<{ url: string; error?: string }>;
+    };
+    const res = j.results?.[0];
+    if (!res || !res.raw_content) {
+      const fail = j.failed_results?.[0];
+      return {
+        ok: false,
+        error: fail?.error || 'extração retornou vazio (pode ser SPA dinâmica como YouTube live — peça a data direto pro Maikon)',
+        url,
+      };
+    }
+    // 8KB de conteúdo é suficiente pra pegar data/hora/título em página típica
+    // de evento. Mais que isso explode tokens à toa.
+    return {
+      ok: true,
+      url: res.url,
+      conteudo: res.raw_content.slice(0, 8000),
+      truncado: res.raw_content.length > 8000,
+    };
+  },
+};
+
 // ============================================================================
 // Briefings inteligentes (Fase 7) — agente monta status do dia/semana
 // ============================================================================
@@ -3012,6 +3065,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   gerarBriefing,
   // Web search (Fase 8)
   pesquisarWeb,
+  extrairUrl,
   // Kanban Task Flow (Fase 12)
   criarTarefaKanban,
   // Grupos WhatsApp (Fase 11)
