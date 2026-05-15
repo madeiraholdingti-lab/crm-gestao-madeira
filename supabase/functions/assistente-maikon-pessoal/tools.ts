@@ -31,6 +31,25 @@ function normalizarFone(s: string): string {
   return s.replace(/\D/g, '');
 }
 
+// Janela "dia inteiro" em BRT pra filtrar timestamptz (UTC) no banco.
+// Bug histórico: `new Date().setHours(0,0,0,0)` opera em TZ local — em Deno
+// serverless local É UTC, então quando Maikon perguntava agenda às 23h BRT
+// (= 02h UTC do dia seguinte), "amanhã" virava o dia subsequente em UTC e
+// pegava o dia errado em BRT. Aqui ancoramos em BRT via Intl + offset -03:00.
+function diaInteiroBRT(offsetDias: number): { inicio: string; fim: string } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find(p => p.type === t)?.value || '00';
+  const meiaNoiteHojeBRT = new Date(`${get('year')}-${get('month')}-${get('day')}T00:00:00-03:00`);
+  const inicio = new Date(meiaNoiteHojeBRT);
+  inicio.setUTCDate(inicio.getUTCDate() + offsetDias);
+  const fim = new Date(inicio);
+  fim.setUTCDate(fim.getUTCDate() + 1);
+  return { inicio: inicio.toISOString(), fim: fim.toISOString() };
+}
+
 // Cotas diárias por tool destrutiva. Conta usos com sucesso nas últimas 24h.
 // Retorna {ok: true} se permite, {ok: false, error} se atingiu cota.
 const DAILY_LIMITS: Record<string, number> = {
@@ -530,11 +549,11 @@ const listarTarefas: ToolDefinition = {
     const agora = new Date().toISOString();
     if (filtro === 'atrasadas') query = query.lt('prazo', agora).not('prazo', 'is', null);
     else if (filtro === 'hoje') {
-      const fimDoDia = new Date(); fimDoDia.setHours(23, 59, 59);
-      query = query.lt('prazo', fimDoDia.toISOString()).gte('prazo', new Date(new Date().setHours(0, 0, 0)).toISOString());
+      const hoje = diaInteiroBRT(0);
+      query = query.gte('prazo', hoje.inicio).lt('prazo', hoje.fim);
     } else if (filtro === 'semana') {
-      const fim = new Date(); fim.setDate(fim.getDate() + 7);
-      query = query.lt('prazo', fim.toISOString()).gte('prazo', agora);
+      const seteFrente = diaInteiroBRT(7);
+      query = query.lt('prazo', seteFrente.fim).gte('prazo', agora);
     }
     const { data, error } = await query;
     if (error) throw new Error(error.message);
@@ -769,18 +788,24 @@ const listarAgenda: ToolDefinition = {
   },
   async handler(args, ctx) {
     const periodo = (args.periodo as string) ?? 'hoje';
-    const agora = new Date();
-    let inicio = new Date(agora);
-    let fim = new Date(agora);
+    let inicioIso: string;
+    let fimIso: string;
     if (periodo === 'hoje') {
-      inicio.setHours(0, 0, 0, 0); fim.setHours(23, 59, 59);
+      ({ inicio: inicioIso, fim: fimIso } = diaInteiroBRT(0));
     } else if (periodo === 'amanha') {
-      inicio.setDate(inicio.getDate() + 1); inicio.setHours(0, 0, 0, 0);
-      fim.setDate(fim.getDate() + 1); fim.setHours(23, 59, 59);
+      ({ inicio: inicioIso, fim: fimIso } = diaInteiroBRT(1));
     } else if (periodo === 'semana') {
-      fim.setDate(fim.getDate() + 7);
+      const hoje = diaInteiroBRT(0);
+      const seteFrente = diaInteiroBRT(7);
+      inicioIso = hoje.inicio;
+      fimIso = seteFrente.fim;
     } else if (periodo === 'mes') {
-      fim.setMonth(fim.getMonth() + 1);
+      const hoje = diaInteiroBRT(0);
+      const trintaFrente = diaInteiroBRT(30);
+      inicioIso = hoje.inicio;
+      fimIso = trintaFrente.fim;
+    } else {
+      ({ inicio: inicioIso, fim: fimIso } = diaInteiroBRT(0));
     }
     // Filtra eventos pelas CONTAS GOOGLE DO DONO (Maikon).
     // Antes: contas terceiras (ex: Isadora conectou conta dela com agenda
@@ -803,8 +828,8 @@ const listarAgenda: ToolDefinition = {
       .from('eventos_agenda')
       .select('id, titulo, data_hora_inicio, data_hora_fim, tipo_evento, google_event_id, origem, google_account_id, timezone')
       .eq('medico_id', ctx.userId)
-      .gte('data_hora_inicio', inicio.toISOString())
-      .lt('data_hora_inicio', fim.toISOString())
+      .gte('data_hora_inicio', inicioIso)
+      .lt('data_hora_inicio', fimIso)
       .order('data_hora_inicio')
       .limit(200);
     // Filtro por contas do dono OU eventos sem google_account_id (criados manualmente)
@@ -1786,19 +1811,25 @@ const gerarBriefing: ToolDefinition = {
       .is('deleted_at', null)
       .limit(20);
 
-    const agora = new Date();
-    const fimPeriodo = new Date(agora);
-    if (periodo === 'manha' || periodo === 'fim_dia') fimPeriodo.setHours(23, 59, 59);
-    else fimPeriodo.setDate(fimPeriodo.getDate() + 7);
-
-    const inicioPeriodo = new Date(agora);
-    if (periodo === 'manha') inicioPeriodo.setHours(0, 0, 0, 0);
+    const hojeBRT = diaInteiroBRT(0);
+    let inicioPeriodoIso: string;
+    let fimPeriodoIso: string;
+    if (periodo === 'manha') {
+      inicioPeriodoIso = hojeBRT.inicio;
+      fimPeriodoIso = hojeBRT.fim;
+    } else if (periodo === 'fim_dia') {
+      inicioPeriodoIso = new Date().toISOString();
+      fimPeriodoIso = hojeBRT.fim;
+    } else {
+      inicioPeriodoIso = new Date().toISOString();
+      fimPeriodoIso = diaInteiroBRT(7).fim;
+    }
 
     const eventosP = ctx.supa
       .from('eventos_agenda')
       .select('titulo, data_hora_inicio, tipo_evento')
-      .gte('data_hora_inicio', inicioPeriodo.toISOString())
-      .lt('data_hora_inicio', fimPeriodo.toISOString())
+      .gte('data_hora_inicio', inicioPeriodoIso)
+      .lt('data_hora_inicio', fimPeriodoIso)
       .order('data_hora_inicio')
       .limit(15);
 

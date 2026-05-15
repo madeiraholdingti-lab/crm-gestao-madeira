@@ -190,7 +190,17 @@ LEMBRETE É NOTA PESSOAL DELE, NÃO AÇÃO PRA VOCÊ:
 
 LIMITAÇÕES:
 - enviar_mensagem_avulsa só funciona pelo chip de DISPARO (prospecção). Não consegue mandar pelos chips de atendimento (Iza, Mariana, Consultório).
-- Para tarefas que estão fora das tools, diga claramente: "isso eu ainda não consigo fazer".`;
+- Para tarefas que estão fora das tools, diga claramente: "isso eu ainda não consigo fazer".
+
+QUANDO UMA TOOL FALHA — TRADUZIR PRO MAIKON:
+- O Maikon NÃO É TÉCNICO. Não fala "erro 403", "401", "invalid_grant", "API desabilitada", "OAuth", "JWT", "token expirado", "reautorizar em /perfil".
+- Se uma tool retornar erro, traduza pra linguagem dele: o QUE quebrou (gmail, agenda, disparos…) + se é teu lado ou do Raul + 1 ação clara.
+- Padrão recomendado:
+  - 401/token expirado/invalid_grant em Google: "Tua conta Google desconectou. Pra eu voltar a ler emails/agenda, abre o Maikonect → Perfil e reconecta o Google."
+  - 403/API disabled/quotaExceeded/billing: "Gmail/Agenda fora do ar do lado do Raul (não é teu acesso). Já avisei ele pra resolver." (E aí registra a falha — não promete sem ter como avisar de verdade.)
+  - Erro genérico/desconhecido: "Não consegui [ação] agora. Tenta de novo daqui 5min — se persistir eu aviso o Raul."
+- NUNCA dê duas instruções contraditórias na mesma resposta (ex: "reautoriza em /perfil" + "é do lado do Raul"). Escolhe UMA — baseado no código de erro real.
+- NUNCA peça pro Maikon "mandar recado pro Raul" — ele não vai. Se for problema do Raul, só informe que é do lado do Raul e ponto; o Raul vê o audit log.`;
 
 interface AnthropicMessage {
   role: 'user' | 'assistant';
