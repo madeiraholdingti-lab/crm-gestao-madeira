@@ -2195,21 +2195,88 @@ const enviarMensagemPeloChip: ToolDefinition = {
 
 const listarCrons: ToolDefinition = {
   name: 'listar_crons',
-  description: 'Lista crons ativos do usuário. Use quando ele perguntar sobre lembretes recorrentes, "o que tu manda pra mim automaticamente?".',
-  input_schema: { type: 'object', properties: {} },
-  async handler(_args, ctx) {
-    const { data } = await ctx.supa
+  description: 'Lista lembretes/avisos agendados do Maikon (crons). Use quando ele perguntar "quais avisos tu manda pra mim?", "lista meus lembretes", "o que tem agendado", OU como passo intermediário antes de cancelar/reagendar um lembrete que ele citou via reply. Por padrão retorna só ATIVOS. Cada item tem: id (pra cancelar), texto_preview (texto que chega pra ele — usar pra match), proxima_humano (descrição PT-BR de quando dispara), recorrente (true/false). Use texto_preview pra parear com a mensagem citada por ele em replies.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      incluir_inativos: {
+        type: 'boolean',
+        description: 'true = inclui crons pausados/cancelados/expirados. Default false (só ativos).',
+        default: false,
+      },
+      termo: {
+        type: 'string',
+        description: 'Filtra crons cujo texto/nome contém este termo (ilike). Útil quando Maikon pede "cancela todos sobre X" ou cita um trecho de um lembrete.',
+      },
+    },
+  },
+  async handler(args, ctx) {
+    let query = ctx.supa
       .from('assistente_crons')
-      .select('id, nome, tipo, cron_expression, ativo, ultima_execucao_em, total_execucoes')
+      .select('id, nome, tipo, cron_expression, ativo, apenas_uma_vez, data_fim, payload, ultima_execucao_em, total_execucoes, created_at')
       .eq('user_id', ctx.userId)
-      .order('created_at', { ascending: false });
-    return { total: (data || []).length, crons: data || [] };
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (!args.incluir_inativos) query = query.eq('ativo', true);
+    const { data } = await query;
+    const todos = (data || []) as Array<Record<string, unknown>>;
+    const termo = (args.termo as string | undefined)?.toLowerCase();
+
+    // Parse cron expression em descrição BRT pro Maikon. Suporta formatos
+    // comuns: "M H * * *" (todo dia), "M H * * D" (dia da semana), "M H D M *"
+    // (data específica = one-shot). Não tenta cobrir cron rico — só o que
+    // criar_cron emite.
+    const diasSem = ['dom','seg','ter','qua','qui','sex','sab'];
+    const proxHumano = (expr: string, oneShot: boolean): string => {
+      const parts = expr.trim().split(/\s+/);
+      if (parts.length !== 5) return expr;
+      const [m, h, d, mes, dw] = parts;
+      const hm = `${h.padStart(2,'0')}:${m.padStart(2,'0')}`;
+      if (oneShot && d !== '*' && mes !== '*') {
+        return `${d.padStart(2,'0')}/${mes.padStart(2,'0')} às ${hm}`;
+      }
+      if (dw !== '*' && d === '*') {
+        const dias = dw.split(',').map(n => diasSem[parseInt(n,10)] || n).join('/');
+        return `toda ${dias} ${hm}`;
+      }
+      if (d === '*' && mes === '*' && dw === '*') return `todo dia ${hm}`;
+      return `${hm} (${expr})`;
+    };
+
+    const enriched = todos.map(c => {
+      const payload = (c.payload || {}) as Record<string, unknown>;
+      const textoPreview = (payload.texto as string | undefined)
+        || (payload.prompt as string | undefined)
+        || (c.tipo === 'versiculo' ? 'Versículo + reflexão diária' : (c.nome as string));
+      return {
+        id: c.id,
+        texto_preview: textoPreview ? String(textoPreview).slice(0, 200) : '',
+        tipo: c.tipo,
+        recorrente: !c.apenas_uma_vez,
+        proxima_humano: proxHumano(c.cron_expression as string, c.apenas_uma_vez === true),
+        cron_expression: c.cron_expression,
+        ativo: c.ativo,
+        data_fim: c.data_fim,
+        total_execucoes: c.total_execucoes,
+        ultima_execucao_em: c.ultima_execucao_em,
+      };
+    });
+
+    // Normaliza acentos pra match robusto — Maikon ditando áudio Whisper
+    // pode transcrever sem acento (Versiculo vs Versículo), e o reply do
+    // WhatsApp Web normaliza algumas vezes também.
+    const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const filtrados = termo
+      ? enriched.filter(c => semAcento(c.texto_preview).includes(semAcento(termo)))
+      : enriched;
+
+    return { total: filtrados.length, crons: filtrados };
   },
 };
 
 const pausarCron: ToolDefinition = {
   name: 'pausar_cron',
-  description: 'Pausa ou reativa um cron. Use quando user quiser parar/retomar um lembrete recorrente.',
+  description: 'Pausa ou reativa UM cron recorrente (semântica de "pausa temporária, vou voltar a usar"). Pra CANCELAR de vez use cancelar_cron. Pra one-shot, prefira sempre cancelar_cron.',
   input_schema: {
     type: 'object',
     properties: {
@@ -2226,6 +2293,53 @@ const pausarCron: ToolDefinition = {
       .eq('user_id', ctx.userId);
     if (error) return { ok: false, error: error.message };
     return { ok: true };
+  },
+};
+
+const cancelarCron: ToolDefinition = {
+  name: 'cancelar_cron',
+  description: 'Cancela DEFINITIVAMENTE um ou mais lembretes/avisos agendados do Maikon. Use quando ele pedir "cancela esse aviso", "para de me mandar isso", "pode tirar esse lembrete" — inclusive em reply citando o texto do lembrete. SEMPRE confirme antes de chamar: liste o(s) texto(s) do(s) lembrete(s) que vão sumir ("Vou cancelar: 1) X, 2) Y, OK?"). Aceita múltiplos IDs (ele pode pedir cancelar vários de uma vez). Pra REAGENDAR (cancelar + criar novo com prazo diferente), cancele aqui e depois chame criar_cron com o novo horário.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      cron_ids: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Array de UUIDs dos crons a cancelar. Pode ser 1 ou vários.',
+      },
+    },
+    required: ['cron_ids'],
+  },
+  async handler(args, ctx) {
+    const ids = (args.cron_ids as string[]) || [];
+    if (ids.length === 0) return { ok: false, error: 'cron_ids vazio' };
+    const { data, error } = await ctx.supa
+      .from('assistente_crons')
+      .update({ ativo: false, updated_at: new Date().toISOString() })
+      .eq('user_id', ctx.userId)
+      .in('id', ids)
+      .select('id, nome, payload');
+    if (error) return { ok: false, error: error.message };
+    const cancelados = (data || []) as Array<{ id: string; nome: string; payload: Record<string, unknown> }>;
+    // Se nenhum bateu, é UUID inválido/alucinado. Erro explícito pra Madeira
+    // re-listar em vez de mentir que cancelou. Bug recorrente: agente lembra
+    // do texto mas alucina UUID entre turns (turnos_recentes só guarda
+    // q/a, não tool_results).
+    if (cancelados.length === 0) {
+      return {
+        ok: false,
+        error: 'NENHUM cron encontrado com esses IDs. Provavelmente UUID alucinado/desatualizado. Chame listar_crons (com termo se possível) AGORA pra pegar o UUID correto e tente cancelar de novo. NÃO diga ao Maikon que cancelou — você não cancelou.',
+        cron_ids_recebidos: ids,
+      };
+    }
+    return {
+      ok: true,
+      cancelados: cancelados.length,
+      itens: cancelados.map(c => ({
+        id: c.id,
+        texto: (c.payload?.texto as string | undefined) || c.nome,
+      })),
+    };
   },
 };
 
@@ -3128,6 +3242,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   enviarMensagemPeloChip,
   listarCrons,
   pausarCron,
+  cancelarCron,
   registrarCorrecao,
   // RAG G4
   buscarAulasG4,
