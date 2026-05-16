@@ -47,8 +47,14 @@ Deno.serve(async (req: Request) => {
     const isOutbound = event === 'send.message' || event === 'SEND_MESSAGE';
     const targets = isOutbound ? TARGETS_OUTBOUND : TARGETS_INBOUND;
 
-    // Fan-out paralelo, fire-and-forget. Espera no máximo 25s (Evolution timeout).
-    const fanoutPromises = targets.map(path =>
+    // Fire-and-forget DE VERDADE: dispara fan-out e responde 200 IMEDIATAMENTE.
+    // Antes: Promise.all bloqueava o response até todos targets terminarem —
+    // assistente-maikon-pessoal às vezes demora 30s+ (Gemini + tools), e o
+    // Evolution timeout-ava em 25s e RETRANSMITIA o webhook. Caso real:
+    // print 16/05 09:12-09:14 — 2 mensagens do Maikon viraram 6 respostas
+    // duplicadas em 2min, todas processadas em paralelo. EdgeRuntime.waitUntil
+    // mantém o fan-out vivo após o return.
+    const fanoutPromise = Promise.all(targets.map(path =>
       fetch(`${SUPABASE_URL}${path}`, {
         method: 'POST',
         headers: {
@@ -58,14 +64,17 @@ Deno.serve(async (req: Request) => {
         },
         body: raw,
       }).then(
-        async r => ({ target: path, status: r.status, body: (await r.text()).slice(0, 200) }),
-        err => ({ target: path, error: err instanceof Error ? err.message : String(err) }),
+        async r => console.log(`[router] ${path} -> ${r.status}: ${(await r.text()).slice(0, 200)}`),
+        err => console.warn(`[router] ${path} -> err: ${err instanceof Error ? err.message : String(err)}`),
       )
-    );
+    ));
+    // Deno Deploy / Supabase Edge Functions: EdgeRuntime.waitUntil mantém a
+    // task viva após o response. Sem isso, o handler termina e o fan-out morre.
+    // deno-lint-ignore no-explicit-any
+    const er = (globalThis as any).EdgeRuntime;
+    if (er?.waitUntil) er.waitUntil(fanoutPromise);
 
-    const results = await Promise.all(fanoutPromises);
-
-    return new Response(JSON.stringify({ ok: true, event, fanout: results }), {
+    return new Response(JSON.stringify({ ok: true, event, dispatched: targets.length }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

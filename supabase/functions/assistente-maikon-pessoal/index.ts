@@ -173,6 +173,8 @@ Maikon recebe vários lembretes do chip Madeira (criados via criar_cron). Ele po
 
 REGRAS DESSE FLUXO:
 - Reply WhatsApp = sinal forte de que ele tá falando do lembrete citado. Não pergunte "qual lembrete?" se o texto citado já está no input — use ele pra listar_crons com o termo.
+- **REPLY CITANDO LEMBRETE → SEMPRE listar_crons, NUNCA buscar_contato**. Se o input começa com "[Maikon respondeu/citou esta mensagem anterior:" e a mensagem dele é vaga ou contém verbos tipo "tirar", "cancelar", "adiar", "lembrar de novo", "daqui X dias/horas", "em X dias", "amanhã", "segunda", "depois", "muda", "esquece" — ele tá falando do LEMBRETE CITADO, não pedindo coisa nova. Mesmo que o lembrete cite um nome de pessoa (ex: "Lembrar do Arthur"), NÃO chame buscar_contato — chame listar_crons com termo do texto citado. Caso real (não repita): Maikon citou "Lembrar do Arthur" e disse "artur lembrar em 15 dias" → você foi buscar_contato e listou 8 Arthurs do CRM. Errado. Era pra cancelar o cron atual e criar novo pra 15 dias depois.
+- **REPLY VAGO ("tirar", "ok", "isso", "muda")** sem mais palavras: assuma que é sobre o lembrete citado. "tirar"/"cancela" = cancelar. "muda pra X"/"daqui X dias" = reagendar. "ok"/"isso" sozinho num reply a lembrete = ele só viu, não precisa de ação — responda curto ("👍" ou nada).
 - **NUNCA chame cancelar_cron com UUID de memória/turno anterior** — UUIDs somem do histórico compactado e você ALUCINA quando tenta lembrar. SEMPRE: na mesma resposta que vai cancelar, chame listar_crons PRIMEIRO (com termo curto do texto), pegue o UUID do retorno, AÍ chame cancelar_cron com esse UUID fresco. Vale pra qualquer turno — mesmo que VOCÊ tenha mostrado o lembrete no turno anterior.
 - Se cancelar_cron retornar "NENHUM cron encontrado com esses IDs" — significa que você alucinou. RE-chame listar_crons, ache o UUID real, tente de novo. NÃO diga ao Maikon que cancelou se não cancelou.
 - Nunca cancele sem confirmar UMA vez, mas só uma — depois do "isso/pode/manda" execute imediatamente (regra de ouro abaixo se aplica). Confirmação é parafrasear o TEXTO do lembrete pro Maikon validar — não precisa mostrar UUID.
@@ -287,6 +289,26 @@ Deno.serve(async (req: Request) => {
       }
 
       waMessageId = data.key.id || null;
+
+      // Dedup por wa_message_id — Evolution retransmite o webhook se o handler
+      // demora >25s pra responder (Madeira com Gemini + tools às vezes leva
+      // 30s+). Sem dedup, o mesmo input vira 3-6 respostas duplicadas pro
+      // Maikon (caso real reproduzido no print 16/05 09:12-09:14: 2 inputs
+      // viraram 6 respostas em 2min). Check curto antes de gastar tokens.
+      if (waMessageId) {
+        const supaDedup = createClient(
+          Deno.env.get('SUPABASE_URL')!,
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+        );
+        const { count: jaProcessado } = await supaDedup
+          .from('assistente_audit_log')
+          .select('id', { count: 'exact', head: true })
+          .eq('wa_message_id', waMessageId);
+        if ((jaProcessado || 0) > 0) {
+          console.warn(`[madeira] dedup hit — wa_message_id=${waMessageId} já processado, skip`);
+          return jsonRes(200, { skipped: true, reason: 'duplicate webhook', wa_message_id: waMessageId });
+        }
+      }
 
       // Extrai texto (com Whisper inline pra áudio, vision pra imagem)
       const audioMsg = data.message?.audioMessage || data.message?.pttMessage;
