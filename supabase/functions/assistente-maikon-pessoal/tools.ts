@@ -2022,22 +2022,46 @@ const criarCron: ToolDefinition = {
     required: ['nome', 'tipo', 'cron_expression', 'apenas_uma_vez'],
   },
   async handler(args, ctx) {
+    const insertPayload = {
+      user_id: ctx.userId,
+      nome: args.nome,
+      tipo: args.tipo,
+      cron_expression: args.cron_expression,
+      payload: args.payload || {},
+      apenas_uma_vez: args.apenas_uma_vez === true,
+      data_fim: (args.data_fim as string) || null,
+      ativo: true,
+    };
     const { data, error } = await ctx.supa
       .from('assistente_crons')
-      .insert({
-        user_id: ctx.userId,
-        nome: args.nome,
-        tipo: args.tipo,
-        cron_expression: args.cron_expression,
-        payload: args.payload || {},
-        apenas_uma_vez: args.apenas_uma_vez === true,
-        data_fim: (args.data_fim as string) || null,
-        ativo: true,
-      })
+      .insert(insertPayload)
       .select('id, nome')
       .single();
-    if (error) return { ok: false, error: error.message };
-    return { ok: true, cron_id: (data as { id: string }).id, nome: (data as { nome: string }).nome };
+    if (!error) {
+      return { ok: true, cron_id: (data as { id: string }).id, nome: (data as { nome: string }).nome };
+    }
+    // Caso 16-17/05: DB ficou UNHEALTHY ~24h. criar_cron falhou 3 vezes pro
+    // Maikon e ele desistiu. Fallback: salva o pedido como memoria pendente
+    // pra Madeira poder oferecer recriar quando o DB voltar. Maikon recebe
+    // mensagem clara em vez de "Não consegui criar" repetitivo.
+    const erroDB = /timeout|statement|connection|terminated|ECONN|database|UNHEALTHY/i.test(error.message);
+    if (erroDB) {
+      try {
+        await ctx.supa.from('assistente_memoria').insert({
+          user_id: ctx.userId,
+          chave: `cron_pendente_${Date.now()}`,
+          valor: JSON.stringify(insertPayload),
+          categoria: 'pendencia_tecnica',
+          importancia: 4,
+        });
+      } catch { /* se memoria tb falhou, segue */ }
+      return {
+        ok: false,
+        fallback: 'memoria_salva',
+        error: `Banco oscilando agora (${error.message.slice(0,80)}). Salvei o pedido na memória — DIGA AO MAIKON: "Banco do CRM tá oscilando agora. Anotei o lembrete pra recriar assim que estabilizar." e siga pra outra coisa. NÃO repita "Não consegui criar" — informe e segue.`,
+      };
+    }
+    return { ok: false, error: error.message };
   },
 };
 
