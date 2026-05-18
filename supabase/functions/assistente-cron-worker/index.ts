@@ -34,14 +34,25 @@ Deno.serve(async (req: Request) => {
     const agora = new Date();
     const executados: Array<{ nome: string; resultado: string }> = [];
 
+    type CronRow = {
+      id: string; user_id: string; nome: string; tipo: string;
+      cron_expression: string; payload: Record<string, unknown>;
+      ultima_execucao_em: string | null;
+      apenas_uma_vez: boolean;
+      data_fim: string | null;
+    };
+
+    // 1ª passada: classifica cada cron. Expirado → desativa. Não dispara → skip.
+    // Senão → vai pro bucket apropriado.
+    // Crons tipo='mensagem' (lembrete pro próprio Maikon) são AGRUPADOS por
+    // user_id quando 2+ caem no mesmo minuto — Maikon estava recebendo 5
+    // notificações em rajada às 8h da manhã. Vira mensagem única com bullets.
+    // Outros tipos (versiculo, briefing, mensagem_chip) ficam separados.
+    const lembretesPorUser = new Map<string, CronRow[]>();
+    const outros: CronRow[] = [];
+
     for (const cron of (crons || [])) {
-      const c = cron as {
-        id: string; user_id: string; nome: string; tipo: string;
-        cron_expression: string; payload: Record<string, unknown>;
-        ultima_execucao_em: string | null;
-        apenas_uma_vez: boolean;
-        data_fim: string | null;
-      };
+      const c = cron as CronRow;
 
       // Cron expirado: desativa e pula. Anti spam-eterno.
       if (c.data_fim && new Date(c.data_fim).getTime() < agora.getTime()) {
@@ -54,19 +65,67 @@ Deno.serve(async (req: Request) => {
 
       if (!cronShouldFire(c.cron_expression, agora, c.ultima_execucao_em)) continue;
 
+      if (c.tipo === 'mensagem') {
+        const lista = lembretesPorUser.get(c.user_id) || [];
+        lista.push(c);
+        lembretesPorUser.set(c.user_id, lista);
+      } else {
+        outros.push(c);
+      }
+    }
+
+    // Marca cron como executado com sucesso (compartilhado entre singles e batched)
+    const marcarOK = async (c: CronRow) => {
+      await supa.from('assistente_crons').update({
+        ultima_execucao_em: agora.toISOString(),
+        ultima_falha: null,
+        updated_at: agora.toISOString(),
+        ...(c.apenas_uma_vez ? { ativo: false } : {}),
+      }).eq('id', c.id);
+      await supa.rpc('increment_cron_execucoes', { p_id: c.id }).then(() => {}, () => {});
+    };
+    const marcarErro = async (c: CronRow, msg: string) => {
+      await supa.from('assistente_crons').update({
+        ultima_falha: msg.slice(0, 500),
+        updated_at: agora.toISOString(),
+      }).eq('id', c.id);
+    };
+
+    // 2ª passada: dispara lembretes (agrupados se 2+ no mesmo minuto)
+    const horaBR = agora.toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+    for (const [userId, lista] of lembretesPorUser) {
+      try {
+        let texto: string;
+        if (lista.length === 1) {
+          // Caso comum (1 lembrete): formato individual como antes
+          texto = `🔔 Lembrete (${horaBR})\n\n${(lista[0].payload.texto as string) || ''}`;
+        } else {
+          // Múltiplos no mesmo minuto: agrupa em bullets pra não virar rajada
+          const bullets = lista
+            .map(c => `• ${((c.payload.texto as string) || c.nome).trim()}`)
+            .join('\n');
+          texto = `🔔 Lembretes ${horaBR} (${lista.length}):\n\n${bullets}`;
+        }
+        await dispararMensagem(supa, userId, texto);
+        for (const c of lista) {
+          await marcarOK(c);
+          executados.push({ nome: c.nome, resultado: lista.length > 1 ? `ok_agrupado(${lista.length})` : 'ok' });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        for (const c of lista) {
+          await marcarErro(c, msg);
+          executados.push({ nome: c.nome, resultado: `erro: ${msg.slice(0, 80)}` });
+        }
+      }
+    }
+
+    // 3ª passada: outros tipos (cada um separado — não agrupa)
+    for (const c of outros) {
       try {
         if (c.tipo === 'versiculo') await dispararVersiculo(supa, c.user_id);
-        else if (c.tipo === 'mensagem') {
-          // Cabeçalho explícito pra Maikon distinguir lembrete agendado de mensagem do agente.
-          const horaBR = agora.toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
-          const corpo = (c.payload.texto as string) || '';
-          const texto = `🔔 Lembrete (${horaBR})\n\n${corpo}`;
-          await dispararMensagem(supa, c.user_id, texto);
-        }
         else if (c.tipo === 'briefing') await dispararBriefing(supa, c.user_id, (c.payload.prompt as string) || '');
         else if (c.tipo === 'mensagem_chip') {
-          // Envia mensagem via chip ESPECÍFICO (ex: Maikon GSS) pra um destinatário.
-          // Diferente de tipo='mensagem' que sempre vai pelo chip Madeira pro próprio Maikon.
           await dispararMensagemPorChip(
             supa,
             (c.payload.instancia as string) || '',
@@ -74,27 +133,11 @@ Deno.serve(async (req: Request) => {
             (c.payload.texto as string) || '',
           );
         }
-
-        await supa.from('assistente_crons').update({
-          ultima_execucao_em: agora.toISOString(),
-          total_execucoes: 0, // bumped via SQL below
-          ultima_falha: null,
-          updated_at: agora.toISOString(),
-          // One-shot: desativa após 1ª execução. Evita lembrete pontual virando spam diário.
-          ...(c.apenas_uma_vez ? { ativo: false } : {}),
-        }).eq('id', c.id);
-        // Increment total via raw SQL
-        await supa.rpc('increment_cron_execucoes', { p_id: c.id }).then(
-          () => {},
-          () => {}, // ignore se RPC não existe
-        );
+        await marcarOK(c);
         executados.push({ nome: c.nome, resultado: 'ok' });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        await supa.from('assistente_crons').update({
-          ultima_falha: msg.slice(0, 500),
-          updated_at: agora.toISOString(),
-        }).eq('id', c.id);
+        await marcarErro(c, msg);
         executados.push({ nome: c.nome, resultado: `erro: ${msg.slice(0, 80)}` });
       }
     }
