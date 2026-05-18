@@ -83,6 +83,14 @@ FLUXO OBRIGATÓRIO:
 Errado (NÃO FAÇA): Maikon manda URL + "lembra desse evento" → você responde "qual dia/hora?" sem ter chamado extrair_url.
 Certo: Maikon manda URL + "lembra desse evento" → você chama extrair_url → analisa retorno → propõe data específica OU reporta o que achou.
 
+QUANDO MAIKON PEDE PRA PROCURAR ALGO "NAS MENSAGENS":
+- Maikon usa "mensagens" pra se referir tanto a WhatsApp quanto Gmail — não sabe a diferença técnica. Quando ele pedir "procura nas mensagens", "alguém me mandou X", "viu alguma conversa sobre Y", você DEVE buscar em AMBOS:
+  - buscar_conversa (com termo) → WhatsApp
+  - buscar_email (com query) → Gmail
+- Chame as duas EM PARALELO no mesmo turn. Junte os resultados na resposta dizendo "Achei N no WhatsApp e M nos emails: ...".
+- Caso real (não repita): Maikon mandou áudio "alguém me enviou um currículo que tinha experiência em TI, poderia procurar nas mensagens?" e você chamou apenas buscar_email — achou 0 e respondeu "não encontrei". O currículo ESTAVA no WhatsApp (mensagem de 17/04 do número 5527999522965 com anexo). Falta de busca em WA = bug seu.
+- Se Maikon especificou claramente "no e-mail" ou "no whatsapp", aí sim use só uma. Default = ambos.
+
 QUANDO O MAIKON CITA UMA PESSOA POR NOME:
 Antes de tomar ação relacionada (resumir conversa, criar tarefa "ligar pra X", etc), use buscar_contato({termo}) pra resolver pro contato real. Se houver mais de um match, pergunte qual.
 - **EXCEÇÃO CRÍTICA — CRIANDO LEMBRETE/CRON/TAREFA**. NUNCA chame buscar_contato pra resolver nomes citados no TEXTO de um lembrete, tarefa kanban ou mensagem agendada. O texto desses itens é a MENSAGEM que vai chegar pro Maikon no horário — é nota pessoal dele, não ação que envolve a outra pessoa. Vale quando:
@@ -354,6 +362,21 @@ Deno.serve(async (req: Request) => {
         || data.message?.imageMessage?.contextInfo
         || data.message?.videoMessage?.contextInfo;
       const quotedMsg = ctxInfo?.quotedMessage;
+      // Debug payload Evolution pra descobrir paths reais de contextInfo em
+      // mensagens com reply. Quando o JSON top-level mencionar "quoted" mas
+      // não conseguimos extrair, logamos a estrutura completa pra rastrear.
+      // O log fica nos Edge Function Logs (Supabase) — não vai pro audit_log.
+      try {
+        const rawJson = JSON.stringify(data).toLowerCase();
+        const temQuoted = rawJson.includes('quoted') || rawJson.includes('stanzaid') || rawJson.includes('participant');
+        if (temQuoted && !quotedMsg) {
+          // Reply detectado no payload mas extração falhou — log full pra debug
+          console.log('[madeira-reply-debug] payload com reply NÃO extraído:', JSON.stringify(data).slice(0, 4000));
+        } else if (quotedMsg) {
+          // Extraído com sucesso — log resumido pra confirmar path
+          console.log('[madeira-reply-ok] reply extraído, ctxInfo keys:', Object.keys(ctxInfo || {}).join(','));
+        }
+      } catch { /* log best-effort */ }
       const quotedText: string = quotedMsg?.conversation
         || quotedMsg?.extendedTextMessage?.text
         || quotedMsg?.imageMessage?.caption
