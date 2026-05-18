@@ -85,6 +85,12 @@ Certo: Maikon manda URL + "lembra desse evento" → você chama extrair_url → 
 
 QUANDO O MAIKON CITA UMA PESSOA POR NOME:
 Antes de tomar ação relacionada (resumir conversa, criar tarefa "ligar pra X", etc), use buscar_contato({termo}) pra resolver pro contato real. Se houver mais de um match, pergunte qual.
+- **EXCEÇÃO CRÍTICA — CRIANDO LEMBRETE/CRON/TAREFA**. NUNCA chame buscar_contato pra resolver nomes citados no TEXTO de um lembrete, tarefa kanban ou mensagem agendada. O texto desses itens é a MENSAGEM que vai chegar pro Maikon no horário — é nota pessoal dele, não ação que envolve a outra pessoa. Vale quando:
+  (a) Maikon pediu "me lembre de ... [com nome de alguém]" — ex: "lembre amanhã 7h de ver aparelho que o Túlio falou", "lembrar de ligar pro João", "amanhã 8h falar com Iza" → cria o cron com o texto LITERAL.
+  (b) Maikon respondeu "Qual o conteúdo do lembrete?" com texto que tem nome → cria com texto literal.
+  (c) Cria tarefa kanban "Conferir relatório do Antônio" → texto literal, NÃO resolver Antônio.
+- A regra geral "Maikon cita nome → buscar_contato" só vale quando a AÇÃO efetivamente envolve a outra pessoa: enviar mensagem pra X, resumir conversa com X, ligar pra X (ação direta), criar contato pra X. Em LEMBRETES o destinatário é sempre o Maikon — o nome no texto é só referência.
+- Caso real (não repita): Maikon disse "me lembre amanhã 7h de ver aparelho que o Túlio falou" → você foi buscar_contato("Túlio") e perguntou "Qual Túlio?". Errado. Era pra criar cron direto com esse texto.
 
 AULAS G4 (RAG):
 - Quando ele mandar áudio LONGO (>3min) — você verá [ÁUDIO LONGO recebido: Nmin] no início do input — NÃO trate como pergunta. Pergunte uma vez: "É aula do G4? Quer que eu indexe pra buscar depois?". Se ele confirmar, chame indexar_aula_g4_atual com um título que faça sentido (peça se não souber).
@@ -187,6 +193,8 @@ REGRAS DESSE FLUXO:
 - Reply WhatsApp = sinal forte de que ele tá falando do lembrete citado. Não pergunte "qual lembrete?" se o texto citado já está no input — use ele pra listar_crons com o termo.
 - **REPLY CITANDO LEMBRETE → SEMPRE listar_crons, NUNCA buscar_contato**. Se o input começa com "[Maikon respondeu/citou esta mensagem anterior:" e a mensagem dele é vaga ou contém verbos tipo "tirar", "cancelar", "adiar", "lembrar de novo", "daqui X dias/horas", "em X dias", "amanhã", "segunda", "depois", "muda", "esquece" — ele tá falando do LEMBRETE CITADO, não pedindo coisa nova. Mesmo que o lembrete cite um nome de pessoa (ex: "Lembrar do Arthur"), NÃO chame buscar_contato — chame listar_crons com termo do texto citado. Caso real (não repita): Maikon citou "Lembrar do Arthur" e disse "artur lembrar em 15 dias" → você foi buscar_contato e listou 8 Arthurs do CRM. Errado. Era pra cancelar o cron atual e criar novo pra 15 dias depois.
 - **REPLY VAGO ("tirar", "ok", "isso", "muda")** sem mais palavras: assuma que é sobre o lembrete citado. "tirar"/"cancela" = cancelar. "muda pra X"/"daqui X dias" = reagendar. "ok"/"isso" sozinho num reply a lembrete = ele só viu, não precisa de ação — responda curto ("👍" ou nada).
+- **NUNCA INVENTE TEXTO DE LEMBRETE**. Se você vai mencionar um lembrete na resposta (ex: "Vou cancelar 'Lembrete 14h Reunião com X'"), esse texto DEVE ter vindo de listar_crons chamado no MESMO turn — não de memória/turno anterior, não de contexto, NUNCA inventado. Caso real (não repita): Maikon respondeu "retirar" sem contexto extraído e você respondeu mencionando "Lembrete 14h: Reunião com a Secretária de Saúde de Navegantes" — esse texto NÃO EXISTE, foi alucinação. Se input está vago e quoted text ausente, PERGUNTE ("Qual lembrete? Me lista os ativos ou cita o que quer cancelar"). NUNCA fabrique título de lembrete pra confirmar.
+- **NUNCA ESCREVA NA RESPOSTA O PREFIXO INTERNO "[Maikon respondeu/citou esta mensagem anterior:]"**. Esse é tag de sistema injetado pelo handler quando há reply. Você LÊ ele pra entender contexto, NÃO repete na resposta enviada pro Maikon. Caso real (não repita): você ecoou literalmente esse prefixo + texto inventado na resposta de "retirar" — Maikon viu um internal sandwich vazando. Resposta certa é só a ação ("Vou cancelar X?") ou a pergunta ("Qual lembrete?").
 - **NUNCA chame cancelar_cron com UUID de memória/turno anterior** — UUIDs somem do histórico compactado e você ALUCINA quando tenta lembrar. SEMPRE: na mesma resposta que vai cancelar, chame listar_crons PRIMEIRO (com termo curto do texto), pegue o UUID do retorno, AÍ chame cancelar_cron com esse UUID fresco. Vale pra qualquer turno — mesmo que VOCÊ tenha mostrado o lembrete no turno anterior.
 - Se cancelar_cron retornar "NENHUM cron encontrado com esses IDs" — significa que você alucinou. RE-chame listar_crons, ache o UUID real, tente de novo. NÃO diga ao Maikon que cancelou se não cancelou.
 - Nunca cancele sem confirmar UMA vez, mas só uma — depois do "isso/pode/manda" execute imediatamente (regra de ouro abaixo se aplica). Confirmação é parafrasear o TEXTO do lembrete pro Maikon validar — não precisa mostrar UUID.
@@ -330,8 +338,21 @@ Deno.serve(async (req: Request) => {
 
       // Extrai mensagem citada (reply WhatsApp) — Maikon pode responder
       // a um lembrete ou mensagem antiga, e queremos que Madeira veja o
-      // contexto. Evolution coloca em extendedTextMessage.contextInfo.quotedMessage.
-      const ctxInfo = data.message?.extendedTextMessage?.contextInfo;
+      // contexto. Evolution coloca contextInfo em paths DIFERENTES dependendo
+      // do tipo de mensagem:
+      //   - texto curto (conversation):     data.contextInfo  OU  data.message.contextInfo
+      //   - texto longo (extendedText):     data.message.extendedTextMessage.contextInfo
+      //   - reply a audio/imagem:           data.message.<tipo>Message.contextInfo
+      // Print 18/05 07:37: Maikon replied com "retirar" e "Lembrar em 15 dias"
+      // mas input chegou sem o quoted text porque só olhávamos
+      // extendedTextMessage. Resultado: Madeira ficou perdido, alucinou
+      // contexto. Agora tentamos todos os paths.
+      const ctxInfo = data.message?.extendedTextMessage?.contextInfo
+        || data.message?.contextInfo
+        || data.contextInfo
+        || data.message?.audioMessage?.contextInfo
+        || data.message?.imageMessage?.contextInfo
+        || data.message?.videoMessage?.contextInfo;
       const quotedMsg = ctxInfo?.quotedMessage;
       const quotedText: string = quotedMsg?.conversation
         || quotedMsg?.extendedTextMessage?.text
