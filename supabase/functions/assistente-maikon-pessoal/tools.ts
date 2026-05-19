@@ -2322,42 +2322,114 @@ const pausarCron: ToolDefinition = {
 
 const cancelarCron: ToolDefinition = {
   name: 'cancelar_cron',
-  description: 'Cancela DEFINITIVAMENTE um ou mais lembretes/avisos agendados do Maikon. Use quando ele pedir "cancela esse aviso", "para de me mandar isso", "pode tirar esse lembrete" — inclusive em reply citando o texto do lembrete. SEMPRE confirme antes de chamar: liste o(s) texto(s) do(s) lembrete(s) que vão sumir ("Vou cancelar: 1) X, 2) Y, OK?"). Aceita múltiplos IDs (ele pode pedir cancelar vários de uma vez). Pra REAGENDAR (cancelar + criar novo com prazo diferente), cancele aqui e depois chame criar_cron com o novo horário.',
+  description: 'Cancela DEFINITIVAMENTE um ou mais lembretes/avisos agendados do Maikon. Use quando ele pedir "cancela esse aviso", "para de me mandar isso", "pode tirar esse lembrete" — inclusive em reply citando o texto do lembrete. SEMPRE confirme antes de chamar: liste o(s) texto(s) do(s) lembrete(s) que vão sumir ("Vou cancelar: 1) X, 2) Y, OK?"). Aceita múltiplos IDs (ele pode pedir cancelar vários de uma vez). Pra REAGENDAR (cancelar + criar novo com prazo diferente), cancele aqui e depois chame criar_cron com o novo horário. FALLBACK: se passar termo (texto do lembrete) sem cron_ids — ou se cron_ids falhar — a tool busca os crons ativos cujo texto/nome contém o termo e cancela. Pra reply ("retirar" citando "Lembrar do Arthur"), pode passar só termo="Arthur" que resolve.',
   input_schema: {
     type: 'object',
     properties: {
       cron_ids: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Array de UUIDs dos crons a cancelar. Pode ser 1 ou vários.',
+        description: 'Array de UUIDs dos crons a cancelar. Opcional se passar termo.',
+      },
+      termo: {
+        type: 'string',
+        description: 'Termo do texto do lembrete a cancelar (fallback). Match accent-insensitive contra payload.texto e nome. Use quando não tem UUID ou pra reforçar segurança.',
       },
     },
-    required: ['cron_ids'],
   },
   async handler(args, ctx) {
     const ids = (args.cron_ids as string[]) || [];
-    if (ids.length === 0) return { ok: false, error: 'cron_ids vazio' };
+    const termo = (args.termo as string | undefined)?.trim() || '';
+
+    // Path 1: tentou IDs primeiro (caso ideal)
+    if (ids.length > 0) {
+      const { data, error } = await ctx.supa
+        .from('assistente_crons')
+        .update({ ativo: false, updated_at: new Date().toISOString() })
+        .eq('user_id', ctx.userId)
+        .eq('ativo', true)
+        .in('id', ids)
+        .select('id, nome, payload');
+      if (error) return { ok: false, error: error.message };
+      const cancelados = (data || []) as Array<{ id: string; nome: string; payload: Record<string, unknown> }>;
+      if (cancelados.length > 0) {
+        return {
+          ok: true,
+          via: 'cron_ids',
+          cancelados: cancelados.length,
+          itens: cancelados.map(c => ({
+            id: c.id,
+            texto: (c.payload?.texto as string | undefined) || c.nome,
+          })),
+        };
+      }
+      // IDs todos furaram — cai pro fallback se termo foi dado, senão erro explícito
+      if (!termo) {
+        return {
+          ok: false,
+          error: 'NENHUM cron encontrado com esses IDs e sem termo de fallback. UUID provavelmente alucinado/desatualizado. Chame listar_crons agora (com termo se houver) e tente de novo.',
+          cron_ids_recebidos: ids,
+        };
+      }
+    }
+
+    // Path 2: fallback por termo. Aplica match accent-insensitive
+    // localmente (Postgres LIKE diferencia acentos) buscando candidatos.
+    if (!termo) {
+      return { ok: false, error: 'precisa de cron_ids OU termo' };
+    }
+    const { data: candidatos, error: e1 } = await ctx.supa
+      .from('assistente_crons')
+      .select('id, nome, payload')
+      .eq('user_id', ctx.userId)
+      .eq('ativo', true)
+      .limit(50);
+    if (e1) return { ok: false, error: e1.message };
+
+    const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const termoNorm = semAcento(termo);
+    const matches = ((candidatos || []) as Array<{ id: string; nome: string; payload: Record<string, unknown> }>)
+      .filter(c => {
+        const texto = (c.payload?.texto as string | undefined) || c.nome || '';
+        return semAcento(texto).includes(termoNorm);
+      });
+
+    if (matches.length === 0) {
+      return {
+        ok: false,
+        error: `Nenhum cron ativo bate com termo "${termo}". Pode ter sido cancelado antes ou termo errado. Diga ao Maikon que não achou e peça pra ele citar o texto exato do lembrete.`,
+        termo,
+      };
+    }
+
+    // Múltiplos matches — REQUER desambiguação (não cancela em massa por engano)
+    if (matches.length > 1 && ids.length === 0) {
+      return {
+        ok: false,
+        error: 'AMBÍGUO',
+        termo,
+        candidatos: matches.map(c => ({
+          id: c.id,
+          texto: (c.payload?.texto as string | undefined) || c.nome,
+        })),
+        instrucao: `Achei ${matches.length} crons que batem com "${termo}". Liste pro Maikon e pergunte qual cancelar — depois chame cancelar_cron com o cron_id específico.`,
+      };
+    }
+
+    // 1 match: cancela
+    const idsParaCancelar = matches.map(m => m.id);
     const { data, error } = await ctx.supa
       .from('assistente_crons')
       .update({ ativo: false, updated_at: new Date().toISOString() })
       .eq('user_id', ctx.userId)
-      .in('id', ids)
+      .eq('ativo', true)
+      .in('id', idsParaCancelar)
       .select('id, nome, payload');
     if (error) return { ok: false, error: error.message };
     const cancelados = (data || []) as Array<{ id: string; nome: string; payload: Record<string, unknown> }>;
-    // Se nenhum bateu, é UUID inválido/alucinado. Erro explícito pra Madeira
-    // re-listar em vez de mentir que cancelou. Bug recorrente: agente lembra
-    // do texto mas alucina UUID entre turns (turnos_recentes só guarda
-    // q/a, não tool_results).
-    if (cancelados.length === 0) {
-      return {
-        ok: false,
-        error: 'NENHUM cron encontrado com esses IDs. Provavelmente UUID alucinado/desatualizado. Chame listar_crons (com termo se possível) AGORA pra pegar o UUID correto e tente cancelar de novo. NÃO diga ao Maikon que cancelou — você não cancelou.',
-        cron_ids_recebidos: ids,
-      };
-    }
     return {
       ok: true,
+      via: 'termo_fallback',
       cancelados: cancelados.length,
       itens: cancelados.map(c => ({
         id: c.id,
