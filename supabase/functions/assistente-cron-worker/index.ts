@@ -100,11 +100,13 @@ Deno.serve(async (req: Request) => {
           // Caso comum (1 lembrete): formato individual como antes
           texto = `🔔 Lembrete (${horaBR})\n\n${(lista[0].payload.texto as string) || ''}`;
         } else {
-          // Múltiplos no mesmo minuto: agrupa em bullets pra não virar rajada
-          const bullets = lista
-            .map(c => `• ${((c.payload.texto as string) || c.nome).trim()}`)
+          // Múltiplos no mesmo minuto: agrupa NUMERADO pro Maikon poder
+          // responder "cancela 1, 3" sem digitar o texto inteiro.
+          // Madeira parseia essa estrutura via cancelar_lembretes_por_numero.
+          const linhas = lista
+            .map((c, i) => `${i + 1}) ${((c.payload.texto as string) || c.nome).trim()}`)
             .join('\n');
-          texto = `🔔 Lembretes ${horaBR} (${lista.length}):\n\n${bullets}`;
+          texto = `🔔 Lembretes ${horaBR} (${lista.length}):\n\n${linhas}\n\n_Pra cancelar: responde "cancela 1, 3" ou similar._`;
         }
         await dispararMensagem(supa, userId, texto);
         for (const c of lista) {

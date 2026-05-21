@@ -2439,6 +2439,110 @@ const cancelarCron: ToolDefinition = {
   },
 };
 
+const cancelarLembretesPorNumero: ToolDefinition = {
+  name: 'cancelar_lembretes_por_numero',
+  description: 'Cancela lembretes referenciando o NÚMERO de exibição na última mensagem agrupada que o Maikon recebeu (formato "🔔 Lembretes HH:MM (N): / 1) X / 2) Y / 3) Z"). Use quando ele disser "cancela o 1 e 3", "tira 2 e 4", "deixa só o 2", "cancela todos menos o 1", etc. A tool busca a última batch agrupada nas mensagens enviadas pelo chip Madeira nas últimas 6h, parseia as linhas numeradas e cancela os crons correspondentes via match de texto.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      numeros: {
+        type: 'array',
+        items: { type: 'integer' },
+        description: 'Lista dos números que ele quer cancelar (ex: [1, 3] pra "cancela 1 e 3"). Pra "deixa só o 2 num grupo de 4", passe [1,3,4].',
+      },
+    },
+    required: ['numeros'],
+  },
+  async handler(args, ctx) {
+    const nums = (args.numeros as number[]) || [];
+    if (nums.length === 0) return { ok: false, error: 'numeros vazio' };
+
+    // Busca última mensagem outbound do chip Madeira com formato agrupado.
+    // 6h de janela: depois disso o contexto provavelmente mudou e Maikon
+    // tá falando de outro grupo. Filtra por chip Maikon GSS pq webhook
+    // grava ali (from_me=false do ponto de vista do destinatário).
+    const seisHorasAtras = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+    const { data: msgs, error } = await ctx.supa
+      .from('messages')
+      .select('text, created_at, wa_timestamp')
+      .like('text', '🔔 Lembretes %')
+      .gte('created_at', seisHorasAtras)
+      .order('created_at', { ascending: false })
+      .limit(3);
+    if (error) return { ok: false, error: error.message };
+    const ultima = (msgs && msgs[0]) as { text: string; created_at: string } | undefined;
+    if (!ultima) {
+      return {
+        ok: false,
+        error: 'Não achei lembretes agrupados recentes (últimas 6h). Pede pro Maikon citar o texto do lembrete que quer cancelar, ou usa cancelar_cron com termo.',
+      };
+    }
+
+    // Parseia linhas "N) TEXTO" do corpo
+    const linhas = ultima.text.split('\n');
+    type Item = { num: number; texto: string };
+    const items: Item[] = [];
+    for (const linha of linhas) {
+      const m = linha.match(/^(\d+)\)\s+(.+)$/);
+      if (m) {
+        items.push({ num: parseInt(m[1], 10), texto: m[2].trim() });
+      }
+    }
+    if (items.length === 0) {
+      return { ok: false, error: 'Formato agrupado não pareou. Provavelmente formato mudou — usa cancelar_cron com termo.', batch_texto: ultima.text.slice(0, 200) };
+    }
+
+    // Pra cada número pedido, acha o texto e tenta cancelar via termo
+    const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const resultados: Array<{ numero: number; texto: string; cancelado: boolean; motivo?: string }> = [];
+
+    for (const num of nums) {
+      const item = items.find(i => i.num === num);
+      if (!item) {
+        resultados.push({ numero: num, texto: '', cancelado: false, motivo: 'número não existe na batch' });
+        continue;
+      }
+      // Busca cron ativo cujo texto bate
+      const { data: candidatos } = await ctx.supa
+        .from('assistente_crons')
+        .select('id, nome, payload')
+        .eq('user_id', ctx.userId)
+        .eq('ativo', true)
+        .limit(100);
+      const alvoNorm = semAcento(item.texto);
+      const match = ((candidatos || []) as Array<{ id: string; nome: string; payload: Record<string, unknown> }>)
+        .find(c => {
+          const txt = (c.payload?.texto as string | undefined) || c.nome || '';
+          return semAcento(txt).includes(alvoNorm) || alvoNorm.includes(semAcento(txt));
+        });
+      if (!match) {
+        resultados.push({ numero: num, texto: item.texto, cancelado: false, motivo: 'cron não encontrado (talvez já cancelado)' });
+        continue;
+      }
+      const { error: eUpd } = await ctx.supa
+        .from('assistente_crons')
+        .update({ ativo: false, updated_at: new Date().toISOString() })
+        .eq('id', match.id)
+        .eq('user_id', ctx.userId);
+      if (eUpd) {
+        resultados.push({ numero: num, texto: item.texto, cancelado: false, motivo: eUpd.message });
+      } else {
+        resultados.push({ numero: num, texto: item.texto, cancelado: true });
+      }
+    }
+
+    const cancelados = resultados.filter(r => r.cancelado);
+    const falhas = resultados.filter(r => !r.cancelado);
+    return {
+      ok: cancelados.length > 0,
+      cancelados: cancelados.length,
+      falhas: falhas.length,
+      batch_em: ultima.created_at,
+      resultados,
+    };
+  },
+};
+
 // ============================================================================
 // Aprendizado por correção
 // ============================================================================
@@ -3339,6 +3443,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   listarCrons,
   pausarCron,
   cancelarCron,
+  cancelarLembretesPorNumero,
   registrarCorrecao,
   // RAG G4
   buscarAulasG4,
