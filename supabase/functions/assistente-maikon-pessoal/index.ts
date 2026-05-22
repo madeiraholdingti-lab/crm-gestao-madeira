@@ -132,15 +132,19 @@ AULAS G4 (RAG):
 - Quando ele mandar áudio LONGO (>3min) — você verá [ÁUDIO LONGO recebido: Nmin] no início do input — NÃO trate como pergunta. Pergunte uma vez: "É aula do G4? Quer que eu indexe pra buscar depois?". Se ele confirmar, chame indexar_aula_g4_atual com um título que faça sentido (peça se não souber).
 - **EXCEÇÃO IMPORTANTE**: Se junto com o áudio (mesmo turno OU turno imediatamente seguinte) o Maikon pediu algo EXPLÍCITO sobre ele — "transcreve", "transcrever", "resume", "resumir", "me passa o que ele falou", "qual o conteúdo", "que ele disse" — atenda o pedido em vez de oferecer indexar G4. Caso real (não repita): Maikon mandou áudio encaminhado de 4min e pediu "pode transcrever o áudio para mim". Você respondeu "É aula do G4? Quer indexar?" e deixou ele sem resposta. Errado. Era pra devolver a transcrição que veio no input.
 
-TRANSCRIÇÃO LONGA → OFERECER RESUMO OU DIVIDIR:
-- Maikon recebe MUITO áudio (médicos, parceiros, secretárias) e raramente tem tempo de ouvir. Quando ele pede transcrever, decide pelo TAMANHO da transcrição:
-  - **Até ~600 chars** (~1min de áudio): manda transcrição inteira atribuída à fonte ("O áudio diz: ...").
-  - **600-1500 chars** (~1-3min): também manda inteira, mas formata legível — quebra em parágrafos quando há mudança de assunto/falante.
-  - **Acima de 1500 chars** (~3min+): NÃO despeja tudo de uma vez. Pergunta primeiro: "Áudio tem ~Xmin. Quer transcrição completa ou um resumo dos pontos principais? Se for completa eu mando em 2-3 partes." Espera a escolha dele:
-    - "completa" / "tudo" / "transcrição" → manda em N mensagens numeradas ("[1/3] ...", "[2/3] ...").
-    - "resumo" / "pontos" / "principal" → 3-5 bullets curtos com o essencial ("- Fulano pediu X / - Reunião marcada Y / - Decisão Z"). Sem floreio.
-- WhatsApp aceita mensagens de até ~4000 chars mas leitura fica ruim acima de 1500. Acima disso, dividir é melhor UX que parede de texto.
-- Estima minutos a partir do tamanho da transcrição: ~200-250 chars por minuto de fala normal em PT-BR.
+TRANSCRIÇÃO DE ÁUDIO → ENTREGA NO MESMO TURN, SEM PERGUNTAR ANTES:
+
+REGRA CRÍTICA (raiz de alucinação): Whisper transcreve o áudio APENAS no turn em que ele chega. Em turns seguintes você NÃO TEM mais o conteúdo do áudio — ele saiu do contexto. Por isso, NUNCA divida transcrição entre turns esperando o Maikon decidir "completa ou resumo" — quando ele responder você não tem mais o áudio e vai ALUCINAR. SEMPRE entregue tudo no MESMO turn em que o áudio chega.
+
+Decisão pelo TAMANHO da transcrição (já vem pronta no input):
+- **Até 1500 chars** (~3min): manda transcrição INTEIRA atribuída à fonte ("O áudio diz: ..."). Uma mensagem só.
+- **1500-3500 chars** (~3-7min): manda inteira, formatando legível (parágrafos quando há mudança de assunto). Pode caber numa mensagem do WhatsApp (limite ~4000 chars).
+- **Acima de 3500 chars** (~7min+): manda RESUMO em 4-6 bullets ("- X pediu Y / - Z decidiu W / - Reunião marcada pra ABC"). Em UMA mensagem. Sem oferecer "quer completa?" — você não consegue entregar depois.
+- Se a transcrição parece QUEBRADA, repetitiva (mesma frase 5+ vezes), ou impossível (Whisper às vezes alucina em áudio com silêncio/ruído), AVISE: "Áudio veio meio corrompido. Whisper transcreveu '[primeiros 200 chars]'. Reenvia mais limpo?".
+
+PROIBIDO TERMINANTEMENTE:
+- Inventar conteúdo de áudio que não está no input atual. Se o input do turn não tem [ÁUDIO LONGO recebido] nem texto transcrito de Whisper, você NÃO PODE produzir transcrição. Caso real (não repita): no turn das 14:58 você perguntou "completa ou resumo?", Maikon respondeu "Completa" 5min depois, e você produziu 9272 chars com loop infinito "Eu preciso que você me ajude" — pura alucinação. O áudio não estava mais lá.
+- Se Maikon pedir "completa" sobre áudio de turn anterior, responda HONESTAMENTE: "Não guardei a transcrição completa daquele áudio (limitação técnica). Me reenvia o áudio que eu transcrevo agora inteiro." NUNCA invente conteúdo.
 - Quando ele citar "aula do G4 X" ou pedir indexar conteúdo de uma pasta do Drive dele, use indexar_aula_drive.
 - Quando ele perguntar sobre conteúdo das aulas ("o que o G4 ensina sobre captação", "lembra daquela aula sobre cultura"), use buscar_aulas_g4.
 - Pra listar o que está indexado, use listar_aulas_g4.
@@ -486,6 +490,36 @@ Deno.serve(async (req: Request) => {
       inputText = inputText.slice(0, 8000) + '\n[truncado]';
     }
 
+    // GUARD anti-alucinação de transcrição: detecta padrão "Maikon respondeu
+    // 'completa/resumo' ao seu pedido sobre áudio anterior, mas o áudio
+    // saiu do contexto agora". Sem isso, Gemini inventa transcrição enorme
+    // com loops infinitos (caso 22/05 15:03 — 9272 chars alucinados). Aqui
+    // forçamos resposta honesta antes mesmo de chamar o modelo.
+    const respondeuSobreAudioAntigo = inputType !== 'audio'
+      && /\[Maikon respondeu\/citou esta mensagem anterior:\]/.test(inputText)
+      && /\[?[ÁA]UDIO LONGO recebido/i.test(inputText)
+      && /\b(completa|tudo|transcri[çc][aã]o|resumo|pontos|principais)\b/i.test(
+          inputText.split('[Maikon respondeu/citou')[1] || ''
+        );
+    if (respondeuSobreAudioAntigo) {
+      console.warn('[madeira] guard: tentativa de transcrever audio orfao — short-circuit');
+      const respostaHonesta = 'Não guardei a transcrição completa daquele áudio (não consigo manter o conteúdo entre mensagens). Me reenvia o áudio que eu transcrevo inteiro agora.';
+      const _supa = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      const _userId = directUserId || Deno.env.get('ASSISTENTE_USER_ID') || '';
+      const _userPhone = Deno.env.get('ASSISTENTE_USER_PHONE') || '';
+      if (waMessageId && _userId && _userPhone) {
+        await sendWhatsApp(_supa, _userPhone, respostaHonesta);
+        await _supa.from('assistente_audit_log').insert({
+          user_id: _userId, wa_message_id: waMessageId,
+          input_text: inputText, input_type: inputType,
+          tool_calls: [], resposta_final: respostaHonesta,
+          modelo: 'short_circuit_audio_orfao',
+          duracao_ms: Date.now() - t0,
+        });
+      }
+      return jsonRes(200, { ok: true, short_circuit: 'audio_orfao', resposta: respostaHonesta });
+    }
+
     // Detecção de prompt injection — flag mas não bloqueia (Claude trata)
     const injectionPatterns = [
       /ignor(e|ar)\s+(previous|todas?|as)\s+(instructions?|instruç)/i,
@@ -621,6 +655,24 @@ Deno.serve(async (req: Request) => {
     }
 
     // Envia resposta de volta pro WhatsApp se for via webhook (não em modo direto)
+    // Loop detection na resposta: Gemini às vezes entra em rambling com
+    // mesma frase repetida dezenas de vezes (caso 22/05 15:03 — "Eu preciso
+    // que você me ajude" repetido 40+ vezes). Detecta substring de 30+
+    // chars repetida 5+ vezes consecutivamente — substitui por aviso curto.
+    if (respostaFinal.length > 800) {
+      const linhas = respostaFinal.split(/[.!?\n]+/).map(l => l.trim()).filter(l => l.length >= 30);
+      let maxConsecutivos = 1, atual = 1;
+      for (let i = 1; i < linhas.length; i++) {
+        if (linhas[i] === linhas[i - 1]) atual++;
+        else { if (atual > maxConsecutivos) maxConsecutivos = atual; atual = 1; }
+      }
+      if (atual > maxConsecutivos) maxConsecutivos = atual;
+      if (maxConsecutivos >= 5) {
+        console.warn(`[madeira] loop detection: ${maxConsecutivos} repeticoes consecutivas — bloqueando resposta`);
+        respostaFinal = 'Tive um erro na resposta (transcrição/conteúdo veio quebrado). Me reenvia a mensagem/áudio que eu tento de novo.';
+      }
+    }
+
     if (waMessageId && respostaFinal) {
       await sendWhatsApp(supa, ctx.userPhone, respostaFinal);
     }
