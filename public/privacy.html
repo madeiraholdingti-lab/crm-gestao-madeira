@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Política de Privacidade — Maikonect</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 28px; margin-bottom: 8px; }
+  h2 { font-size: 20px; margin-top: 32px; }
+  .meta { color: #666; font-size: 14px; margin-bottom: 32px; }
+  ul { padding-left: 24px; }
+  li { margin: 4px 0; }
+  footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #ddd; color: #666; font-size: 13px; }
+  a { color: #1a73e8; }
+</style>
+</head>
+<body>
+<h1>Política de Privacidade — Maikonect</h1>
+<p class="meta">Última atualização: 23 de maio de 2026</p>
+
+<p>O Maikonect é uma plataforma de CRM médico privada operada pela Pulse ID (CNPJ 60.150.617/0001-50) para uso interno do Dr. Maikon Madeira e equipe da clínica Madeira Holding. Esta política descreve como coletamos, usamos e protegemos dados ao integrar com serviços Google (Gmail, Google Calendar, Google Drive) em nome dos usuários autorizados.</p>
+
+<h2>1. Quem somos</h2>
+<ul>
+  <li><strong>Operador:</strong> Pulse ID, em parceria com Madeira Holding (cliente final).</li>
+  <li><strong>Usuários autorizados:</strong> Dr. Maikon Madeira e equipe administrativa (secretárias e gestão).</li>
+  <li><strong>Contato:</strong> <a href="mailto:contato@madeiraholding.com">contato@madeiraholding.com</a></li>
+</ul>
+
+<h2>2. Dados que acessamos via Google APIs</h2>
+<p>Com sua autorização explícita via OAuth 2.0, o Maikonect acessa:</p>
+<ul>
+  <li><strong>Gmail (scope <code>gmail.modify</code>):</strong> leitura de e-mails não lidos, busca, marcação como lido, envio de e-mails em seu nome quando solicitado. Não excluímos e-mails permanentemente.</li>
+  <li><strong>Google Calendar (scope <code>calendar</code>):</strong> leitura, criação, edição e cancelamento de eventos da agenda médica.</li>
+  <li><strong>Google Drive (scope <code>drive.readonly</code>):</strong> apenas leitura de arquivos em pastas específicas indicadas por você (ex: aulas educacionais para indexação).</li>
+  <li><strong>Identidade básica (<code>openid</code>, <code>email</code>):</strong> nome e e-mail para identificar a conta conectada.</li>
+</ul>
+
+<h2>3. Como usamos seus dados</h2>
+<ul>
+  <li>Para responder a comandos enviados por você via WhatsApp ao agente virtual "Madeira" (ex: "resume emails de hoje", "cria evento amanhã 14h").</li>
+  <li>Para gerar resumos e classificações automáticas usando modelos de IA (Google Gemini, OpenAI Whisper para transcrição de áudios) processados sob contratos comerciais com os respectivos provedores.</li>
+  <li>Nunca usamos seus dados para treinar modelos próprios.</li>
+  <li>Nunca compartilhamos seus dados com terceiros além dos provedores técnicos estritamente necessários (Supabase para armazenamento, Google e OpenAI para processamento sob seu pedido).</li>
+</ul>
+
+<h2>4. Armazenamento e segurança</h2>
+<ul>
+  <li>Dados ficam em banco PostgreSQL no Supabase (região sa-east-1, São Paulo).</li>
+  <li>Tokens OAuth são criptografados em repouso com AES-256-GCM.</li>
+  <li>Row Level Security (RLS) garante que cada usuário só acessa seus próprios dados.</li>
+  <li>Acesso administrativo restrito a desenvolvedores autorizados (Pulse ID) com chaves de serviço rotacionáveis.</li>
+</ul>
+
+<h2>5. Retenção</h2>
+<ul>
+  <li>Mensagens e dados operacionais: retidos enquanto a conta estiver ativa.</li>
+  <li>Tokens OAuth: invalidados imediatamente se você revogar acesso em <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
+  <li>Backups: removidos após 30 dias do término do contrato.</li>
+</ul>
+
+<h2>6. Seus direitos</h2>
+<p>Você pode a qualquer momento:</p>
+<ul>
+  <li>Revogar o acesso do Maikonect aos seus dados Google em <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
+  <li>Solicitar exportação ou exclusão dos seus dados enviando e-mail para contato@madeiraholding.com.</li>
+  <li>Receber resposta em até 15 dias úteis (LGPD).</li>
+</ul>
+
+<h2>7. Conformidade</h2>
+<ul>
+  <li>Aderimos aos <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, incluindo a cláusula "Limited Use".</li>
+  <li>O uso e a transferência de informações recebidas de Google APIs cumprem a Limited Use Policy do Google.</li>
+  <li>Operamos sob a Lei Geral de Proteção de Dados (LGPD — Lei 13.709/2018).</li>
+</ul>
+
+<h2>8. Alterações</h2>
+<p>Mudanças nesta política serão comunicadas por e-mail ou diretamente no WhatsApp do usuário com no mínimo 7 dias de antecedência.</p>
+
+<footer>
+  Madeira Holding • Pulse ID • <a href="/terms.html">Termos de Uso</a> • <a href="/">Voltar ao site</a>
+</footer>
+</body>
+</html>
