@@ -2022,6 +2022,19 @@ const criarCron: ToolDefinition = {
     required: ['nome', 'tipo', 'cron_expression', 'apenas_uma_vez'],
   },
   async handler(args, ctx) {
+    // GUARD anti-spam-eterno: cron recorrente SEM data_fim vira lembrete
+    // perpétuo. Caso 24/05 17:36: criou "perguntar toda quarta 9h pra Maria
+    // Fernanda" sem ate_data → Maikon receberia toda quarta pra sempre.
+    // Regra do prompt diz pra perguntar prazo, mas Madeira pula.
+    // Aqui forçamos: recorrente sem data_fim → rejeita com mensagem clara.
+    const ehRecorrente = args.apenas_uma_vez !== true;
+    const semDataFim = !args.data_fim || (args.data_fim as string).trim() === '';
+    if (ehRecorrente && semDataFim) {
+      return {
+        ok: false,
+        error: 'CRON_RECORRENTE_SEM_PRAZO: lembretes recorrentes EXIGEM data_fim pra não virar spam eterno. PERGUNTE ao Maikon "por quanto tempo? até alguma data, mês, ou sempre por X meses?" e chame de novo com data_fim no formato ISO 8601 (ex: 2026-12-31T23:59:00-03:00).',
+      };
+    }
     const insertPayload = {
       user_id: ctx.userId,
       nome: args.nome,
@@ -2363,11 +2376,65 @@ const cancelarCron: ToolDefinition = {
           })),
         };
       }
-      // IDs todos furaram — cai pro fallback se termo foi dado, senão erro explícito
+      // IDs todos furaram — Madeira alucinou. Auto-recovery: busca a última
+      // chamada de listar_crons no audit_log do mesmo user (janela 10min) e
+      // usa OS IDs CORRETOS retornados lá. Match por ORDEM (preserva
+      // intent de "1 e 2") e tamanho (só se quantidade bate).
+      // Caso 24/05 17:37: Madeira listou 2 Arthurs no turn anterior, depois
+      // alucinou 2 UUIDs aleatórios pra cancelar. Auto-recovery pega os IDs
+      // reais do listar_crons anterior.
+      const dezMinAtras = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { data: recentAudit } = await ctx.supa
+        .from('assistente_audit_log')
+        .select('tool_calls, created_at')
+        .eq('user_id', ctx.userId)
+        .gte('created_at', dezMinAtras)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      let idsRecuperados: string[] = [];
+      let textosRecuperados: Array<{ id: string; texto: string }> = [];
+      for (const row of (recentAudit || []) as Array<{ tool_calls: Array<Record<string, unknown>>; created_at: string }>) {
+        for (const tc of row.tool_calls || []) {
+          if (tc.name === 'listar_crons' && (tc.result as Record<string, unknown>)?.crons) {
+            const crons = ((tc.result as { crons: Array<{ id: string; texto_preview?: string; ativo?: boolean }> }).crons || [])
+              .filter(c => c.ativo !== false);
+            // Match por tamanho: se Madeira pediu N ids alucinados, usa os
+            // primeiros N reais da última listagem
+            if (crons.length === ids.length || (ids.length === 1 && crons.length >= 1)) {
+              idsRecuperados = crons.slice(0, ids.length).map(c => c.id);
+              textosRecuperados = crons.slice(0, ids.length).map(c => ({ id: c.id, texto: c.texto_preview || '' }));
+              break;
+            }
+          }
+        }
+        if (idsRecuperados.length > 0) break;
+      }
+      if (idsRecuperados.length > 0) {
+        const { data: rec, error: eRec } = await ctx.supa
+          .from('assistente_crons')
+          .update({ ativo: false, updated_at: new Date().toISOString() })
+          .eq('user_id', ctx.userId)
+          .eq('ativo', true)
+          .in('id', idsRecuperados)
+          .select('id, nome, payload');
+        if (!eRec && rec && rec.length > 0) {
+          return {
+            ok: true,
+            via: 'auto_recovery_audit',
+            cancelados: rec.length,
+            itens: (rec as Array<{ id: string; nome: string; payload: Record<string, unknown> }>).map(c => ({
+              id: c.id,
+              texto: (c.payload?.texto as string | undefined) || c.nome,
+            })),
+            note: 'IDs originais alucinados — recuperados via última listar_crons',
+          };
+        }
+      }
+      // Sem recovery + sem termo → erro explícito
       if (!termo) {
         return {
           ok: false,
-          error: 'NENHUM cron encontrado com esses IDs e sem termo de fallback. UUID provavelmente alucinado/desatualizado. Chame listar_crons agora (com termo se houver) e tente de novo.',
+          error: 'NENHUM cron encontrado com esses IDs e auto-recovery falhou. Chame listar_crons agora (com termo se houver) e tente de novo passando os UUIDs corretos OU termo.',
           cron_ids_recebidos: ids,
         };
       }
@@ -2457,39 +2524,77 @@ const cancelarLembretesPorNumero: ToolDefinition = {
     const nums = (args.numeros as number[]) || [];
     if (nums.length === 0) return { ok: false, error: 'numeros vazio' };
 
-    // Busca última mensagem outbound do chip Madeira com formato agrupado.
-    // 6h de janela: depois disso o contexto provavelmente mudou e Maikon
-    // tá falando de outro grupo. Filtra por chip Maikon GSS pq webhook
-    // grava ali (from_me=false do ponto de vista do destinatário).
-    const seisHorasAtras = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
-    const { data: msgs, error } = await ctx.supa
-      .from('messages')
-      .select('text, created_at, wa_timestamp')
-      .like('text', '🔔 Lembretes %')
-      .gte('created_at', seisHorasAtras)
-      .order('created_at', { ascending: false })
-      .limit(3);
-    if (error) return { ok: false, error: error.message };
-    const ultima = (msgs && msgs[0]) as { text: string; created_at: string } | undefined;
-    if (!ultima) {
-      return {
-        ok: false,
-        error: 'Não achei lembretes agrupados recentes (últimas 6h). Pede pro Maikon citar o texto do lembrete que quer cancelar, ou usa cancelar_cron com termo.',
-      };
-    }
-
-    // Parseia linhas "N) TEXTO" do corpo
-    const linhas = ultima.text.split('\n');
+    // Busca última lista numerada (formato N) texto) nas últimas 24h em 2
+    // fontes — pega a MAIS RECENTE entre elas:
+    //   (A) assistente_audit_log.resposta_final — resposta DO PRÓPRIO MADEIRA
+    //       quando ele lista pra desambiguar ("Qual? 1) X / 2) Y").
+    //       Fonte garantida (sempre persistida).
+    //   (B) messages.text — batch agrupada do worker (prefixo "🔔 Lembretes").
+    //       Só persiste no chip Maikon GSS (recipient), with from_me=false.
+    // Antes só lia messages — caso 24/05 17:37 Maikon respondeu "1 e 2"
+    // depois do Madeira listar, mas as respostas do Madeira NÃO estão sendo
+    // persistidas em messages (webhook outbound do chip Agent-Madeira não
+    // configurado). Audit_log é fonte confiável pra esse caso.
+    const vinteQuatroHorasAtras = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
     type Item = { num: number; texto: string };
-    const items: Item[] = [];
-    for (const linha of linhas) {
-      const m = linha.match(/^(\d+)\)\s+(.+)$/);
-      if (m) {
-        items.push({ num: parseInt(m[1], 10), texto: m[2].trim() });
+    const parsearNumerado = (text: string): Item[] => {
+      const result: Item[] = [];
+      for (const linha of text.split('\n')) {
+        const m = linha.match(/^\s*(\d+)\)\s+(.+?)\s*$/);
+        if (m) result.push({ num: parseInt(m[1], 10), texto: m[2].trim() });
+      }
+      return result;
+    };
+
+    const [auditRes, msgsRes] = await Promise.all([
+      ctx.supa
+        .from('assistente_audit_log')
+        .select('resposta_final, created_at')
+        .eq('user_id', ctx.userId)
+        .gte('created_at', vinteQuatroHorasAtras)
+        .not('resposta_final', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(20),
+      ctx.supa
+        .from('messages')
+        .select('text, created_at')
+        .gte('created_at', vinteQuatroHorasAtras)
+        .like('text', '%) %')
+        .order('created_at', { ascending: false })
+        .limit(20),
+    ]);
+
+    let items: Item[] = [];
+    let batchEm = '';
+    let fonte = '';
+
+    // Coleta candidatas das 2 fontes, ordena por data DESC, pega primeira
+    // que tem 2+ items numerados.
+    type Cand = { text: string; at: string; from: string };
+    const cands: Cand[] = [];
+    for (const r of (auditRes.data || []) as Array<{ resposta_final: string | null; created_at: string }>) {
+      if (r.resposta_final) cands.push({ text: r.resposta_final, at: r.created_at, from: 'audit_log' });
+    }
+    for (const r of (msgsRes.data || []) as Array<{ text: string | null; created_at: string }>) {
+      if (r.text) cands.push({ text: r.text, at: r.created_at, from: 'messages' });
+    }
+    cands.sort((a, b) => b.at.localeCompare(a.at));
+
+    for (const c of cands) {
+      const p = parsearNumerado(c.text);
+      if (p.length >= 2) {
+        items = p;
+        batchEm = c.at;
+        fonte = c.from;
+        break;
       }
     }
+
     if (items.length === 0) {
-      return { ok: false, error: 'Formato agrupado não pareou. Provavelmente formato mudou — usa cancelar_cron com termo.', batch_texto: ultima.text.slice(0, 200) };
+      return {
+        ok: false,
+        error: 'Não achei lista numerada recente (últimas 24h, audit + messages). Pede pro Maikon citar o texto do lembrete que quer cancelar, ou usa cancelar_cron com termo.',
+      };
     }
 
     // Pra cada número pedido, acha o texto e tenta cancelar via termo
@@ -2537,7 +2642,8 @@ const cancelarLembretesPorNumero: ToolDefinition = {
       ok: cancelados.length > 0,
       cancelados: cancelados.length,
       falhas: falhas.length,
-      batch_em: ultima.created_at,
+      batch_em: batchEm,
+      fonte,
       resultados,
     };
   },
