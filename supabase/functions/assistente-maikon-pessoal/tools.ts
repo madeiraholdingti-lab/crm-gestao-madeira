@@ -2377,32 +2377,34 @@ const cancelarCron: ToolDefinition = {
         };
       }
       // IDs todos furaram — Madeira alucinou. Auto-recovery: busca a última
-      // chamada de listar_crons no audit_log do mesmo user (janela 10min) e
-      // usa OS IDs CORRETOS retornados lá. Match por ORDEM (preserva
-      // intent de "1 e 2") e tamanho (só se quantidade bate).
-      // Caso 24/05 17:37: Madeira listou 2 Arthurs no turn anterior, depois
-      // alucinou 2 UUIDs aleatórios pra cancelar. Auto-recovery pega os IDs
-      // reais do listar_crons anterior.
-      const dezMinAtras = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      // chamada de listar_crons no audit_log do mesmo user (janela 60min) e
+      // usa OS IDs CORRETOS retornados lá. Match por ORDEM (preserva intent
+      // "1 e 2"). Pega os primeiros N da última listagem.
+      // Caso 24/05 22:14: Madeira listou 2 Arthurs, Maikon demorou pra
+      // responder "Confirma" — janela de 10min era curta. Aumentado 60min.
+      // Também relaxa o match: aceita listar_crons que retornou >=ids.length
+      // (não exige igualdade exata).
+      // 4h: cobre fluxo "Cancelar X" → Madeira lista → Maikon demora pra
+      // responder "Confirma" (cliente ocupado, sai, volta). Caso 24/05
+      // 20:05 → 22:14: 2h gap entre lista e confirma. Janela 60min era curta.
+      const quatroHorasAtras = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
       const { data: recentAudit } = await ctx.supa
         .from('assistente_audit_log')
         .select('tool_calls, created_at')
         .eq('user_id', ctx.userId)
-        .gte('created_at', dezMinAtras)
+        .gte('created_at', quatroHorasAtras)
         .order('created_at', { ascending: false })
-        .limit(20);
+        .limit(60);
       let idsRecuperados: string[] = [];
-      let textosRecuperados: Array<{ id: string; texto: string }> = [];
       for (const row of (recentAudit || []) as Array<{ tool_calls: Array<Record<string, unknown>>; created_at: string }>) {
         for (const tc of row.tool_calls || []) {
           if (tc.name === 'listar_crons' && (tc.result as Record<string, unknown>)?.crons) {
             const crons = ((tc.result as { crons: Array<{ id: string; texto_preview?: string; ativo?: boolean }> }).crons || [])
               .filter(c => c.ativo !== false);
-            // Match por tamanho: se Madeira pediu N ids alucinados, usa os
-            // primeiros N reais da última listagem
-            if (crons.length === ids.length || (ids.length === 1 && crons.length >= 1)) {
+            // Pega os primeiros N da listagem (N = ids.length). Tolera
+            // listagem com mais itens — usa só os primeiros.
+            if (crons.length >= ids.length) {
               idsRecuperados = crons.slice(0, ids.length).map(c => c.id);
-              textosRecuperados = crons.slice(0, ids.length).map(c => ({ id: c.id, texto: c.texto_preview || '' }));
               break;
             }
           }
@@ -2428,6 +2430,33 @@ const cancelarCron: ToolDefinition = {
             })),
             note: 'IDs originais alucinados — recuperados via última listar_crons',
           };
+        }
+      }
+      // Antes de retornar "não achei", verifica se há recovery candidates
+      // INATIVOS — Maikon pode estar pedindo pra cancelar algo que JÁ está
+      // cancelado. Comunicação mais útil que "não achei".
+      for (const row of (recentAudit || []) as Array<{ tool_calls: Array<Record<string, unknown>>; created_at: string }>) {
+        for (const tc of row.tool_calls || []) {
+          if (tc.name === 'listar_crons' && (tc.result as Record<string, unknown>)?.crons) {
+            const cronsList = (tc.result as { crons: Array<{ id: string; texto_preview?: string }> }).crons || [];
+            if (cronsList.length >= ids.length) {
+              const idsCheck = cronsList.slice(0, ids.length).map(c => c.id);
+              const { data: estado } = await ctx.supa
+                .from('assistente_crons')
+                .select('id, ativo, payload')
+                .in('id', idsCheck);
+              const inativos = ((estado || []) as Array<{ id: string; ativo: boolean; payload: Record<string, unknown> }>)
+                .filter(c => !c.ativo);
+              if (inativos.length === idsCheck.length) {
+                return {
+                  ok: false,
+                  ja_cancelados: true,
+                  itens: inativos.map(c => ({ id: c.id, texto: (c.payload?.texto as string | undefined) || '' })),
+                  error: 'ESTES_LEMBRETES_JA_ESTAO_CANCELADOS. DIGA AO MAIKON: "Esses lembretes já estavam cancelados anteriormente — não tinha o que fazer." Não diga "não achei".',
+                };
+              }
+            }
+          }
         }
       }
       // Sem recovery + sem termo → erro explícito
