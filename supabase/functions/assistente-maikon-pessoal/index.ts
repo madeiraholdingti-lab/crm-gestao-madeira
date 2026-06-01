@@ -146,6 +146,7 @@ Decisão pelo TAMANHO da transcrição (já vem pronta no input):
 - **1500-3500 chars** (~3-7min): manda inteira, formatando legível (parágrafos quando há mudança de assunto). Pode caber numa mensagem do WhatsApp (limite ~4000 chars).
 - **Acima de 3500 chars** (~7min+): manda RESUMO em 4-6 bullets ("- X pediu Y / - Z decidiu W / - Reunião marcada pra ABC"). Em UMA mensagem. Sem oferecer "quer completa?" — você não consegue entregar depois.
 - Se a transcrição parece QUEBRADA, repetitiva (mesma frase 5+ vezes), ou impossível (Whisper às vezes alucina em áudio com silêncio/ruído), AVISE: "Áudio veio meio corrompido. Whisper transcreveu '[primeiros 200 chars]'. Reenvia mais limpo?".
+- ERRO DE TRANSCRIÇÃO: se o input vier como um marcador entre colchetes começando com "[áudio:" (ex: "[áudio: transcrição sobrecarregada agora...]", "[áudio: veio vazio/curto demais...]", "[áudio: chave OpenAI...]"), NÃO é o conteúdo do áudio — é um erro técnico. Repasse a orientação ao Maikon na linguagem dele, curto e direto (ex: "Não consegui transcrever teu áudio agora — o serviço deu uma engasgada. Reenvia que eu tento de novo." / "Teu áudio veio cortado, manda de novo?"). NUNCA invente o que o áudio dizia.
 
 PROIBIDO TERMINANTEMENTE:
 - Inventar conteúdo de áudio que não está no input atual. Se o input do turn não tem [ÁUDIO LONGO recebido] nem texto transcrito de Whisper, você NÃO PODE produzir transcrição. Caso real (não repita): no turn das 14:58 você perguntou "completa ou resumo?", Maikon respondeu "Completa" 5min depois, e você produziu 9272 chars com loop infinito "Eu preciso que você me ajude" — pura alucinação. O áudio não estava mais lá.
@@ -748,7 +749,10 @@ async function fetchAudioBase64(
       return null;
     }
     const j = await r.json();
-    return j.base64 || j.media || null;
+    const b64 = j.base64 || j.media || null;
+    if (b64) console.log(`[madeira] getBase64 ok: ~${Math.round((b64 as string).length / 1024)}KB`);
+    else console.warn('[madeira] getBase64 sem base64 no retorno:', JSON.stringify(j).slice(0, 200));
+    return b64;
   } catch (e) {
     console.warn('[madeira] fetchAudioBase64 erro:', e);
     return null;
@@ -941,24 +945,63 @@ function sanitizeJsonSchemaForGemini(schema: Record<string, unknown>): Record<st
 async function transcribeWhisper(b64: string, mimeType: string): Promise<string> {
   const openaiKey = Deno.env.get('OPENAI_API_KEY');
   if (!openaiKey) return '[áudio não transcrito — OpenAI não configurada]';
+
+  // Valida o base64 ANTES de gastar a chamada. O getBase64 do Evolution às
+  // vezes devolve base64 truncado/vazio → áudio cortado que o Whisper rejeita
+  // com 400 (causa provável dos fails 29/05 que vinham como "falha" genérica).
+  let bin: Uint8Array;
   try {
-    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    const blob = new Blob([bin], { type: mimeType });
-    const form = new FormData();
-    form.append('file', blob, 'audio.ogg');
-    form.append('model', 'whisper-1');
-    form.append('language', 'pt');
-    const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${openaiKey}` },
-      body: form,
-    });
-    if (!r.ok) return '[áudio: falha na transcrição]';
-    const j = await r.json();
-    return (j.text || '').trim() || '[áudio vazio]';
-  } catch (e) {
-    return `[áudio: erro ${e instanceof Error ? e.message : 'desconhecido'}]`;
+    bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  } catch {
+    console.error('[madeira] whisper: base64 inválido vindo do Evolution');
+    return '[áudio: não consegui decodificar — pede pro Maikon reenviar]';
   }
+  if (bin.byteLength < 1024) {
+    console.error(`[madeira] whisper: áudio pequeno demais (${bin.byteLength} bytes)`);
+    return '[áudio: veio vazio/curto demais — pede pra reenviar]';
+  }
+
+  // Extensão coerente com o mime — o Whisper usa o filename pra inferir o
+  // formato; 'audio.ogg' fixo pra um m4a/mp3 pode dar 400. WhatsApp manda ogg.
+  const ext = /mp4|m4a|aac/.test(mimeType) ? 'm4a'
+    : /mpeg|mp3/.test(mimeType) ? 'mp3'
+    : /wav/.test(mimeType) ? 'wav'
+    : /webm/.test(mimeType) ? 'webm'
+    : 'ogg';
+
+  // Até 2 tentativas — 429 (rate/quota) e 5xx da OpenAI são transitórios.
+  for (let tentativa = 1; tentativa <= 2; tentativa++) {
+    try {
+      const blob = new Blob([bin as BlobPart], { type: mimeType || 'audio/ogg' });
+      const form = new FormData();
+      form.append('file', blob, `audio.${ext}`);
+      form.append('model', 'whisper-1');
+      form.append('language', 'pt');
+      const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${openaiKey}` },
+        body: form,
+      });
+      if (r.ok) {
+        const j = await r.json();
+        return (j.text || '').trim() || '[áudio vazio]';
+      }
+      // Captura o MOTIVO real — antes era descartado, impossível diagnosticar.
+      const body = (await r.text().catch(() => '')).slice(0, 300);
+      console.error(`[madeira] whisper HTTP ${r.status} (tentativa ${tentativa}/2): ${body}`);
+      if (r.status === 429 || r.status >= 500) {
+        if (tentativa < 2) { await new Promise(res => setTimeout(res, 800)); continue; }
+        return '[áudio: transcrição sobrecarregada agora (quota/limite OpenAI) — tenta daqui a pouco]';
+      }
+      if (r.status === 401) return '[áudio: chave OpenAI inválida/sem saldo — avisar o Raul]';
+      return `[áudio: falha na transcrição (HTTP ${r.status})]`;
+    } catch (e) {
+      console.error(`[madeira] whisper erro de rede (tentativa ${tentativa}/2):`, e);
+      if (tentativa < 2) { await new Promise(res => setTimeout(res, 800)); continue; }
+      return `[áudio: erro ${e instanceof Error ? e.message : 'desconhecido'}]`;
+    }
+  }
+  return '[áudio: falha na transcrição]';
 }
 
 async function sendWhatsApp(
