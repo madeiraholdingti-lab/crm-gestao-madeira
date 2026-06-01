@@ -2558,9 +2558,174 @@ const cancelarCron: ToolDefinition = {
   },
 };
 
+// ===========================================================================
+// Lembretes agrupados — resolução por NÚMERO de exibição
+// ===========================================================================
+// O cron-worker manda lembretes do mesmo minuto numa mensagem agrupada
+// ("🔔 Lembretes HH:MM (N): 1) X / 2) Y ..."). O Maikon responde por número —
+// "cancela 1", "3 lembrar amanhã" — geralmente como MENSAGEM SOLTA, sem citar.
+// Pra mapear número→cron a gente acha a última batch. Fontes, por confiança:
+//   P1. lista_citada — texto que o Maikon CITOU no reply (quando há reply).
+//   P2. assistente_audit_log modelo='cron_worker_batch' — o worker persiste
+//       cada batch AQUI com o mapeamento num→cron_id. Fonte robusta que cobre
+//       o fluxo "mensagem solta" (antes não existia → "não achei lista", caso
+//       das tentativas 01/06 07:08-07:09). Ver assistente-cron-worker.
+//   P3. fallback textual — qualquer resposta numerada recente (audit/messages).
+type BatchItem = { num: number; texto: string; cron_id?: string };
+
+async function acharBatchNumerado(
+  ctx: ToolContext,
+  listaCitada?: string,
+): Promise<{ items: BatchItem[]; fonte: string; batchEm: string }> {
+  const parsear = (text: string): BatchItem[] => {
+    const out: BatchItem[] = [];
+    for (const linha of text.split('\n')) {
+      // Tolera prefixo de citação do WhatsApp ("> 1) X") além de "1) X" cru.
+      const m = linha.match(/^\s*>?\s*(\d+)\)\s+(.+?)\s*$/);
+      if (m) out.push({ num: parseInt(m[1], 10), texto: m[2].trim() });
+    }
+    return out;
+  };
+
+  // P1 — citação explícita no reply
+  const lc = listaCitada?.trim();
+  if (lc) {
+    const p = parsear(lc);
+    if (p.length >= 1) return { items: p, fonte: 'reply_citado', batchEm: new Date().toISOString() };
+  }
+
+  const desde = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+
+  // P2 — batch persistida pelo worker (traz num→cron_id direto em tool_calls)
+  const { data: batchRows } = await ctx.supa
+    .from('assistente_audit_log')
+    .select('tool_calls, created_at')
+    .eq('user_id', ctx.userId)
+    .eq('modelo', 'cron_worker_batch')
+    .gte('created_at', desde)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  const tc = (batchRows || [])[0] as { tool_calls?: unknown; created_at?: string } | undefined;
+  if (tc?.tool_calls && Array.isArray(tc.tool_calls) && tc.tool_calls.length) {
+    const items = (tc.tool_calls as Array<{ num?: number; texto?: string; cron_id?: string }>)
+      .filter(i => typeof i?.num === 'number')
+      .map(i => ({ num: i.num as number, texto: (i.texto as string) || '', cron_id: i.cron_id }));
+    if (items.length) return { items, fonte: 'worker_batch', batchEm: tc.created_at || '' };
+  }
+
+  // P3 — fallback textual (audit resposta_final + messages), mais recente
+  const [auditRes, msgsRes] = await Promise.all([
+    ctx.supa
+      .from('assistente_audit_log')
+      .select('resposta_final, created_at')
+      .eq('user_id', ctx.userId)
+      .gte('created_at', desde)
+      .not('resposta_final', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(20),
+    ctx.supa
+      .from('messages')
+      .select('text, created_at')
+      .gte('created_at', desde)
+      .like('text', '%) %')
+      .order('created_at', { ascending: false })
+      .limit(20),
+  ]);
+  type Cand = { text: string; at: string; from: string };
+  const cands: Cand[] = [];
+  for (const r of (auditRes.data || []) as Array<{ resposta_final: string | null; created_at: string }>)
+    if (r.resposta_final) cands.push({ text: r.resposta_final, at: r.created_at, from: 'audit_log' });
+  for (const r of (msgsRes.data || []) as Array<{ text: string | null; created_at: string }>)
+    if (r.text) cands.push({ text: r.text, at: r.created_at, from: 'messages' });
+  cands.sort((a, b) => b.at.localeCompare(a.at));
+  for (const c of cands) {
+    const p = parsear(c.text);
+    if (p.length >= 2) return { items: p, fonte: c.from, batchEm: c.at };
+  }
+  return { items: [], fonte: '', batchEm: '' };
+}
+
+const _semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+// Acha o cron ATIVO cujo texto bate com o do item (quando a fonte não trouxe
+// cron_id). Mesmo match fuzzy de sempre.
+async function matchCronAtivoPorTexto(
+  ctx: ToolContext,
+  alvoTexto: string,
+): Promise<{ id: string; texto: string } | null> {
+  const { data } = await ctx.supa
+    .from('assistente_crons')
+    .select('id, nome, payload')
+    .eq('user_id', ctx.userId)
+    .eq('ativo', true)
+    .limit(100);
+  const alvo = _semAcento(alvoTexto);
+  const m = ((data || []) as Array<{ id: string; nome: string; payload: Record<string, unknown> }>)
+    .find(c => {
+      const t = (c.payload?.texto as string | undefined) || c.nome || '';
+      return _semAcento(t).includes(alvo) || alvo.includes(_semAcento(t));
+    });
+  return m ? { id: m.id, texto: (m.payload?.texto as string | undefined) || m.nome } : null;
+}
+
+// Resolve [numeros] → itens da batch com cron_id (direto da batch quando o
+// worker persistiu, ou via match textual). Base compartilhada por
+// cancelar_lembretes_por_numero e resolver_lembretes_por_numero.
+type NumeroResolvido = { numero: number; texto: string; cron_id: string | null; encontrado: boolean; motivo?: string };
+async function resolverNumeros(
+  ctx: ToolContext,
+  numeros: number[],
+  listaCitada?: string,
+): Promise<
+  | { ok: false; error: string }
+  | { ok: true; fonte: string; batchEm: string; itens: NumeroResolvido[] }
+> {
+  const { items, fonte, batchEm } = await acharBatchNumerado(ctx, listaCitada);
+  if (items.length === 0) {
+    return {
+      ok: false,
+      error: 'Não achei a lista numerada. Se o Maikon respondeu CITANDO o lembrete, passe o texto citado (linhas "1) ...", "2) ...") em lista_citada. Senão, peça pra ele citar o texto ou use listar_crons/cancelar_cron com termo.',
+    };
+  }
+  const itens: NumeroResolvido[] = [];
+  for (const num of numeros) {
+    const item = items.find(i => i.num === num);
+    if (!item) {
+      itens.push({ numero: num, texto: '', cron_id: null, encontrado: false, motivo: 'número não existe na lista' });
+      continue;
+    }
+    let cronId = item.cron_id || null;
+    let texto = item.texto;
+    if (cronId) {
+      // Confirma que o cron ainda está ativo (pode já ter sido cancelado).
+      const { data } = await ctx.supa
+        .from('assistente_crons')
+        .select('id, ativo, payload, nome')
+        .eq('id', cronId)
+        .eq('user_id', ctx.userId)
+        .limit(1);
+      const row = (data || [])[0] as { id: string; ativo: boolean; payload?: Record<string, unknown>; nome?: string } | undefined;
+      if (!row || !row.ativo) cronId = null;
+      else if (!texto) texto = (row.payload?.texto as string | undefined) || row.nome || '';
+    }
+    if (!cronId) {
+      const match = await matchCronAtivoPorTexto(ctx, item.texto);
+      if (match) { cronId = match.id; if (!texto) texto = match.texto; }
+    }
+    itens.push({
+      numero: num,
+      texto,
+      cron_id: cronId,
+      encontrado: !!cronId,
+      motivo: cronId ? undefined : 'cron não encontrado (talvez já cancelado)',
+    });
+  }
+  return { ok: true, fonte, batchEm, itens };
+}
+
 const cancelarLembretesPorNumero: ToolDefinition = {
   name: 'cancelar_lembretes_por_numero',
-  description: 'Cancela lembretes referenciando o NÚMERO de exibição na última mensagem agrupada que o Maikon recebeu (formato "🔔 Lembretes HH:MM (N): / 1) X / 2) Y / 3) Z"). Use quando ele disser "cancela o 1 e 3", "tira 2 e 4", "deixa só o 2", "cancela todos menos o 1", etc. A tool busca a última batch agrupada nas mensagens enviadas pelo chip Madeira nas últimas 6h, parseia as linhas numeradas e cancela os crons correspondentes via match de texto.',
+  description: 'CANCELA lembretes referenciando o NÚMERO de exibição da última mensagem agrupada que o Maikon recebeu (formato "🔔 Lembretes HH:MM (N): / 1) X / 2) Y / 3) Z"). Use quando ele disser "cancela o 1 e 3", "tira 2 e 4", "deixa só o 2", "cancela todos menos o 1". Pra REAGENDAR/ADIAR por número ("3 lembrar amanhã") NÃO use esta — use resolver_lembretes_por_numero. A tool acha a batch (citação no reply, batch persistida do worker, ou histórico) e cancela os crons correspondentes.',
   input_schema: {
     type: 'object',
     properties: {
@@ -2571,7 +2736,7 @@ const cancelarLembretesPorNumero: ToolDefinition = {
       },
       lista_citada: {
         type: 'string',
-        description: 'O texto EXATO do bloco de lembretes que o Maikon citou no reply — copie do "[Maikon respondeu/citou esta mensagem anterior:]" do input, incluindo as linhas "1) ...", "2) ...". SEMPRE passe isto quando ele responder citando uma lista numerada. É a fonte mais confiável: o batch agrupado vem do cron-worker, que não fica salvo no banco, então sem este texto a tool pode não achar a lista.',
+        description: 'O texto do bloco de lembretes que o Maikon citou no reply — copie do "[Maikon respondeu/citou esta mensagem anterior:]" do input, com as linhas "1) ...", "2) ...". Passe quando ele citar a lista. (Se for mensagem solta sem citação, deixe vazio — a tool acha a batch persistida do worker.)',
       },
     },
     required: ['numeros'],
@@ -2579,141 +2744,61 @@ const cancelarLembretesPorNumero: ToolDefinition = {
   async handler(args, ctx) {
     const nums = (args.numeros as number[]) || [];
     if (nums.length === 0) return { ok: false, error: 'numeros vazio' };
+    const r = await resolverNumeros(ctx, nums, args.lista_citada as string | undefined);
+    if (!r.ok) return r;
 
-    type Item = { num: number; texto: string };
-    const parsearNumerado = (text: string): Item[] => {
-      const result: Item[] = [];
-      for (const linha of text.split('\n')) {
-        // Tolera prefixo de citação do WhatsApp ("> 1) X") além de "1) X" cru.
-        const m = linha.match(/^\s*>?\s*(\d+)\)\s+(.+?)\s*$/);
-        if (m) result.push({ num: parseInt(m[1], 10), texto: m[2].trim() });
-      }
-      return result;
-    };
-
-    let items: Item[] = [];
-    let batchEm = '';
-    let fonte = '';
-
-    // PRIORIDADE 1 — texto citado no reply. O batch agrupado "🔔 Lembretes
-    // HH:MM (N)" é enviado pelo cron-worker, que NÃO grava em assistente_audit_log
-    // nem em messages (chip Agent-Madeira sem webhook outbound). Logo a busca
-    // no banco abaixo NÃO acha esse caso — mas a lista numerada está na própria
-    // citação do Maikon. Parseia ela primeiro: é a fonte garantida do fluxo real.
-    // (caso 31/05 19:16 e 19:35 — "não achei lista numerada recente")
-    const listaCitada = (args.lista_citada as string | undefined)?.trim();
-    if (listaCitada) {
-      const p = parsearNumerado(listaCitada);
-      if (p.length >= 1) {
-        items = p;
-        batchEm = new Date().toISOString();
-        fonte = 'reply_citado';
-      }
-    }
-
-    // PRIORIDADE 2 — só consulta o banco se a citação não resolveu. Busca a
-    // última lista numerada nas últimas 24h em 2 fontes (a mais recente):
-    //   (A) assistente_audit_log.resposta_final — Madeira listou pra desambiguar.
-    //   (B) messages.text — batch do worker, quando persistido.
-    if (items.length === 0) {
-      const vinteQuatroHorasAtras = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-      const [auditRes, msgsRes] = await Promise.all([
-        ctx.supa
-          .from('assistente_audit_log')
-          .select('resposta_final, created_at')
-          .eq('user_id', ctx.userId)
-          .gte('created_at', vinteQuatroHorasAtras)
-          .not('resposta_final', 'is', null)
-          .order('created_at', { ascending: false })
-          .limit(20),
-        ctx.supa
-          .from('messages')
-          .select('text, created_at')
-          .gte('created_at', vinteQuatroHorasAtras)
-          .like('text', '%) %')
-          .order('created_at', { ascending: false })
-          .limit(20),
-      ]);
-
-      // Coleta candidatas das 2 fontes, ordena por data DESC, pega a primeira
-      // que tem 2+ items numerados.
-      type Cand = { text: string; at: string; from: string };
-      const cands: Cand[] = [];
-      for (const r of (auditRes.data || []) as Array<{ resposta_final: string | null; created_at: string }>) {
-        if (r.resposta_final) cands.push({ text: r.resposta_final, at: r.created_at, from: 'audit_log' });
-      }
-      for (const r of (msgsRes.data || []) as Array<{ text: string | null; created_at: string }>) {
-        if (r.text) cands.push({ text: r.text, at: r.created_at, from: 'messages' });
-      }
-      cands.sort((a, b) => b.at.localeCompare(a.at));
-
-      for (const c of cands) {
-        const p = parsearNumerado(c.text);
-        if (p.length >= 2) {
-          items = p;
-          batchEm = c.at;
-          fonte = c.from;
-          break;
-        }
-      }
-    }
-
-    if (items.length === 0) {
-      return {
-        ok: false,
-        error: 'Não achei a lista numerada. Se o Maikon respondeu CITANDO o lembrete, passe o texto citado (as linhas "1) ...", "2) ...") no parâmetro lista_citada. Senão, peça pra ele citar o texto ou use cancelar_cron com termo.',
-      };
-    }
-
-    // Pra cada número pedido, acha o texto e tenta cancelar via termo
-    const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     const resultados: Array<{ numero: number; texto: string; cancelado: boolean; motivo?: string }> = [];
-
-    for (const num of nums) {
-      const item = items.find(i => i.num === num);
-      if (!item) {
-        resultados.push({ numero: num, texto: '', cancelado: false, motivo: 'número não existe na batch' });
-        continue;
-      }
-      // Busca cron ativo cujo texto bate
-      const { data: candidatos } = await ctx.supa
-        .from('assistente_crons')
-        .select('id, nome, payload')
-        .eq('user_id', ctx.userId)
-        .eq('ativo', true)
-        .limit(100);
-      const alvoNorm = semAcento(item.texto);
-      const match = ((candidatos || []) as Array<{ id: string; nome: string; payload: Record<string, unknown> }>)
-        .find(c => {
-          const txt = (c.payload?.texto as string | undefined) || c.nome || '';
-          return semAcento(txt).includes(alvoNorm) || alvoNorm.includes(semAcento(txt));
-        });
-      if (!match) {
-        resultados.push({ numero: num, texto: item.texto, cancelado: false, motivo: 'cron não encontrado (talvez já cancelado)' });
+    for (const it of r.itens) {
+      if (!it.encontrado || !it.cron_id) {
+        resultados.push({ numero: it.numero, texto: it.texto, cancelado: false, motivo: it.motivo || 'não encontrado' });
         continue;
       }
       const { error: eUpd } = await ctx.supa
         .from('assistente_crons')
         .update({ ativo: false, updated_at: new Date().toISOString() })
-        .eq('id', match.id)
+        .eq('id', it.cron_id)
         .eq('user_id', ctx.userId);
-      if (eUpd) {
-        resultados.push({ numero: num, texto: item.texto, cancelado: false, motivo: eUpd.message });
-      } else {
-        resultados.push({ numero: num, texto: item.texto, cancelado: true });
-      }
+      resultados.push(eUpd
+        ? { numero: it.numero, texto: it.texto, cancelado: false, motivo: eUpd.message }
+        : { numero: it.numero, texto: it.texto, cancelado: true });
     }
 
-    const cancelados = resultados.filter(r => r.cancelado);
-    const falhas = resultados.filter(r => !r.cancelado);
+    const cancelados = resultados.filter(x => x.cancelado);
     return {
       ok: cancelados.length > 0,
       cancelados: cancelados.length,
-      falhas: falhas.length,
-      batch_em: batchEm,
-      fonte,
+      falhas: resultados.length - cancelados.length,
+      batch_em: r.batchEm,
+      fonte: r.fonte,
       resultados,
     };
+  },
+};
+
+const resolverLembretesPorNumero: ToolDefinition = {
+  name: 'resolver_lembretes_por_numero',
+  description: 'Resolve NÚMEROS de uma lista de lembretes agrupados ("🔔 Lembretes HH:MM (N): 1) X 2) Y") nos crons correspondentes, SEM cancelar nada. Use quando o Maikon responder a uma batch pedindo pra REAGENDAR/ADIAR por número: "3 lembrar amanhã", "5 em 1 hora", "deixa o 2 pra quarta", "4 quarta-feira". Retorna pra cada número: o texto do lembrete e o cron_id. FLUXO PRA REAGENDAR: chame esta tool → pegue texto+cron_id → cancelar_cron({cron_ids:[cron_id]}) + criar_cron(mesmo texto, novo horário). Pra só CANCELAR (sem novo horário) use cancelar_lembretes_por_numero.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      numeros: {
+        type: 'array',
+        items: { type: 'integer' },
+        description: 'Números que ele referenciou (ex: [3] pra "3 lembrar amanhã"; [3,4] se reagendar vários).',
+      },
+      lista_citada: {
+        type: 'string',
+        description: 'Texto citado no reply (linhas "1) ...", "2) ..."), se houver. Fonte mais confiável. Se for mensagem solta, deixe vazio.',
+      },
+    },
+    required: ['numeros'],
+  },
+  async handler(args, ctx) {
+    const nums = (args.numeros as number[]) || [];
+    if (nums.length === 0) return { ok: false, error: 'numeros vazio' };
+    const r = await resolverNumeros(ctx, nums, args.lista_citada as string | undefined);
+    if (!r.ok) return r;
+    return { ok: true, fonte: r.fonte, batch_em: r.batchEm, lembretes: r.itens };
   },
 };
 
@@ -3618,6 +3703,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   pausarCron,
   cancelarCron,
   cancelarLembretesPorNumero,
+  resolverLembretesPorNumero,
   registrarCorrecao,
   // RAG G4
   buscarAulasG4,

@@ -109,6 +109,27 @@ Deno.serve(async (req: Request) => {
           texto = `🔔 Lembretes ${horaBR} (${lista.length}):\n\n${linhas}\n\n_Pra cancelar: responde "cancela 1, 3" ou similar._`;
         }
         await dispararMensagem(supa, userId, texto);
+        // Persiste a batch agrupada pra cancelar/reagendar por número depois.
+        // O Maikon responde "cancela 1" / "3 lembrar amanhã" como mensagem
+        // SOLTA (sem citar) — sem isto a tool não tem onde achar a lista
+        // (o batch não vai pro audit_log conversacional nem pro messages).
+        // Grava o mapeamento num→cron_id em tool_calls; lido por
+        // acharBatchNumerado em assistente-maikon-pessoal/tools.ts.
+        // (caso 01/06 07:08-07:09 — 6 tentativas "não achei lista numerada")
+        if (lista.length > 1) {
+          await supa.from('assistente_audit_log').insert({
+            user_id: userId,
+            input_text: '[cron-worker] lembretes agrupados enviados',
+            input_type: 'text',
+            tool_calls: lista.map((c, i) => ({
+              num: i + 1,
+              cron_id: c.id,
+              texto: ((c.payload.texto as string) || c.nome).trim(),
+            })),
+            resposta_final: texto,
+            modelo: 'cron_worker_batch',
+          }).then(() => {}, () => {});
+        }
         for (const c of lista) {
           await marcarOK(c);
           executados.push({ nome: c.nome, resultado: lista.length > 1 ? `ok_agrupado(${lista.length})` : 'ok' });
