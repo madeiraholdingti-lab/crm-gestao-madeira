@@ -2160,13 +2160,36 @@ const enviarMensagemPeloChip: ToolDefinition = {
       const evoUrl = (cfg as { evolution_base_url?: string } | null)?.evolution_base_url;
       const evoKey = (cfg as { evolution_api_key?: string } | null)?.evolution_api_key;
       if (!evoUrl || !evoKey) return { ok: false, error: 'config Evolution incompleta' };
-      const r = await fetch(`${evoUrl}/message/sendText/${encodeURIComponent(instancia)}`, {
-        method: 'POST',
-        headers: { apikey: evoKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ number: numero, text: texto }),
-      });
+      let r: Response;
+      try {
+        r = await fetch(`${evoUrl}/message/sendText/${encodeURIComponent(instancia)}`, {
+          method: 'POST',
+          headers: { apikey: evoKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ number: numero, text: texto }),
+        });
+      } catch (e) {
+        // Falha de rede/DNS = Evolution inacessível (host fora do ar).
+        return {
+          ok: false,
+          chip_indisponivel: true,
+          error: `Não consegui falar com o servidor de WhatsApp (Evolution inacessível): ${String((e as Error).message).slice(0, 120)}. Avise o Maikon que o envio falhou e que isso é problema de infraestrutura — não adianta tentar de novo agora.`,
+        };
+      }
       if (!r.ok) {
         const body = await r.text().catch(() => '');
+        // Evolution 500 "Connection Closed" = a instância EXISTE mas o socket
+        // dela com o WhatsApp caiu (chip deslogado). Devolve erro ACIONÁVEL —
+        // antes o modelo traduzia o "Evolution 500" cru como "problema interno"
+        // genérico, sem dizer ao Maikon o que fazer. (caso 31/05 e 01/06)
+        const desconectado = r.status >= 500
+          || /connection closed|not connected|disconnected|state.*clos|"close"/i.test(body);
+        if (desconectado) {
+          return {
+            ok: false,
+            chip_desconectado: true,
+            error: `O chip "${instancia}" está desconectado do WhatsApp (Evolution ${r.status}: Connection Closed). Diga ao Maikon, com essas palavras, que NÃO deu pra enviar porque o chip "${instancia}" caiu, e que ele precisa reconectar o QR Code em Config Zaps (/zaps). Não tente outro caminho — sem reconectar, nenhum envio por esse chip funciona.`,
+          };
+        }
         return { ok: false, error: `Evolution ${r.status}: ${body.slice(0, 200)}` };
       }
       return { ok: true, modo: 'imediato', destino: numero, instancia };
@@ -2546,6 +2569,10 @@ const cancelarLembretesPorNumero: ToolDefinition = {
         items: { type: 'integer' },
         description: 'Lista dos números que ele quer cancelar (ex: [1, 3] pra "cancela 1 e 3"). Pra "deixa só o 2 num grupo de 4", passe [1,3,4].',
       },
+      lista_citada: {
+        type: 'string',
+        description: 'O texto EXATO do bloco de lembretes que o Maikon citou no reply — copie do "[Maikon respondeu/citou esta mensagem anterior:]" do input, incluindo as linhas "1) ...", "2) ...". SEMPRE passe isto quando ele responder citando uma lista numerada. É a fonte mais confiável: o batch agrupado vem do cron-worker, que não fica salvo no banco, então sem este texto a tool pode não achar a lista.',
+      },
     },
     required: ['numeros'],
   },
@@ -2553,76 +2580,88 @@ const cancelarLembretesPorNumero: ToolDefinition = {
     const nums = (args.numeros as number[]) || [];
     if (nums.length === 0) return { ok: false, error: 'numeros vazio' };
 
-    // Busca última lista numerada (formato N) texto) nas últimas 24h em 2
-    // fontes — pega a MAIS RECENTE entre elas:
-    //   (A) assistente_audit_log.resposta_final — resposta DO PRÓPRIO MADEIRA
-    //       quando ele lista pra desambiguar ("Qual? 1) X / 2) Y").
-    //       Fonte garantida (sempre persistida).
-    //   (B) messages.text — batch agrupada do worker (prefixo "🔔 Lembretes").
-    //       Só persiste no chip Maikon GSS (recipient), with from_me=false.
-    // Antes só lia messages — caso 24/05 17:37 Maikon respondeu "1 e 2"
-    // depois do Madeira listar, mas as respostas do Madeira NÃO estão sendo
-    // persistidas em messages (webhook outbound do chip Agent-Madeira não
-    // configurado). Audit_log é fonte confiável pra esse caso.
-    const vinteQuatroHorasAtras = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
     type Item = { num: number; texto: string };
     const parsearNumerado = (text: string): Item[] => {
       const result: Item[] = [];
       for (const linha of text.split('\n')) {
-        const m = linha.match(/^\s*(\d+)\)\s+(.+?)\s*$/);
+        // Tolera prefixo de citação do WhatsApp ("> 1) X") além de "1) X" cru.
+        const m = linha.match(/^\s*>?\s*(\d+)\)\s+(.+?)\s*$/);
         if (m) result.push({ num: parseInt(m[1], 10), texto: m[2].trim() });
       }
       return result;
     };
 
-    const [auditRes, msgsRes] = await Promise.all([
-      ctx.supa
-        .from('assistente_audit_log')
-        .select('resposta_final, created_at')
-        .eq('user_id', ctx.userId)
-        .gte('created_at', vinteQuatroHorasAtras)
-        .not('resposta_final', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(20),
-      ctx.supa
-        .from('messages')
-        .select('text, created_at')
-        .gte('created_at', vinteQuatroHorasAtras)
-        .like('text', '%) %')
-        .order('created_at', { ascending: false })
-        .limit(20),
-    ]);
-
     let items: Item[] = [];
     let batchEm = '';
     let fonte = '';
 
-    // Coleta candidatas das 2 fontes, ordena por data DESC, pega primeira
-    // que tem 2+ items numerados.
-    type Cand = { text: string; at: string; from: string };
-    const cands: Cand[] = [];
-    for (const r of (auditRes.data || []) as Array<{ resposta_final: string | null; created_at: string }>) {
-      if (r.resposta_final) cands.push({ text: r.resposta_final, at: r.created_at, from: 'audit_log' });
-    }
-    for (const r of (msgsRes.data || []) as Array<{ text: string | null; created_at: string }>) {
-      if (r.text) cands.push({ text: r.text, at: r.created_at, from: 'messages' });
-    }
-    cands.sort((a, b) => b.at.localeCompare(a.at));
-
-    for (const c of cands) {
-      const p = parsearNumerado(c.text);
-      if (p.length >= 2) {
+    // PRIORIDADE 1 — texto citado no reply. O batch agrupado "🔔 Lembretes
+    // HH:MM (N)" é enviado pelo cron-worker, que NÃO grava em assistente_audit_log
+    // nem em messages (chip Agent-Madeira sem webhook outbound). Logo a busca
+    // no banco abaixo NÃO acha esse caso — mas a lista numerada está na própria
+    // citação do Maikon. Parseia ela primeiro: é a fonte garantida do fluxo real.
+    // (caso 31/05 19:16 e 19:35 — "não achei lista numerada recente")
+    const listaCitada = (args.lista_citada as string | undefined)?.trim();
+    if (listaCitada) {
+      const p = parsearNumerado(listaCitada);
+      if (p.length >= 1) {
         items = p;
-        batchEm = c.at;
-        fonte = c.from;
-        break;
+        batchEm = new Date().toISOString();
+        fonte = 'reply_citado';
+      }
+    }
+
+    // PRIORIDADE 2 — só consulta o banco se a citação não resolveu. Busca a
+    // última lista numerada nas últimas 24h em 2 fontes (a mais recente):
+    //   (A) assistente_audit_log.resposta_final — Madeira listou pra desambiguar.
+    //   (B) messages.text — batch do worker, quando persistido.
+    if (items.length === 0) {
+      const vinteQuatroHorasAtras = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+      const [auditRes, msgsRes] = await Promise.all([
+        ctx.supa
+          .from('assistente_audit_log')
+          .select('resposta_final, created_at')
+          .eq('user_id', ctx.userId)
+          .gte('created_at', vinteQuatroHorasAtras)
+          .not('resposta_final', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(20),
+        ctx.supa
+          .from('messages')
+          .select('text, created_at')
+          .gte('created_at', vinteQuatroHorasAtras)
+          .like('text', '%) %')
+          .order('created_at', { ascending: false })
+          .limit(20),
+      ]);
+
+      // Coleta candidatas das 2 fontes, ordena por data DESC, pega a primeira
+      // que tem 2+ items numerados.
+      type Cand = { text: string; at: string; from: string };
+      const cands: Cand[] = [];
+      for (const r of (auditRes.data || []) as Array<{ resposta_final: string | null; created_at: string }>) {
+        if (r.resposta_final) cands.push({ text: r.resposta_final, at: r.created_at, from: 'audit_log' });
+      }
+      for (const r of (msgsRes.data || []) as Array<{ text: string | null; created_at: string }>) {
+        if (r.text) cands.push({ text: r.text, at: r.created_at, from: 'messages' });
+      }
+      cands.sort((a, b) => b.at.localeCompare(a.at));
+
+      for (const c of cands) {
+        const p = parsearNumerado(c.text);
+        if (p.length >= 2) {
+          items = p;
+          batchEm = c.at;
+          fonte = c.from;
+          break;
+        }
       }
     }
 
     if (items.length === 0) {
       return {
         ok: false,
-        error: 'Não achei lista numerada recente (últimas 24h, audit + messages). Pede pro Maikon citar o texto do lembrete que quer cancelar, ou usa cancelar_cron com termo.',
+        error: 'Não achei a lista numerada. Se o Maikon respondeu CITANDO o lembrete, passe o texto citado (as linhas "1) ...", "2) ...") no parâmetro lista_citada. Senão, peça pra ele citar o texto ou use cancelar_cron com termo.',
       };
     }
 
